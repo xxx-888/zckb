@@ -1,0 +1,134 @@
+{
+  "routes": [
+    {
+      "path": "/",
+      "src": "src/pages/mobile/Dashboard.tsx"
+    },
+    {
+      "path": "/login",
+      "src": "src/pages/mobile/Login.tsx"
+    },
+    {
+      "path": "/reviews",
+      "src": "src/pages/mobile/ReviewStream.tsx"
+    },
+    {
+      "path": "/ai-analysis",
+      "src": "src/pages/mobile/AIAnalysis.tsx"
+    },
+    {
+      "path": "/reply",
+      "src": "src/pages/mobile/NegativeReply.tsx"
+    },
+    {
+      "path": "/activation",
+      "src": "src/pages/mobile/PositiveActivation.tsx"
+    },
+    {
+      "path": "/insights",
+      "src": "src/pages/mobile/Insights.tsx"
+    },
+    {
+      "path": "/settings",
+      "src": "src/pages/mobile/Settings.tsx"
+    },
+    {
+      "path": "/admin/login",
+      "src": "src/pages/admin/AdminLogin.tsx"
+    },
+    {
+      "path": "/admin/dashboard",
+      "src": "src/pages/admin/AdminDashboard.tsx"
+    },
+    {
+      "path": "/admin/stores",
+      "src": "src/pages/admin/StoreManagement.tsx"
+    },
+    {
+      "path": "/admin/reviews",
+      "src": "src/pages/admin/ReviewManagement.tsx"
+    },
+    {
+      "path": "/admin/permissions",
+      "src": "src/pages/admin/PermissionManagement.tsx"
+    },
+    {
+      "path": "/admin/spiders",
+      "src": "src/pages/admin/SpiderManagement.tsx"
+    },
+    {
+      "path": "/admin/ai-config",
+      "src": "src/pages/admin/AIConfig.tsx"
+    },
+    {
+      "path": "/admin/audit",
+      "src": "src/pages/admin/ReplyAudit.tsx"
+    },
+    {
+      "path": "/admin/competitors",
+      "src": "src/pages/admin/CompetitorAnalysis.tsx"
+    },
+    {
+      "path": "/admin/notification-config",
+      "src": "src/pages/admin/NotificationConfig.tsx"
+    }
+  ],
+  "components": [
+    {
+      "name": "AdminLayout",
+      "src": "src/components/AdminLayout.tsx"
+    },
+    {
+      "name": "MobileLayout",
+      "src": "src/components/MobileLayout.tsx"
+    },
+    {
+      "name": "Button",
+      "src": "src/components/ui/button.tsx"
+    },
+    {
+      "name": "Card",
+      "src": "src/components/ui/card.tsx"
+    },
+    {
+      "name": "Badge",
+      "src": "src/components/ui/badge.tsx"
+    },
+    {
+      "name": "Input",
+      "src": "src/components/ui/input.tsx"
+    },
+    {
+      "name": "Tabs",
+      "src": "src/components/ui/tabs.tsx"
+    },
+    {
+      "name": "Avatar",
+      "src": "src/components/ui/avatar.tsx"
+    },
+    {
+      "name": "ModelConfig",
+      "src": "src/pages/admin/AIConfig/ModelConfig.tsx"
+    },
+    {
+      "name": "PromptConfig",
+      "src": "src/pages/admin/AIConfig/PromptConfig.tsx"
+    },
+    {
+      "name": "RuleEngine",
+      "src": "src/pages/admin/AIConfig/RuleEngine.tsx"
+    },
+    {
+      "name": "Monitoring",
+      "src": "src/pages/admin/AIConfig/Monitoring.tsx"
+    },
+    {
+      "name": "Evaluation",
+      "src": "src/pages/admin/AIConfig/Evaluation.tsx"
+    },
+    {
+      "name": "Switch",
+      "src": "src/components/ui/switch.tsx"
+    }
+  ]
+}

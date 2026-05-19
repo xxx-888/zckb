@@ -1,0 +1,401 @@
+{
+  "dashboard_overview": [
+    {
+      "id": "7days",
+      "totalReviews": 1058,
+      "reviewTrend": "+12.5%",
+      "avgRating": 4.7,
+      "ratingTrend": "+0.2",
+      "positiveRate": "94.2%",
+      "positiveTrend": "+1.4%",
+      "aiReplyRate": "98.5%",
+      "replyTrend": "+5.2%",
+      "platformData": [
+        { "platform": "美团", "count": 4852, "percentage": 45.2, "color": "bg-yellow-500", "icon": "simple-icons:meituan" },
+        { "platform": "大众点评", "count": 3241, "percentage": 30.1, "color": "bg-orange-500", "icon": "simple-icons:dianping" },
+        { "platform": "抖音", "count": 1628, "percentage": 15.1, "color": "bg-slate-900", "icon": "simple-icons:tiktok" },
+        { "platform": "小红书", "count": 1021, "percentage": 9.5, "color": "bg-red-500", "icon": "simple-icons:xiaohongshu" }
+      ],
+      "recentReviews": [
+        { "id": 1, "user": "张女士", "content": "菜品味道很不错，特别是招牌牛肉，服务也周到。", "rating": 5, "platform": "美团", "time": "10分钟前", "sentiment": "positive" },
+        { "id": 2, "user": "李先生", "content": "等餐时间有点久，希望改进。", "rating": 3, "platform": "大众点评", "time": "1小时前", "sentiment": "neutral" },
+        { "id": 3, "user": "王阿姨", "content": "食材不新鲜，感觉不太好。", "rating": 2, "platform": "美团", "time": "2小时前", "sentiment": "negative" },
+        { "id": 4, "user": "赵同学", "content": "环境很好，适合拍照打卡！", "rating": 5, "platform": "小红书", "time": "3小时前", "sentiment": "positive" },
+        { "id": 5, "user": "刘先生", "content": "上菜速度快，味道正宗。", "rating": 4, "platform": "抖音", "time": "5小时前", "sentiment": "positive" }
+      ],
+      "storeRankings": [
+        { "name": "王府井总店", "score": 4.9, "reviews": 120, "trend": "up", "health": 98 },
+        { "name": "三里屯店", "score": 4.8, "reviews": 85, "trend": "up", "health": 95 },
+        { "name": "天河城店", "score": 4.7, "reviews": 64, "trend": "down", "health": 88 },
+        { "name": "南京路店", "score": 4.6, "reviews": 92, "trend": "up", "health": 92 },
+        { "name": "春熙路店", "score": 4.5, "reviews": 78, "trend": "stable", "health": 90 }
+      ],
+      "healthStats": [
+        { "platform": "美团", "status": "normal", "time": "2分钟前" },
+        { "platform": "大众点评", "status": "normal", "time": "5分钟前" },
+        { "platform": "抖音", "status": "warning", "time": "12分钟前" },
+        { "platform": "小红书", "status": "normal", "time": "8分钟前" }
+      ],
+      "alert": { "id": "alert-001", "type": "negative_spike", "title": "异常波动报警", "description": "检测到\"三里屯店\"单日差评数环比增长 120%，疑似遭遇恶意刷评或服务突发事故。", "severity": "critical", "timestamp": "2026-05-18T14:00:00Z" }
+    },
+    {
+      "id": "today",
+      "totalReviews": 156,
+      "reviewTrend": "+12.5%",
+      "avgRating": 4.6,
+      "ratingTrend": "+0.2",
+      "positiveRate": "93.8%",
+      "positiveTrend": "+1.4%",
+      "aiReplyRate": "98.5%",
+      "replyTrend": "+5.2%"
+    },
+    {
+      "id": "30days",
+      "totalReviews": 4286,
+      "reviewTrend": "+15.3%",
+      "avgRating": 4.7,
+      "ratingTrend": "+0.3",
+      "positiveRate": "94.5%",
+      "positiveTrend": "+1.8%",
+      "aiReplyRate": "98.8%",
+      "replyTrend": "+6.1%"
+    }
+  ],
+  "store_health": {
+    "healthScore": 98,
+    "rankPercentile": 3,
+    "suggestion": "当前店铺在商圈内口碑排名前3%，AI 建议继续保持优质回复频率。"
+  },
+  "insights": {
+    "topDish": [
+      { "name": "招牌红烧肉", "score": 4.9, "positive": 120, "negative": 2, "type": "recommended" },
+      { "name": "清蒸鲈鱼", "score": 4.5, "positive": 85, "negative": 5, "type": "potential" },
+      { "name": "麻辣烫", "score": 3.2, "positive": 20, "negative": 15, "type": "problem" }
+    ],
+    "threeGoodThreeBad": {
+      "goods": ["食材新鲜度", "服务主动性", "装修风格"],
+      "bads": ["高峰期排队时间", "包间私密性", "空调温度控制"]
+    }
+  },
+  "positive_activation": {
+    "highQualityReviews": [
+      {
+        "id": 1,
+        "user": "美食博主-晓晓",
+        "avatar": "https://modao.cc/agent-py/media/generated_images/2026-05-08/fc583af765034763b7064856c3142798.jpg",
+        "content": "今天尝试了他们家的招牌牛肉，肉质鲜嫩多汁，配上特制的酱料简直完美。店里的装修也很有特色，非常适合拍照打卡！",
+        "hasImage": true,
+        "length": "长文",
+        "sentiment": "极佳",
+        "suggestedScript": "亲爱的晓晓，非常感谢您如此详尽且精美的分享！看到您拍的照片简直是专业水准，我们非常希望能征得您的授权，将您的这段文字和图片分享到我们的官号，让更多食客看到。我们会为您准备一份价值188元的双人套餐作为回馈，期待您的回复！"
+      },
+      {
+        "id": 2,
+        "user": "悦食达人-陈陈",
+        "avatar": "https://modao.cc/agent-py/media/generated_images/2026-05-08/504e190480c341dcb2a66d901f38c5c9.jpg",
+        "content": "很有故事感的一家店，服务员态度特别好，看到我带了小朋友主动拿了玩具。",
+        "hasImage": false,
+        "length": "中等",
+        "sentiment": "温馨",
+        "suggestedScript": "陈陈您好，很高兴能在店里为您和家人提供服务。您提到的服务细节正是我们一直追求的温馨体验。能否授权我们将您的评价收录进我们的\"金牌服务案例库\"？作为感谢，下此到店我们将为您送上一份定制儿童礼品。"
+      }
+    ],
+    "brandScripts": [
+      { "tag": "亲切邻家", "progress": "92%", "count": 124 },
+      { "tag": "专业严谨", "progress": "85%", "count": 42 },
+      { "tag": "幽默自嘲", "progress": "78%", "count": 56 }
+    ]
+  },
+  "ai_analysis": {
+    "topics": [
+      { "label": "菜品味道", "sentiment": 88, "count": 124, "trend": "up" },
+      { "label": "服务速度", "sentiment": 42, "count": 56, "trend": "down" },
+      { "label": "环境卫生", "sentiment": 92, "count": 32, "trend": "up" },
+      { "label": "性价比", "sentiment": 75, "count": 48, "trend": "stable" }
+    ],
+    "tagClustering": [
+      { "category": "口味", "items": ["太咸", "肉质老", "分量少"], "percentage": 45, "color": "bg-orange-500" },
+      { "category": "服务", "items": ["态度冷淡", "响应慢"], "percentage": 30, "color": "bg-amber-500" },
+      { "category": "环境", "items": ["空调不给力", "噪音大"], "percentage": 15, "color": "bg-yellow-500" },
+      { "category": "包装", "items": ["漏油", "不保温"], "percentage": 10, "color": "bg-slate-400" }
+    ],
+    "sentimentSummary": {
+      "score": 82,
+      "trend": "+4%",
+      "positive": 82,
+      "negative": 18,
+      "aiAccuracy": 99.2
+    },
+    "riskLevels": {
+      "high": { "count": 2, "desc": "食安/异物" },
+      "medium": { "count": 5, "desc": "激烈争吵" },
+      "low": { "count": 12, "desc": "轻微不满" }
+    },
+    "insights": "本周\"太咸\"相关的负面词汇增长了 15%，主要集中在\"招牌牛肉面\"这一菜品上。建议厨师长检查标准出品盐度。",
+    "replyHistory": [
+      { "id": 1, "user": "王**", "rating": 5, "content": "非常棒，下次还来！", "reply": "感谢您的支持，我们会继续努力！", "time": "10分钟前", "status": "自动已发" },
+      { "id": 2, "user": "李**", "rating": 2, "content": "上菜太慢了。", "reply": "非常抱歉，我们已收到您的反馈，正在改进流程。", "time": "1小时前", "status": "已审后发" }
+    ],
+    "replyStats": {
+      "todayCount": 42,
+      "autoBlocked": 15,
+      "avgTime": "2.5m"
+    },
+    "appealSuggestions": [
+      {
+        "id": "appeal-001",
+        "user": "用户_9281",
+        "platform": "美团外卖",
+        "date": "2026-05-07",
+        "content": "送餐太慢了，菜都凉了。而且这个价格配这个量也太坑了吧！",
+        "status": "疑似恶意",
+        "draft": "【申诉理由】配送责任误判。通过后台物流详情核实，骑手取餐后在路中停留15分钟，导致餐品送达超时。评价中对\"量少\"的反馈与该订单实付金额对应的标准分量不符，疑似同行恶意压低分。"
+      }
+    ]
+  },
+  "subscription": {
+    "currentPlan": "standard",
+    "plans": [
+      { "id": "basic", "name": "基础版", "price": 0, "period": "永久免费", "icon": "Star", "color": "slate", "features": ["1个店铺管理", "基础评价查看", "手动回复", "基础数据统计"] },
+      { "id": "standard", "name": "标准版", "price": 299, "period": "年", "icon": "Zap", "color": "indigo", "isPopular": true, "features": ["5个店铺管理", "AI智能分析", "自动回复", "竞品对标分析", "小红书数据采集", "数据导出"] },
+      { "id": "premium", "name": "旗舰版", "price": 999, "period": "年", "icon": "Crown", "color": "amber", "features": ["无限店铺管理", "高级AI分析", "多平台同步", "专属客服", "定制化报告", "API接口权限", "团队协作"] }
+    ],
+    "history": [
+      { "plan": "标准版", "date": "2026-05-14", "amount": "¥299/年" }
+    ]
+  },
+  "competitor": {
+    "plans": [
+      { "id": "basic", "name": "基础版", "price": 99, "description": "单个竞对基础分析", "features": ["1个竞对门店", "基础数据采集", "简单对比报告", "7天数据保留"], "iconBg": "bg-blue-500", "bgColor": "bg-blue-50", "borderColor": "border-blue-200" },
+      { "id": "pro", "name": "专业版", "price": 299, "description": "多竞对深度分析", "features": ["3个竞对门店", "深度数据采集", "AI智能洞察", "30天数据保留", "竞对监控预警"], "iconBg": "bg-indigo-500", "bgColor": "bg-indigo-50", "borderColor": "border-indigo-200", "recommended": true },
+      { "id": "enterprise", "name": "企业版", "price": 999, "description": "全商圈竞对分析", "features": ["10个竞对门店", "全维度数据采集", "AI深度洞察", "90天数据保留", "实时监控预警", "定制报告导出"], "iconBg": "bg-amber-500", "bgColor": "bg-amber-50", "borderColor": "border-amber-200" }
+    ],
+    "tasks": []
+  },
+  "annual_report": {
+    "personalityType": "口碑管理专家",
+    "yearlyData": {
+      "2023": {
+        "year": 2023,
+        "totalReviews": 2845,
+        "averageRating": 4.1,
+        "sentiment": { "positive": 68.5, "negative": 18.3, "neutral": 13.2 },
+        "replyStats": { "replyRate": 72.5, "avgReplyTime": 18.5, "repliedCount": 2063, "unrepliedCount": 782, "replySentiment": { "positive": 85.2, "negative": 8.3, "neutral": 6.5 } },
+        "monthlyData": [
+          { "month": 1, "count": 245, "avgRating": 4.0, "replyCount": 178 },
+          { "month": 2, "count": 198, "avgRating": 3.9, "replyCount": 142 },
+          { "month": 3, "count": 256, "avgRating": 4.1, "replyCount": 189 },
+          { "month": 4, "count": 278, "avgRating": 4.2, "replyCount": 203 },
+          { "month": 5, "count": 295, "avgRating": 4.3, "replyCount": 218 },
+          { "month": 6, "count": 312, "avgRating": 4.2, "replyCount": 231 },
+          { "month": 7, "count": 345, "avgRating": 4.4, "replyCount": 256 },
+          { "month": 8, "count": 358, "avgRating": 4.5, "replyCount": 268 },
+          { "month": 9, "count": 298, "avgRating": 4.3, "replyCount": 221 },
+          { "month": 10, "count": 267, "avgRating": 4.2, "replyCount": 198 },
+          { "month": 11, "count": 248, "avgRating": 4.1, "replyCount": 183 },
+          { "month": 12, "count": 245, "avgRating": 4.0, "replyCount": 176 }
+        ],
+        "topKeywords": [
+          { "word": "服务态度好", "count": 856, "sentiment": "positive" },
+          { "word": "菜品新鲜", "count": 723, "sentiment": "positive" },
+          { "word": "环境舒适", "count": 645, "sentiment": "positive" },
+          { "word": "等位时间长", "count": 234, "sentiment": "negative" },
+          { "word": "价格偏高", "count": 198, "sentiment": "negative" }
+        ],
+        "categoryScores": { "service": 4.3, "food": 4.2, "environment": 4.5, "price": 3.8, "speed": 3.9 },
+        "competitorAvgRating": 4.0,
+        "marketShare": 18.5
+      },
+      "2024": {
+        "year": 2024,
+        "totalReviews": 3420,
+        "averageRating": 4.3,
+        "sentiment": { "positive": 74.2, "negative": 14.8, "neutral": 11.0 },
+        "replyStats": { "replyRate": 82.3, "avgReplyTime": 12.3, "repliedCount": 2815, "unrepliedCount": 605, "replySentiment": { "positive": 88.5, "negative": 6.2, "neutral": 5.3 } },
+        "monthlyData": [
+          { "month": 1, "count": 285, "avgRating": 4.1, "replyCount": 234 },
+          { "month": 2, "count": 245, "avgRating": 4.2, "replyCount": 201 },
+          { "month": 3, "count": 298, "avgRating": 4.3, "replyCount": 248 },
+          { "month": 4, "count": 325, "avgRating": 4.4, "replyCount": 271 },
+          { "month": 5, "count": 358, "avgRating": 4.5, "replyCount": 298 },
+          { "month": 6, "count": 376, "avgRating": 4.4, "replyCount": 312 },
+          { "month": 7, "count": 398, "avgRating": 4.6, "replyCount": 331 },
+          { "month": 8, "count": 412, "avgRating": 4.7, "replyCount": 345 },
+          { "month": 9, "count": 356, "avgRating": 4.5, "replyCount": 298 },
+          { "month": 10, "count": 324, "avgRating": 4.3, "replyCount": 271 },
+          { "month": 11, "count": 298, "avgRating": 4.2, "replyCount": 248 },
+          { "month": 12, "count": 285, "avgRating": 4.3, "replyCount": 238 }
+        ],
+        "topKeywords": [
+          { "word": "服务贴心", "count": 1023, "sentiment": "positive" },
+          { "word": "食材新鲜", "count": 876, "sentiment": "positive" },
+          { "word": "环境优雅", "count": 765, "sentiment": "positive" },
+          { "word": "等位改善", "count": 456, "sentiment": "positive" },
+          { "word": "停车不便", "count": 267, "sentiment": "negative" }
+        ],
+        "categoryScores": { "service": 4.5, "food": 4.4, "environment": 4.6, "price": 4.0, "speed": 4.2 },
+        "competitorAvgRating": 4.2,
+        "marketShare": 21.3
+      },
+      "2025": {
+        "year": 2025,
+        "totalReviews": 3842,
+        "averageRating": 4.5,
+        "sentiment": { "positive": 76.5, "negative": 12.3, "neutral": 11.2 },
+        "replyStats": { "replyRate": 89.7, "avgReplyTime": 8.5, "repliedCount": 3447, "unrepliedCount": 395, "replySentiment": { "positive": 91.2, "negative": 5.8, "neutral": 3.0 } },
+        "monthlyData": [
+          { "month": 1, "count": 320, "avgRating": 4.2, "replyCount": 289 },
+          { "month": 2, "count": 285, "avgRating": 4.1, "replyCount": 256 },
+          { "month": 3, "count": 350, "avgRating": 4.3, "replyCount": 318 },
+          { "month": 4, "count": 380, "avgRating": 4.4, "replyCount": 345 },
+          { "month": 5, "count": 410, "avgRating": 4.5, "replyCount": 376 },
+          { "month": 6, "count": 395, "avgRating": 4.3, "replyCount": 359 },
+          { "month": 7, "count": 420, "avgRating": 4.6, "replyCount": 389 },
+          { "month": 8, "count": 450, "avgRating": 4.5, "replyCount": 412 },
+          { "month": 9, "count": 380, "avgRating": 4.4, "replyCount": 345 },
+          { "month": 10, "count": 350, "avgRating": 4.3, "replyCount": 318 },
+          { "month": 11, "count": 320, "avgRating": 4.2, "replyCount": 289 },
+          { "month": 12, "count": 290, "avgRating": 4.4, "replyCount": 263 }
+        ],
+        "topKeywords": [
+          { "word": "服务优质", "count": 1156, "sentiment": "positive" },
+          { "word": "菜品出色", "count": 987, "sentiment": "positive" },
+          { "word": "环境舒适", "count": 876, "sentiment": "positive" },
+          { "word": "上菜迅速", "count": 543, "sentiment": "positive" },
+          { "word": "餐具卫生", "count": 234, "sentiment": "negative" }
+        ],
+        "categoryScores": { "service": 4.7, "food": 4.6, "environment": 4.8, "price": 4.2, "speed": 4.5 },
+        "competitorAvgRating": 4.3,
+        "marketShare": 24.7
+      }
+    },
+    "insights": {
+      "2023": { "yearOverYear": { "reviewGrowth": 8.5, "ratingChange": 0.1, "replyRateChange": 5.2 }, "highlights": ["整体口碑稳步提升", "回复率显著提高"], "improvements": ["部分门店服务速度待提升"], "aiSummary": "2023年是口碑管理的基础年，整体评分4.1，仍有较大提升空间。", "personalityType": "口碑管理专家", "recommendations": ["加强服务培训", "优化出餐流程"] },
+      "2024": { "yearOverYear": { "reviewGrowth": 20.3, "ratingChange": 0.2, "replyRateChange": 9.8 }, "highlights": ["平均评分突破4.3", "AI回复率大幅提升"], "improvements": ["继续保持服务水准"], "aiSummary": "2024年口碑显著提升，全年评分增长0.2，回复率提升近10%。", "personalityType": "口碑管理专家", "recommendations": ["扩大优质门店规模", "深化AI应用"] },
+      "2025": { "yearOverYear": { "reviewGrowth": 12.3, "ratingChange": 0.2, "replyRateChange": 7.4 }, "highlights": ["平均评分突破4.5", "市场竞争力显著提升"], "improvements": ["持续监控差评关键词"], "aiSummary": "2025年口碑管理成效显著，已进入商圈前列，建议保持并扩大优势。", "personalityType": "口碑管理专家", "recommendations": ["打造标杆门店", "探索跨界合作"] }
+    },
+    "historicalTrends": {
+      "bestYear": 2025,
+      "worstYear": 2023,
+      "averageRating3Years": 4.3,
+      "totalReviews3Years": 10107
+    }
+  },
+  "dish_elimination": {
+    "dishes": [
+      { "name": "麻辣烫", "score": 3.2, "negativeRate": 22, "salesTrend": "下降", "suggestion": "末位淘汰建议" },
+      { "name": "酸菜鱼", "score": 3.8, "negativeRate": 15, "salesTrend": "稳定", "suggestion": "改进配方" },
+      { "name": "宫保鸡丁", "score": 4.1, "negativeRate": 8, "salesTrend": "上升", "suggestion": "保持" }
+    ]
+  },
+  "reviews": {
+    "list": [
+      { "id": 1, "store": "王府井总店", "user": "张女士", "avatar": "", "content": "菜品味道很不错，特别是招牌牛肉，服务也周到。", "rating": 5, "platform": "美团", "time": "2026-05-18 14:30", "sentiment": "positive", "replied": true, "reply": "感谢您的好评！我们会继续保持，期待您的再次光临！", "replyTime": "2026-05-18 14:45", "tags": ["味道好", "服务好"], "hasImage": false, "images": [], "likeCount": 12, "aiGenerated": false },
+      { "id": 2, "store": "三里屯店", "user": "李先生", "avatar": "", "content": "等餐时间有点久，希望改进。", "rating": 3, "platform": "大众点评", "time": "2026-05-18 13:15", "sentiment": "neutral", "replied": true, "reply": "非常抱歉给您带来不便，我们已经在优化出餐流程，期待您的再次光临。", "replyTime": "2026-05-18 13:30", "tags": ["等餐久"], "hasImage": false, "images": [], "likeCount": 3, "aiGenerated": true },
+      { "id": 3, "store": "王府井总店", "user": "王阿姨", "avatar": "", "content": "食材不新鲜，感觉不太好。", "rating": 2, "platform": "美团", "time": "2026-05-18 12:00", "sentiment": "negative", "replied": false, "reply": "", "replyTime": "", "tags": ["食材不新鲜"], "hasImage": false, "images": [], "likeCount": 1, "aiGenerated": false },
+      { "id": 4, "store": "天河城店", "user": "赵同学", "avatar": "", "content": "环境很好，适合拍照打卡！下次还会来。", "rating": 5, "platform": "小红书", "time": "2026-05-18 11:00", "sentiment": "positive", "replied": true, "reply": "亲爱的赵同学，非常感谢您的分享！看到您拍的照片真的很棒，期待您下次光临！", "replyTime": "2026-05-18 11:10", "tags": ["环境好", "适合打卡"], "hasImage": true, "images": ["https://placehold.co/400x300/FFE5B4/333?text=food1", "https://placehold.co/400x300/FFE5B4/333?text=food2"], "likeCount": 24, "aiGenerated": true },
+      { "id": 5, "store": "三里屯店", "user": "刘先生", "avatar": "", "content": "上菜速度快，味道正宗，分量也足。", "rating": 4, "platform": "抖音", "time": "2026-05-18 10:20", "sentiment": "positive", "replied": true, "reply": "感谢您的认可！我们会继续保持，欢迎常来！", "replyTime": "2026-05-18 10:35", "tags": ["上菜快", "味道正"], "hasImage": false, "images": [], "likeCount": 8, "aiGenerated": true },
+      { "id": 6, "store": "王府井总店", "user": "小红书达人-露露", "avatar": "https://placehold.co/100x100/FF6B6B/fff?text=LL", "content": "这家店的装修风格太出片了！菜品不仅颜值高，味道也很有惊喜。特别是和牛塔可，强烈推荐！下次还会带朋友来打卡。", "rating": 5, "platform": "小红书", "time": "2026-05-18 09:30", "sentiment": "positive", "replied": true, "reply": "亲爱的露露，非常感谢您的精美分享！看到您拍的照片简直是专业水准，我们非常希望能征得您的授权，将您的这段文字和图片分享到我们的官号，让更多食客看到。我们会为您准备一份价值188元的双人套餐作为回馈，期待您的回复！", "replyTime": "2026-05-18 09:45", "tags": ["味道好", "环境美", "网红店"], "hasImage": true, "images": ["https://placehold.co/400x300/E8D5B7/333?text=store1", "https://placehold.co/400x300/E8D5B7/333?text=food1"], "likeCount": 24, "aiGenerated": true },
+      { "id": 7, "store": "天河城店", "user": "吃货大作战", "avatar": "https://placehold.co/100x100/4ECDC4/fff?text=CH", "content": "排队时间太久了，说好半小时结果等了一个多小时。服务员态度也有点不耐烦，希望改进。", "rating": 2, "platform": "美团", "time": "2026-05-17 20:15", "sentiment": "negative", "replied": false, "reply": "", "replyTime": "", "tags": ["排队久", "服务一般"], "hasImage": false, "images": [], "likeCount": 5, "aiGenerated": false },
+      { "id": 8, "store": "南京路店", "user": "美食博主-小王", "avatar": "https://placehold.co/100x100/45B7D1/fff?text=XW", "content": "环境很棒，适合约会，菜品也很精致。特别推荐他们的甜点。", "rating": 5, "platform": "大众点评", "time": "2026-05-17 19:00", "sentiment": "positive", "replied": true, "reply": "感谢您的好评！您的认可是对我们最大的鼓励，期待再次为您服务！", "replyTime": "2026-05-17 19:20", "tags": ["环境好", "适合约会", "甜点好吃"], "hasImage": true, "images": ["https://placehold.co/400x300/D4A5A5/fff?text=dish1"], "likeCount": 18, "aiGenerated": false },
+      { "id": 9, "store": "三里屯店", "user": "匿名用户", "avatar": "", "content": "价格偏贵，分量有点少，性价比不高。", "rating": 3, "platform": "抖音", "time": "2026-05-17 18:30", "sentiment": "neutral", "replied": false, "reply": "", "replyTime": "", "tags": ["价格高", "分量少"], "hasImage": false, "images": [], "likeCount": 2, "aiGenerated": false },
+      { "id": 10, "store": "王府井总店", "user": "带娃吃饭", "avatar": "", "content": "服务员很贴心，看到我带了小朋友主动拿了玩具，非常感谢！", "rating": 5, "platform": "美团", "time": "2026-05-17 17:45", "sentiment": "positive", "replied": true, "reply": "感谢您的好评！让每位顾客感受到家的温暖是我们的追求，期待您和小宝贝再次光临！", "replyTime": "2026-05-17 18:00", "tags": ["服务好", "适合带娃"], "hasImage": false, "images": [], "likeCount": 15, "aiGenerated": true },
+      { "id": 11, "store": "天河城店", "user": "探店达人", "avatar": "", "content": "味道不错，还会再来！推荐和牛塔可和招牌牛肉面。", "rating": 4, "platform": "小红书", "time": "2026-05-17 16:20", "sentiment": "positive", "replied": true, "reply": "感谢您的推荐！和牛塔可和招牌牛肉面是我们的招牌，期待您下次光临尝试更多美食！", "replyTime": "2026-05-17 16:40", "tags": ["味道好", "会再来"], "hasImage": false, "images": [], "likeCount": 9, "aiGenerated": true },
+      { "id": 12, "store": "南京路店", "user": "上班族小陈", "avatar": "", "content": "外卖送餐太慢了，菜都凉了。而且这个价格配这个量也太坑了吧！", "rating": 2, "platform": "美团外卖", "time": "2026-05-17 12:30", "sentiment": "negative", "replied": false, "reply": "", "replyTime": "", "tags": ["送餐慢", "价格高", "分量少"], "hasImage": false, "images": [], "likeCount": 7, "aiGenerated": false }
+    ],
+    "stream": [
+      { "id": 1, "user": "赵同学", "action": "评价了", "target": "招牌牛肉面", "rating": 5, "time": "刚刚", "avatar": "" },
+      { "id": 2, "user": "刘先生", "action": "打卡了", "target": "三里屯店", "time": "2分钟前", "avatar": "" },
+      { "id": 3, "user": "露露", "action": "收藏了", "target": "和牛塔可", "time": "5分钟前", "avatar": "https://placehold.co/100x100/FF6B6B/fff?text=LL" },
+      { "id": 4, "user": "小王", "action": "评价了", "target": "焦糖布丁", "rating": 5, "time": "10分钟前", "avatar": "https://placehold.co/100x100/45B7D1/fff?text=XW" }
+    ]
+  },
+  "stores": {
+    "list": [
+      { "id": 1, "name": "王府井总店", "score": 4.9, "reviews": 120, "trend": "up", "health": 98, "address": "北京市东城区王府井大街88号" },
+      { "id": 2, "name": "三里屯店", "score": 4.8, "reviews": 85, "trend": "up", "health": 95, "address": "北京市朝阳区三里屯路12号" },
+      { "id": 3, "name": "天河城店", "score": 4.7, "reviews": 64, "trend": "down", "health": 88, "address": "广州市天河区天河城购物中心3楼" }
+    ]
+  },
+  "notifications": {
+    "settings": {
+      "newReview": true,
+      "negativeAlert": true,
+      "weeklyReport": false,
+      "competitorAlert": true
+    }
+  },
+  "platforms": {
+    "connected": [
+      { "name": "美团", "status": "connected", "lastSync": "2分钟前", "reviewCount": 4852 },
+      { "name": "大众点评", "status": "connected", "lastSync": "5分钟前", "reviewCount": 3241 },
+      { "name": "抖音", "status": "warning", "lastSync": "12分钟前", "reviewCount": 1628 },
+      { "name": "小红书", "status": "connected", "lastSync": "8分钟前", "reviewCount": 1021 }
+    ]
+  },
+  "reply_templates": {
+    "list": [
+      { "id": 1, "name": "好评感谢模板", "content": "感谢您的好评！我们会继续保持，期待您的再次光临！", "type": "positive", "usageCount": 156 },
+      { "id": 2, "name": "差评处理模板", "content": "非常抱歉给您带来不好的体验，我们会认真改进，希望有机会为您提供更好的服务。", "type": "negative", "usageCount": 43 }
+    ]
+  },
+  "auto_reply": {
+    "enabled": true,
+    "rules": [
+      { "id": 1, "keyword": "好评", "action": "自动回复感谢语", "enabled": true },
+      { "id": 2, "keyword": "差评", "action": "转人工审核", "enabled": true }
+    ]
+  },
+  "negative_reply": {
+    "tasks": [
+      {
+        "id": 1,
+        "user": "匿名用户",
+        "rating": 1,
+        "content": "昨晚吃的海鲜拼盘不太新鲜，回家之后拉肚子了。希望商家能给个说法！",
+        "time": "2小时前",
+        "platform": "美团",
+        "aiDraft": "尊敬的顾客，非常抱歉给您带来了不愉快的用餐体验。我们一向非常重视食材新鲜度，针对您反馈的情况，我们将立即开展内部自查。请您留下联系方式或致电本店，我们将第一时间为您解决并处理补偿事宜。",
+        "risk": "high",
+        "scores": {
+          "realism": 9,
+          "empathy": 10,
+          "concreteness": 8,
+          "consistency": 9
+        }
+      },
+      {
+        "id": 2,
+        "user": "王大锤",
+        "rating": 2,
+        "content": "环境太吵了，隔壁桌在大声喧哗，服务员也不管管。",
+        "time": "5小时前",
+        "platform": "大众点评",
+        "aiDraft": "您好，对于您提到的环境嘈杂问题，我们深表歉意。我们一直致力于为顾客提供舒适的用餐环境，您的反馈对我们非常重要。我们会加强现场管理，感谢您的建议。",
+        "risk": "low",
+        "scores": {
+          "realism": 5,
+          "empathy": 6,
+          "concreteness": 4,
+          "consistency": 5
+        }
+      },
+      {
+        "id": 3,
+        "user": "美食达人-小李",
+        "rating": 2,
+        "content": "服务态度很差，叫了半天没人理，上菜也慢，不会再来第二次了！",
+        "time": "1天前",
+        "platform": "抖音",
+        "aiDraft": "非常抱歉给您带来了糟糕的体验。服务不周是我们最大的忌讳，我们已经对相关服务人员进行了培训和批评。希望您能给我们一次改进的机会，下次来店一定让您满意。",
+        "risk": "medium",
+        "scores": {
+          "realism": 7,
+          "empathy": 8,
+          "concreteness": 7,
+          "consistency": 7
+        }
+      }
+    ]
+  }
+}
