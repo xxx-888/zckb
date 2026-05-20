@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Phone, Shield, Lock, CheckCircle2, AlertCircle } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { useToast } from '../../hooks/use-toast';
+import { authApi } from '../../api/auth';
 
 export const ForgotPassword: React.FC = () => {
   const navigate = useNavigate();
@@ -26,7 +27,7 @@ export const ForgotPassword: React.FC = () => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleSendCode = () => {
+  const handleSendCode = async () => {
     if (!formData.phone.trim()) {
       error('请输入手机号', '手机号不能为空');
       return;
@@ -39,9 +40,9 @@ export const ForgotPassword: React.FC = () => {
 
     setCodeLoading(true);
     
-    // 模拟发送验证码
-    setTimeout(() => {
-      setCodeLoading(false);
+    try {
+      // 调用后端发送验证码API
+      await authApi.sendVerifyCode(formData.phone);
       success('验证码已发送', `验证码已发送到 ${formData.phone}`);
       
       // 开始倒计时
@@ -55,10 +56,17 @@ export const ForgotPassword: React.FC = () => {
           return prev - 1;
         });
       }, 1000);
-    }, 1000);
+    } catch (err: any) {
+      // 优先使用后端返回的错误信息
+      const errorMessage = err.backendMessage || err.message || '验证码发送失败';
+      console.error('Send code error:', { message: errorMessage, response: err.response?.data });
+      error('发送失败', errorMessage);
+    } finally {
+      setCodeLoading(false);
+    }
   };
 
-  const handleVerifyPhone = (e: React.FormEvent) => {
+  const handleVerifyPhone = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!formData.phone.trim()) {
@@ -78,15 +86,22 @@ export const ForgotPassword: React.FC = () => {
 
     setLoading(true);
 
-    // 模拟验证
-    setTimeout(() => {
-      setLoading(false);
-      setStep(2);
+    try {
+      // 调用后端验证验证码API
+      await authApi.verifyCode(formData.phone, formData.verifyCode);
       success('验证成功', '请设置新密码');
-    }, 1000);
+      setStep(2);
+    } catch (err: any) {
+      // 优先使用后端返回的错误信息
+      const errorMessage = err.backendMessage || err.message || '验证码错误';
+      console.error('Verify error:', { message: errorMessage, response: err.response?.data });
+      error('验证失败', errorMessage);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleResetPassword = (e: React.FormEvent) => {
+  const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!formData.newPassword) {
@@ -106,12 +121,19 @@ export const ForgotPassword: React.FC = () => {
 
     setLoading(true);
 
-    // 模拟重置密码
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      // 调用后端重置密码API
+      await authApi.resetPassword(formData.phone, formData.verifyCode, formData.newPassword);
       setStep(3);
       success('密码重置成功', '请使用新密码登录');
-    }, 1500);
+    } catch (err: any) {
+      // 优先使用后端返回的错误信息
+      const errorMessage = err.backendMessage || err.message || '密码重置失败';
+      console.error('Reset password error:', { message: errorMessage, response: err.response?.data });
+      error('重置失败', errorMessage);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleBackToLogin = () => {
@@ -185,7 +207,7 @@ export const ForgotPassword: React.FC = () => {
                 <input 
                   type="tel" 
                   value={formData.phone}
-                  onChange={(e) => handleInputChange('phone', e.target.value)}
+                  onChange={(e) => handleInputChange('phone', e.target.value.replace(/\D/g, '').slice(0, 11))}
                   placeholder="请输入注册手机号"
                   maxLength={11}
                   className="w-full bg-slate-50 border-none rounded-2xl py-4 pl-12 pr-4 focus:ring-2 focus:ring-indigo-600 transition-all outline-none text-sm"
@@ -246,8 +268,9 @@ export const ForgotPassword: React.FC = () => {
                 <input 
                   type={showPassword ? "text" : "password"}
                   value={formData.newPassword}
-                  onChange={(e) => handleInputChange('newPassword', e.target.value)}
+                  onChange={(e) => handleInputChange('newPassword', e.target.value.slice(0, 20))}
                   placeholder="请设置新密码（至少6位）"
+                  maxLength={20}
                   className="w-full bg-slate-50 border-none rounded-2xl py-4 pl-12 pr-12 focus:ring-2 focus:ring-indigo-600 transition-all outline-none text-sm"
                 />
                 <button 
@@ -268,8 +291,9 @@ export const ForgotPassword: React.FC = () => {
                 <input 
                   type={showConfirmPassword ? "text" : "password"}
                   value={formData.confirmPassword}
-                  onChange={(e) => handleInputChange('confirmPassword', e.target.value)}
+                  onChange={(e) => handleInputChange('confirmPassword', e.target.value.slice(0, 20))}
                   placeholder="请再次输入新密码"
+                  maxLength={20}
                   className="w-full bg-slate-50 border-none rounded-2xl py-4 pl-12 pr-12 focus:ring-2 focus:ring-indigo-600 transition-all outline-none text-sm"
                 />
                 <button 

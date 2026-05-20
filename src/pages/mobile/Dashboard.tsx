@@ -26,7 +26,6 @@ import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { MobileLayout } from '../../components/MobileLayout';
 import { cn } from '../../lib/utils';
-import { currentUser } from '../../lib/mockData';
 import { useToast } from '../../hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -44,13 +43,17 @@ import {
   HealthStatus,
   AlertData
 } from '../../api/dashboard';
+import { authApi } from '../../api/auth';
 
 export const Dashboard: React.FC = () => {
   const { success } = useToast();
   const navigate = useNavigate();
-  const isHQ = currentUser.role === 'HQ' || currentUser.role === 'OPERATOR';
-  const [timePeriod, setTimePeriod] = useState<'today' | 'yesterday' | '7days' | '30days' | 'custom'>('7days');
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  
+  // ===== 判断用户角色 =====
+  const isHQ = currentUser?.role === 'HQ' || currentUser?.role === 'OPERATOR';
   const [showTimeDropdown, setShowTimeDropdown] = useState(false);
+  const [timePeriod, setTimePeriod] = useState<'today' | 'yesterday' | '7days' | '30days' | 'custom'>('7days');
   const dropdownRef = React.useRef<HTMLDivElement>(null);
 
   // ===== API 数据状态 =====
@@ -68,7 +71,7 @@ export const Dashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const lastPeriodRef = React.useRef<string | null>(null);
-
+  
   // ===== 时间筛选选项 =====
   const timeOptions = [
     { value: 'today', label: '今天', dateRange: '2026年05月12日' },
@@ -158,6 +161,15 @@ export const Dashboard: React.FC = () => {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+  
+  // ===== 获取当前用户 =====
+  useEffect(() => {
+    const user = authApi.getStoredUser();
+    setCurrentUser(user);
+    if (!user) {
+      navigate('/mobile/login');
+    }
+  }, [navigate]);
 
   // ===== 加载状态 =====
   if (loading) {
@@ -255,36 +267,36 @@ export const Dashboard: React.FC = () => {
           {/* 第一行：评论总数 + 趋势 */}
           <div className="flex items-end justify-between mb-4">
             <div>
-              <p className="text-4xl font-black text-slate-900">{coreStats?.totalReviews.toLocaleString()}</p>
-              <p className="text-xs text-slate-400 mt-1">评论总数</p>
-            </div>
-            <div className="flex items-center gap-1 bg-emerald-50 px-2 py-1 rounded-full">
-              <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />
-              <span className="text-xs font-bold text-emerald-600">{coreStats?.reviewTrend}</span>
+            <p className="text-4xl font-black text-slate-900">{coreStats?.total_reviews?.toLocaleString() || '0'}</p>
+            <p className="text-xs text-slate-400 mt-1">评论总数</p>
+          </div>
+          <div className="flex items-center gap-1 bg-emerald-50 px-2 py-1 rounded-full">
+            <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />
+            <span className="text-xs font-bold text-emerald-600">{coreStats?.review_trend || '0%'}</span>
             </div>
           </div>
 
           {/* 第二行：三个核心指标紧凑展示 */}
-          <div className="grid grid-cols-3 gap-3 mb-4">
-            <div className="bg-slate-50 rounded-xl p-3 text-center">
-              <Star className="w-4 h-4 fill-amber-400 text-amber-400 mx-auto mb-1" />
-              <p className="text-lg font-black text-slate-900">{coreStats?.avgRating}</p>
-              <p className="text-[9px] text-slate-400">平均星级</p>
-              <p className="text-[9px] text-emerald-500 mt-0.5">+{coreStats?.ratingTrend}</p>
+            <div className="grid grid-cols-3 gap-3 mb-4">
+              <div className="bg-slate-50 rounded-xl p-3 text-center">
+                <Star className="w-4 h-4 fill-amber-400 text-amber-400 mx-auto mb-1" />
+                <p className="text-lg font-black text-slate-900">{(coreStats?.avg_rating || 0).toFixed(1)}</p>
+                <p className="text-[9px] text-slate-400">平均星级</p>
+                <p className="text-[9px] text-emerald-500 mt-0.5">+{coreStats?.rating_trend || '0%'}</p>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-3 text-center">
+                <ThumbsUp className="w-4 h-4 text-emerald-500 mx-auto mb-1" />
+                <p className="text-lg font-black text-slate-900">{coreStats?.positive_rate || '0%'}</p>
+                <p className="text-[9px] text-slate-400">好评率</p>
+                <p className="text-[9px] text-emerald-500 mt-0.5">{coreStats?.positive_trend || '0%'}</p>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-3 text-center">
+                <Bot className="w-4 h-4 text-blue-500 mx-auto mb-1" />
+                <p className="text-lg font-black text-slate-900">{coreStats?.ai_reply_rate || '0%'}</p>
+                <p className="text-[9px] text-slate-400">AI回复率</p>
+                <p className="text-[9px] text-emerald-500 mt-0.5">{coreStats?.reply_trend || '0%'}</p>
+              </div>
             </div>
-            <div className="bg-slate-50 rounded-xl p-3 text-center">
-              <ThumbsUp className="w-4 h-4 text-emerald-500 mx-auto mb-1" />
-              <p className="text-lg font-black text-slate-900">{coreStats?.positiveRate}</p>
-              <p className="text-[9px] text-slate-400">好评率</p>
-              <p className="text-[9px] text-emerald-500 mt-0.5">{coreStats?.positiveTrend}</p>
-            </div>
-            <div className="bg-slate-50 rounded-xl p-3 text-center">
-              <Bot className="w-4 h-4 text-blue-500 mx-auto mb-1" />
-              <p className="text-lg font-black text-slate-900">{coreStats?.aiReplyRate}</p>
-              <p className="text-[9px] text-slate-400">AI回复率</p>
-              <p className="text-[9px] text-emerald-500 mt-0.5">{coreStats?.replyTrend}</p>
-            </div>
-          </div>
 
           {/* 第三行：平台分布 - 独立区域 */}
           <div className="mb-3">

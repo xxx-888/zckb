@@ -14,13 +14,14 @@ export default defineConfig({
     port: 5173,
     host: true,
     proxy: {
+      // 代理 /api 请求到后端 FastAPI 服务
+      // 前端请求: /api/auth/login
+      // 直接转发到: http://localhost:8000/api/auth/login
+      // 后端路由已配置 /api 前缀，无需重写
       '/api': {
-        target: 'http://localhost:3000',
+        target: 'http://localhost:8000',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, ''),
       },
     },
   },
-  // Vite 8+ 使用 Rolldown，不需要 manualChunks 配置
-  // 如果需要代码分割，Rolldown 会自动处理
 })

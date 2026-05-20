@@ -3,21 +3,22 @@ import { useNavigate } from 'react-router-dom';
 import { Brain, Lock, User, ArrowRight, Eye, EyeOff } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { useToast } from '../../hooks/use-toast';
+import { authApi } from '../../api/auth';
 
 export const Login: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
-  const [username, setUsername] = useState('');
+  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const { success, error } = useToast();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     
     // 表单验证
-    if (!username.trim()) {
+    if (!phone.trim()) {
       error('请输入账号', '账号不能为空');
       return;
     }
@@ -29,32 +30,44 @@ export const Login: React.FC = () => {
 
     setLoading(true);
 
-    // 模拟登录请求
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      const response = await authApi.login({
+        phone: phone.trim(),
+        password: password,
+      });
       
-      // 模拟登录成功
-      if (username === 'admin' && password === '123456') {
-        success('登录成功', '欢迎回来！');
-        
-        // 记住我
-        if (rememberMe) {
-          localStorage.setItem('rememberedUser', username);
-        }
-        
-        // 根据角色跳转（这里简化为都跳转到移动端仪表板）
+      success('登录成功', '欢迎回来！');
+      
+      // 记住我
+      if (rememberMe) {
+        localStorage.setItem('rememberedPhone', phone);
+      }
+      
+      // 根据角色跳转
+      if (response.user.role === 'HQ' || response.user.role === 'OPERATOR') {
         navigate('/mobile/dashboard');
       } else {
-        error('登录失败', '账号或密码错误');
+        navigate('/mobile/dashboard');
       }
-    }, 1500);
+    } catch (err: any) {
+      // 优先显示后端返回的错误信息
+      const errorMessage = err.backendMessage || err.message || '账号或密码错误';
+      console.error('Login error:', {
+        message: errorMessage,
+        status: err.status,
+        response: err.response?.data,
+      });
+      error('登录失败', errorMessage);
+    } finally {
+      setLoading(false);
+    }
   };
 
   // 检查是否有记住的账号
   React.useEffect(() => {
-    const remembered = localStorage.getItem('rememberedUser');
+    const remembered = localStorage.getItem('rememberedPhone');
     if (remembered) {
-      setUsername(remembered);
+      setPhone(remembered);
       setRememberMe(true);
     }
   }, []);
@@ -88,10 +101,14 @@ export const Login: React.FC = () => {
               <div className="relative">
                 <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
                 <input 
-                  type="text" 
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="账号 / 手机号"
+                  type="tel" 
+                  value={phone}
+                  onChange={(e) => {
+                    const value = e.target.value.replace(/\D/g, '').slice(0, 11);
+                    setPhone(value);
+                  }}
+                  placeholder="手机号"
+                  maxLength={11}
                   className="w-full bg-slate-50 border-none rounded-2xl py-4 pl-12 pr-4 focus:ring-2 focus:ring-indigo-600 transition-all outline-none"
                 />
               </div>
@@ -103,8 +120,9 @@ export const Login: React.FC = () => {
                 <input 
                   type={showPassword ? "text" : "password"}
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => setPassword(e.target.value.slice(0, 20))}
                   placeholder="登录密码"
+                  maxLength={20}
                   className="w-full bg-slate-50 border-none rounded-2xl py-4 pl-12 pr-12 focus:ring-2 focus:ring-indigo-600 transition-all outline-none"
                 />
                 <button 

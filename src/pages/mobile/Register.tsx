@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Store, User, Phone, Lock, Shield, Upload, CheckCircle2, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Store, User, Phone, Lock, Shield, CheckCircle2, AlertCircle } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { useToast } from '../../hooks/use-toast';
+import { authApi } from '../../api/auth';
 
 export const Register: React.FC = () => {
   const navigate = useNavigate();
@@ -27,7 +28,7 @@ export const Register: React.FC = () => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleSendCode = () => {
+  const handleSendCode = async () => {
     if (!formData.phone.trim()) {
       error('请输入手机号', '手机号不能为空');
       return;
@@ -40,9 +41,9 @@ export const Register: React.FC = () => {
 
     setCodeLoading(true);
     
-    // 模拟发送验证码
-    setTimeout(() => {
-      setCodeLoading(false);
+    try {
+      // 调用后端发送验证码API（模拟，后台会打印日志）
+      await authApi.sendRegisterCode(formData.phone);
       success('验证码已发送', `验证码已发送到 ${formData.phone}`);
       
       // 开始倒计时
@@ -56,10 +57,17 @@ export const Register: React.FC = () => {
           return prev - 1;
         });
       }, 1000);
-    }, 1000);
+    } catch (err: any) {
+      // 优先使用后端返回的错误信息
+      const errorMessage = err.backendMessage || err.message || '验证码发送失败';
+      console.error('Send code error:', { message: errorMessage, response: err.response?.data });
+      error('发送失败', errorMessage);
+    } finally {
+      setCodeLoading(false);
+    }
   };
 
-  const handleRegister = (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
 
     // 表单验证
@@ -110,15 +118,30 @@ export const Register: React.FC = () => {
 
     setLoading(true);
 
-    // 模拟注册请求
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      // 调用后端注册API
+      const registerData = {
+        phone: formData.phone.trim(),
+        username: formData.contactName.trim(),
+        password: formData.password,
+        verifyCode: formData.verifyCode,
+        password_confirm: formData.confirmPassword,
+      };
+      
+      await authApi.register(registerData);
       success('注册成功', '欢迎入驻智策口碑！即将跳转到登录页面...');
       
       setTimeout(() => {
         navigate('/mobile/login');
       }, 2000);
-    }, 1500);
+    } catch (err: any) {
+      // 优先使用后端返回的错误信息
+      const errorMessage = err.backendMessage || err.message || '注册失败，请重试';
+      console.error('Register error:', { message: errorMessage, response: err.response?.data });
+      error('注册失败', errorMessage);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -172,7 +195,7 @@ export const Register: React.FC = () => {
             </div>
           </div>
 
-          {/* 手机号 + 验证码 */}
+          {/* 手机号 + 验证码按钮 */}
           <div className="space-y-2">
             <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">手机号码</label>
             <div className="flex gap-3">
@@ -181,7 +204,7 @@ export const Register: React.FC = () => {
                 <input 
                   type="tel" 
                   value={formData.phone}
-                  onChange={(e) => handleInputChange('phone', e.target.value)}
+                  onChange={(e) => handleInputChange('phone', e.target.value.replace(/\D/g, '').slice(0, 11))}
                   placeholder="请输入手机号"
                   maxLength={11}
                   className="w-full bg-slate-50 border-none rounded-2xl py-4 pl-12 pr-4 focus:ring-2 focus:ring-indigo-600 transition-all outline-none text-sm"
@@ -219,13 +242,14 @@ export const Register: React.FC = () => {
             <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">设置密码</label>
             <div className="relative">
               <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-              <input 
-                type={showPassword ? "text" : "password"}
-                value={formData.password}
-                onChange={(e) => handleInputChange('password', e.target.value)}
-                placeholder="请设置登录密码（至少6位）"
-                className="w-full bg-slate-50 border-none rounded-2xl py-4 pl-12 pr-12 focus:ring-2 focus:ring-indigo-600 transition-all outline-none text-sm"
-              />
+                <input 
+                  type={showPassword ? "text" : "password"}
+                  value={formData.password}
+                  onChange={(e) => handleInputChange('password', e.target.value.slice(0, 20))}
+                  placeholder="请设置登录密码（至少6位）"
+                  maxLength={20}
+                  className="w-full bg-slate-50 border-none rounded-2xl py-4 pl-12 pr-12 focus:ring-2 focus:ring-indigo-600 transition-all outline-none text-sm"
+                />
               <button 
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
@@ -241,13 +265,14 @@ export const Register: React.FC = () => {
             <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">确认密码</label>
             <div className="relative">
               <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-              <input 
-                type={showConfirmPassword ? "text" : "password"}
-                value={formData.confirmPassword}
-                onChange={(e) => handleInputChange('confirmPassword', e.target.value)}
-                placeholder="请再次输入密码"
-                className="w-full bg-slate-50 border-none rounded-2xl py-4 pl-12 pr-12 focus:ring-2 focus:ring-indigo-600 transition-all outline-none text-sm"
-              />
+                <input 
+                  type={showConfirmPassword ? "text" : "password"}
+                  value={formData.confirmPassword}
+                  onChange={(e) => handleInputChange('confirmPassword', e.target.value.slice(0, 20))}
+                  placeholder="请再次输入密码"
+                  maxLength={20}
+                  className="w-full bg-slate-50 border-none rounded-2xl py-4 pl-12 pr-12 focus:ring-2 focus:ring-indigo-600 transition-all outline-none text-sm"
+                />
               <button 
                 type="button"
                 onClick={() => setShowConfirmPassword(!showConfirmPassword)}

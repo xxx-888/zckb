@@ -1,0 +1,93 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "review-spider-service"
+version = "0.1.0"
+description = "Distributed review spider service for multiple e-commerce platforms"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    # Web Framework
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.27.0",
+
+    # Task Queue
+    "celery[redis]>=5.3.0",
+    "redis>=5.0.0",
+
+    # HTTP Client
+    "httpx>=0.27.0",
+
+    # Web Scraping
+    "playwright>=1.42.0",
+    "beautifulsoup4>=4.12.0",
+    "lxml>=5.1.0",
+
+    # Data Validation
+    "pydantic>=2.6.0",
+    "pydantic-settings>=2.1.0",
+
+    # Database
+    "sqlalchemy[asyncio]>=2.0.0",
+    "asyncpg>=0.29.0",
+
+    # Utilities
+    "python-dotenv>=1.0.0",
+    "tenacity>=8.2.0",
+    "python-json-logger>=2.0.7",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+    "black>=24.0.0",
+    "isort>=5.13.0",
+    "mypy>=1.8.0",
+    "ruff>=0.2.0",
+]
+
+[project.scripts]
+spider-api = "app.main:main"
+spider-worker = "worker:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310", "py311", "py312"]
+
+[tool.isort]
+profile = "black"
+line_length = 100
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+ignore_missing_imports = true
+
+[tool.ruff]
+line-length = 100
+select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "SIM"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+pythonpath = ["."]

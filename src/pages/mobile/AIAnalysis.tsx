@@ -266,23 +266,41 @@ export const AIAnalysis: React.FC = () => {
               </Card>
             </div>
 
-            {/* AI Insights Card */}
-            <Card className="p-5 border-slate-100 shadow-sm bg-white">
-              <div className="flex items-center gap-2 mb-3">
-                <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center">
-                  <Lightbulb className="w-4 h-4 text-amber-500" />
+            {/* AI Insights Card - 基于 topics 数据动态生成 */}
+            {topics.length > 0 && (
+              <Card className="p-5 border-slate-100 shadow-sm bg-white">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center">
+                    <Lightbulb className="w-4 h-4 text-amber-500" />
+                  </div>
+                  <h3 className="font-bold text-sm text-slate-700 tracking-wide">AI 诊断简报</h3>
                 </div>
-                <h3 className="font-bold text-sm text-slate-700 tracking-wide">AI 诊断简报</h3>
-              </div>
-              <p className="text-xs text-slate-500 leading-relaxed mb-4">
-                本周"太咸"相关的负面词汇增长了 15%，主要集中在"招牌牛肉面"这一菜品上。建议厨师长检查标准出品盐度。
-              </p>
+                {(() => {
+                  const negativeTopics = topics.filter(t => t.sentiment === 'negative');
+                  const topNegative = negativeTopics.length > 0 ? negativeTopics.reduce((a, b) => (a.count >= b.count) ? a : b) : null;
+                  if (topNegative) {
+                    return (
+                      <p className="text-xs text-slate-500 leading-relaxed mb-4">
+                        本周"<span className="font-bold text-orange-600">{topNegative.label}</span>"相关的负面评价共 <span className="font-bold text-orange-600">{topNegative.count}条</span>，
+                        趋势{topNegative.trend === 'up' ? '正在上升' : topNegative.trend === 'down' ? '有所下降' : '保持稳定'}。
+                        建议相关部门跟进处理。
+                      </p>
+                    );
+                  }
+                  return (
+                    <p className="text-xs text-slate-500 leading-relaxed mb-4">
+                      本周数据无明显异常，整体评价{topics.filter(t => t.sentiment === 'positive').length > 0 ? '偏正面' : '稳定'}。
+                    </p>
+                  );
+                })()}
                 <button 
                   className="w-full py-2.5 bg-orange-50 hover:bg-orange-100 text-orange-600 rounded-xl text-xs font-bold transition-all border border-orange-200"
+                  onClick={() => navigate('/mobile/annual-report')}
                 >
-                  查看菜品详情报告
+                  查看详细报告
                 </button>
-            </Card>
+              </Card>
+            )}
           </>
         )}
 

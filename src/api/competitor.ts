@@ -1,6 +1,18 @@
-/**
- * 竞对分析 API 接口
- */
+﻿import { api } from '@/lib/api';
+
+export interface Competitor {
+  id: string;
+  store_id: string;
+  name: string;
+  platform: string;
+  platform_store_id: string;
+  rating: number;
+  positive_rate: number;
+  review_count: number;
+  trends_data?: any;
+  bad_tags?: string[];
+  last_synced_at?: string;
+}
 
 export interface CompetitorPlan {
   id: string;
@@ -8,49 +20,69 @@ export interface CompetitorPlan {
   price: number;
   description: string;
   features: string[];
-  iconBg: string;
-  bgColor: string;
-  borderColor: string;
-  recommended?: boolean;
+  competitor_count: number;
+  analysis_depth: string;
+  report_format: string;
 }
 
 export interface CompetitorTask {
   id: string;
   competitor_name: string;
   platform: string;
-  status: 'pending' | 'collecting' | 'analyzing' | 'completed';
+  status: 'pending' | 'collecting' | 'analyzing' | 'completed' | 'failed';
   payment_status: 'unpaid' | 'paid';
   price: number;
+  result_data?: any;
   created_at: string;
+  updated_at?: string;
 }
 
-const BASE_URL = '/api';
+export const competitorApi = {
+  getCompetitors: async (storeId?: string): Promise<Competitor[]> => {
+    const url = storeId ? `/competitors?store_id=${storeId}` : '/competitors';
+    const response = await api.get<any>(url);
+    return response.data || response;
+  },
 
-async function fetchAPI<T>(endpoint: string): Promise<T> {
-  const res = await fetch(`${BASE_URL}${endpoint}`);
-  if (!res.ok) throw new Error(`API 请求失败: ${res.status}`);
-  return res.json();
-}
+  createCompetitor: async (data: Partial<Competitor>): Promise<Competitor> => {
+    const response = await api.post<any, any>('/competitors', data);
+    return response.data || response;
+  },
 
-/** 获取套餐列表 GET /api/competitor/plans */
-export async function fetchCompetitorPlans(): Promise<CompetitorPlan[]> {
-  const data = await fetchAPI<any>('/competitor');
-  return data.plans || [];
-}
+  deleteCompetitor: async (id: string): Promise<void> => {
+    const response = await api.delete(`/competitors/${id}`);
+    return response.data;
+  },
 
-/** 获取任务列表 GET /api/competitor/tasks */
-export async function fetchCompetitorTasks(): Promise<CompetitorTask[]> {
-  const data = await fetchAPI<any>('/competitor');
-  return data.tasks || [];
-}
+  getCompetitorDetail: async (id: string): Promise<Competitor> => {
+    const response = await api.get<any>(`/competitors/${id}`);
+    return response.data || response;
+  },
 
-/** 创建竞对分析任务 POST /api/competitor/tasks */
-export async function createCompetitorTask(task: Omit<CompetitorTask, 'id' | 'created_at'>): Promise<CompetitorTask> {
-  const res = await fetch(`${BASE_URL}/competitor/tasks`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(task),
-  });
-  if (!res.ok) throw new Error(`创建任务失败: ${res.status}`);
-  return res.json();
-}
+  generateReport: async (competitorId: string): Promise<any> => {
+    const response = await api.post<any, any>('/competitors/generate-report', { competitor_id: competitorId });
+    return response.data || response;
+  },
+
+  getPlans: async (): Promise<CompetitorPlan[]> => {
+    const response = await api.get<any>('/competitors/plans');
+    return response.data || response;
+  },
+
+  createTask: async (competitorId: string, planId: string): Promise<CompetitorTask> => {
+    const response = await api.post<any, any>('/competitors/tasks', {
+      competitor_id: competitorId,
+      plan_id: planId,
+    });
+    return response.data || response;
+  },
+
+  getTasks: async (): Promise<CompetitorTask[]> => {
+    const response = await api.get<any>('/competitors/tasks');
+    return response.data || response;
+  },
+};
+
+// 兼容旧函数名的别名
+export const fetchCompetitorTasks = competitorApi.getTasks;
+export const createCompetitorTask = competitorApi.createTask;

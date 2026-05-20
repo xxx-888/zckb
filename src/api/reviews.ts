@@ -1,112 +1,148 @@
-/**
- * 评论数据 API 接口
- */
+﻿import { api } from '@/lib/api';
 
+// 类型定义
 export interface Review {
-  id: number;
-  store: string;
-  avatar: string;
-  rating: number;
-  user: string;
-  content: string;
+  id: string;
+  store_id?: string;
+  store_name?: string;
   platform: string;
-  time: string;
-  sentiment: 'positive' | 'negative' | 'neutral';
-  replied: boolean;
-  reply?: string;
-  replyTime?: string;
-  tags?: string[];
-  hasImage?: boolean;
+  platform_review_id?: string;
+  user_name?: string;
+  user_avatar?: string;
+  user?: string;
+  rating: number;
+  content: string;
   images?: string[];
-  likeCount?: number;
-  aiGenerated?: boolean;
-}
-
-export interface ReviewStreamItem {
-  id: number;
-  user: string;
-  avatar: string;
-  rating: number;
-  content: string;
-  platform: string;
-  time: string;
   sentiment: 'positive' | 'negative' | 'neutral';
-  tags: string[];
-  hasImage: boolean;
+  tags?: string[];
+  reply?: string;
+  reply_time?: string;
+  ai_generated?: boolean;
+  ai_reply_draft?: string;
+  risk_level?: 'high' | 'medium' | 'low';
+  status: string;
+  platform_created_at?: string;
+  created_at?: string;
+  time?: string;
+  hasImage?: boolean;
+  has_image?: boolean;
+  replied?: boolean;
 }
 
-const BASE_URL = '/api';
-
-async function fetchAPI<T>(endpoint: string): Promise<T> {
-  const res = await fetch(`${BASE_URL}${endpoint}`);
-  if (!res.ok) throw new Error(`API 请求失败: ${res.status}`);
-  return res.json();
-}
-
-/** 获取评论列表 GET /api/reviews/list */
-export async function fetchReviews(params?: {
+export interface ReviewFilter {
   sentiment?: string;
   keyword?: string;
-  store?: string;
-}): Promise<Review[]> {
-  const data = await fetchAPI<{ list: Review[] }>('/reviews');
-  let list: Review[] = data.list || [];
-
-  if (params?.sentiment && params.sentiment !== 'all') {
-    list = list.filter(r => r.sentiment === params.sentiment);
-  }
-  if (params?.keyword) {
-    const kw = params.keyword.toLowerCase();
-    list = list.filter(r =>
-      r.content.toLowerCase().includes(kw) ||
-      r.user.toLowerCase().includes(kw) ||
-      (r.store && r.store.toLowerCase().includes(kw))
-    );
-  }
-  return list;
+  store_id?: string;
+  platform?: string;
+  rating_min?: number;
+  rating_max?: number;
+  has_reply?: boolean;
+  has_image?: boolean;
+  start_date?: string;
+  end_date?: string;
+  page?: number;
+  page_size?: number;
 }
 
-/** 根据 ID 获取单条评论 */
-export async function fetchReviewById(id: string): Promise<Review | null> {
-  const data = await fetchAPI<{ list: Review[] }>('/reviews');
-  const list = data.list || [];
-  return list.find(r => String(r.id) === id) || null;
+export interface ReviewStats {
+  total_reviews: number;
+  positive_count: number;
+  negative_count: number;
+  neutral_count: number;
+  avg_rating: number;
+  reply_rate: number;
+  ai_reply_rate: number;
+  period: string;
 }
 
-/** 新增评论 POST /api/reviews/list */
-export async function createReview(data: Omit<Review, 'id'>): Promise<Review> {
-  const res = await fetch(`${BASE_URL}/reviews/list`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
-  if (!res.ok) throw new Error(`创建评论失败: ${res.status}`);
-  return res.json();
+export interface PaginatedResponse<T> {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
 }
 
-/** 更新评论 PUT /api/reviews/list/:id */
-export async function updateReview(id: number, data: Partial<Review>): Promise<Review> {
-  const res = await fetch(`${BASE_URL}/reviews/list/${id}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
-  if (!res.ok) throw new Error(`更新评论失败: ${res.status}`);
-  return res.json();
-}
+// API 函数
+export const reviewsApi = {
+  // 获取评论列表
+  getReviews: async (filters?: ReviewFilter): Promise<PaginatedResponse<Review>> => {
+    const params = new URLSearchParams();
+    if (filters) {
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== '') {
+          params.append(key, String(value));
+        }
+      });
+    }
+    const response = await api.get<any>(`/reviews?${params.toString()}`);
+    return response.data || response;
+  },
 
-/** 删除评论 DELETE /api/reviews/list/:id */
-export async function deleteReview(id: number): Promise<void> {
-  const res = await fetch(`${BASE_URL}/reviews/list/${id}`, {
-    method: 'DELETE',
-  });
-  if (!res.ok) throw new Error(`删除评论失败: ${res.status}`);
-}
+  // 获取评论详情
+  getReviewById: async (id: string): Promise<Review> => {
+    const response = await api.get<any>(`/reviews/${id}`);
+    return response.data || response;
+  },
 
-/** 获取评论动态流 GET /api/reviews/stream */
-export async function fetchReviewStream(): Promise<
-  Array<{ id: number; user: string; avatar: string; action: string; target: string; rating?: number; time: string }>
-> {
-  const data = await fetchAPI<{ stream: any[] }>('/reviews');
-  return data.stream || [];
-}
+  // 获取相似评论
+  getSimilarReviews: async (id: string): Promise<Review[]> => {
+    const response = await api.get<any>(`/reviews/${id}/similar`);
+    return response.data || response;
+  },
+
+  // 获取评论统计
+  getStats: async (period?: string): Promise<ReviewStats> => {
+    const url = period ? `/reviews/stats?period=${period}` : '/reviews/stats';
+    const response = await api.get<any>(url);
+    return response.data || response;
+  },
+
+  // 更新评论（如添加回复）
+  updateReview: async (id: string, data: { reply?: string; status?: string }): Promise<Review> => {
+    const response = await api.put<any, any>(`/reviews/${id}`, data);
+    return response.data || response;
+  },
+
+  // 快速回复
+  quickReply: async (id: string, replyContent: string): Promise<Review> => {
+    const response = await api.post<any, any>(`/reviews/${id}/reply`, { reply_content: replyContent });
+    return response.data || response;
+  },
+
+  // 审核通过并发送回复
+  approveReply: async (id: string): Promise<Review> => {
+    const response = await api.post<any, any>(`/reviews/${id}/approve-reply`);
+    return response.data || response;
+  },
+
+  // 批量删除
+  batchDelete: async (ids: string[]): Promise<void> => {
+    const response = await api.post('/reviews/batch-delete', { ids });
+    return response.data;
+  },
+
+  // 点赞评论
+  likeReview: async (id: string): Promise<void> => {
+    const response = await api.post(`/reviews/${id}/like`);
+    return response.data;
+  },
+
+  // 创建评论（用于管理后台）
+  createReview: async (data: Partial<Review>): Promise<Review> => {
+    const response = await api.post<any, any>('/reviews', data);
+    return response.data || response;
+  },
+
+  // 删除评论
+  deleteReview: async (id: string): Promise<void> => {
+    const response = await api.delete(`/reviews/${id}`);
+    return response.data;
+  },
+};
+
+// 兼容旧函数名的别名
+export const fetchReviews = reviewsApi.getReviews;
+export const fetchReviewById = reviewsApi.getReviewById;
+export const createReview = reviewsApi.createReview;
+export const updateReview = reviewsApi.updateReview;
+export const deleteReview = reviewsApi.deleteReview;

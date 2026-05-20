@@ -1,0 +1,221 @@
+"""
+后台管理路由模块
+处理系统统计、管理员用户、角色权限等后台管理接口
+"""
+
+from typing import Optional
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.responses import StreamingResponse
+
+from app.core.database import get_db
+from app.core.deps import get_current_active_user
+from app.core.response import paginated, success
+from app.models.user import User
+from app.schemas.admin import (
+    AdminUserCreateRequest,
+    AdminUserListResponse,
+    AdminUserResponse,
+    AdminUserUpdateRequest,
+    DashboardStatsResponse,
+    ExportReportRequest,
+    PermissionStructureResponse,
+    RoleCreateRequest,
+    RoleListResponse,
+    RoleResponse,
+    RoleUpdateRequest,
+    SystemHealthResponse,
+    SystemStatsResponse,
+)
+from app.services import admin_service
+
+router = APIRouter(prefix="/admin", tags=["后台管理"])
+
+
+@router.get("/dashboard/stats", summary="系统统计数据")
+async def get_dashboard_stats(
+    period: str = Query("30d", description="统计周期: 7d/30d/90d/all"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> dict:
+    """
+    获取仪表盘系统统计数据
+    - 用户总数
+    - 门店总数
+    - 评论总数
+    - 回复总数
+    - 待审核数量
+    - 活跃平台数
+    """
+    stats = await admin_service.get_system_stats(db, period)
+    return success(data=stats)
+
+
+@router.get("/system/health", summary="系统健康状态")
+async def get_system_health(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> dict:
+    """
+    获取系统健康状态
+    - 数据库连接状态
+    - 缓存连接状态
+    - 爬虫服务状态
+    """
+    health = await admin_service.get_system_health(db)
+    return success(data=health)
+
+
+@router.post("/system/export-report", summary="导出系统报告")
+async def export_report(
+    request: ExportReportRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    导出系统报告
+    - 支持导出评论数据、审核数据、统计数据
+    - 返回CSV格式文件
+    """
+    report_data = await admin_service.export_report(
+        db, request.report_type, request.period
+    )
+
+    filename = f"report_{request.report_type}_{request.period}.csv"
+    return StreamingResponse(
+        iter([report_data]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@router.get("/permissions/admins", summary="管理员列表")
+async def get_admin_users(
+    page: int = Query(1, ge=1, description="页码"),
+    page_size: int = Query(20, ge=1, le=100, description="每页数量"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> dict:
+    """
+    获取管理员用户列表
+    """
+    users, total = await admin_service.get_admin_users(db, page, page_size)
+    return paginated(
+        items=[
+            AdminUserResponse.model_validate(user).model_dump(mode="json")
+            for user in users
+        ],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
+
+
+@router.post("/permissions/admins", summary="新增管理员")
+async def create_admin_user(
+    request: AdminUserCreateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> dict:
+    """
+    创建新的管理员用户
+    """
+    user = await admin_service.create_admin_user(db, request)
+    return success(
+        data=AdminUserResponse.model_validate(user).model_dump(mode="json"),
+        message="管理员创建成功",
+    )
+
+
+@router.put("/permissions/admins/{user_id}", summary="更新管理员")
+async def update_admin_user(
+    user_id: UUID,
+    request: AdminUserUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> dict:
+    """
+    更新管理员用户信息
+    """
+    user = await admin_service.update_admin_user(db, user_id, request)
+    return success(
+        data=AdminUserResponse.model_validate(user).model_dump(mode="json"),
+        message="管理员更新成功",
+    )
+
+
+@router.post("/permissions/admins/{user_id}/disable", summary="禁用管理员")
+async def disable_admin_user(
+    user_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> dict:
+    """
+    禁用管理员用户
+    """
+    user = await admin_service.disable_admin_user(db, user_id)
+    return success(
+        data=AdminUserResponse.model_validate(user).model_dump(mode="json"),
+        message="管理员已禁用",
+    )
+
+
+@router.get("/permissions/roles", summary="角色列表")
+async def get_roles(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> dict:
+    """
+    获取角色列表
+    - 包含系统预定义角色和自定义角色
+    """
+    roles = await admin_service.get_roles(db)
+    return success(
+        data={
+            "items": roles,
+            "total": len(roles),
+        }
+    )
+
+
+@router.post("/permissions/roles", summary="新增角色")
+async def create_role(
+    request: RoleCreateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> dict:
+    """
+    创建新角色
+    """
+    role = await admin_service.create_role(db, request)
+    return success(data=role, message="角色创建成功")
+
+
+@router.put("/permissions/roles/{role_id}", summary="更新角色")
+async def update_role(
+    role_id: UUID,
+    request: RoleUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> dict:
+    """
+    更新角色信息
+    - 系统角色不允许修改
+    """
+    role = await admin_service.update_role(db, role_id, request)
+    return success(data=role, message="角色更新成功")
+
+
+@router.get("/permissions/structure", summary="组织架构")
+async def get_permissions_structure(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> dict:
+    """
+    获取权限组织架构
+    - 按模块分类的权限列表
+    """
+    structure = await admin_service.get_permissions_structure(db)
+    return success(data={"modules": structure})

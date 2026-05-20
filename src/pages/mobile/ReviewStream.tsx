@@ -42,10 +42,13 @@ export const ReviewStream: React.FC = () => {
     try {
       setLoading(true);
       setFetchError(null);
-      const data = await fetchReviews();
-      setReviews(data);
+      const response = await fetchReviews();
+      // 处理分页响应格式
+      const items = response.items || response.data || response;
+      setReviews(Array.isArray(items) ? items : []);
     } catch (err) {
       setFetchError(err instanceof Error ? err.message : '获取数据失败');
+      setReviews([]);
     } finally {
       setLoading(false);
     }
