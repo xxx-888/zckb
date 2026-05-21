@@ -33,12 +33,19 @@ export const ReviewDetail: React.FC = () => {
     load();
   }, [id]);
 
+  // ===== 加载状态（骨架屏）=====
   if (loading) {
     return (
       <MobileLayout title="评论详情">
-        <div className="flex items-center justify-center h-64">
-          <div className="w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-sm text-slate-400">加载中...</p>
+        <div className="space-y-6 p-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          {/* 评论头部骨架 */}
+          <Skeleton lines={1} className="w-24" />
+          
+          {/* 评论内容骨架 */}
+          <Skeleton lines={4} card={true} className="p-5" />
+          
+          {/* 操作按钮骨架 */}
+          <Skeleton lines={3} className="p-4" />
         </div>
       </MobileLayout>
     );
