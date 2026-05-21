@@ -19,6 +19,7 @@ import { Card } from '../../components/ui/card';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { MobileLayout } from '../../components/MobileLayout';
+import { Skeleton } from '../../components/ui/skeleton';
 import { useToast } from '../../hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { fetchCompetitorTasks, createCompetitorTask } from '../../api/competitor';
@@ -123,14 +124,19 @@ export const MobileCompetitorAnalysis: React.FC = () => {
     success('查看报告', '正在加载竞对分析报告...');
   };
 
+  // ===== 加载状态（骨架屏）=====
   if (loading) {
     return (
       <MobileLayout title="竞对分析">
-        <div className="flex items-center justify-center h-64">
-          <div className="text-center">
-            <div className="w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-            <p className="text-sm text-slate-400">加载中...</p>
-          </div>
+        <div className="space-y-6 p-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          {/* 标题骨架 */}
+          <Skeleton lines={2} className="p-5" />
+          
+          {/* 功能介绍骨架 */}
+          <Skeleton lines={4} card={true} className="p-5" />
+          
+          {/* 任务列表骨架 */}
+          <Skeleton lines={3} className="p-4" />
         </div>
       </MobileLayout>
     );
