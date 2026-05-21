@@ -15,6 +15,7 @@ import {
 import { Card } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
+import { Skeleton } from '../../components/ui/skeleton';
 import { MobileLayout } from '../../components/MobileLayout';
 import { cn } from '../../lib/utils';
 import { useToast } from '../../hooks/use-toast';
@@ -83,11 +84,14 @@ export const NegativeReply: React.FC = () => {
   if (loading) {
     return (
       <MobileLayout title="差评危机处理">
-        <div className="flex items-center justify-center h-64">
-          <div className="text-center">
-            <div className="w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-            <p className="text-sm text-slate-400">加载中...</p>
-          </div>
+        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500 p-4">
+          <Skeleton lines={1} className="h-8 w-48 mb-4" />
+          <Card className="p-5">
+            <Skeleton lines={1} className="h-8 w-32 mb-4" />
+            <Skeleton lines={3} className="space-y-2" />
+          </Card>
+          <Skeleton card className="mt-4" />
+          <Skeleton lines={5} className="mt-4 space-y-3" />
         </div>
       </MobileLayout>
     );
