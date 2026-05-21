@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { Card } from '../../components/ui/card';
 import { Badge } from '../../components/ui/badge';
+import { Skeleton } from '../../components/ui/skeleton';
 import { Button } from '../../components/ui/button';
 import { MobileLayout } from '../../components/MobileLayout';
 import { cn } from '../../lib/utils';
@@ -44,11 +45,17 @@ import {
   AlertData
 } from '../../api/dashboard';
 import { authApi } from '../../api/auth';
+import { storesApi, type Store } from '../../api/stores';
 
 export const Dashboard: React.FC = () => {
   const { success } = useToast();
   const navigate = useNavigate();
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [storeList, setStoreList] = useState<Store[]>([]);
+  const [selectedStore, setSelectedStore] = useState<Store | null>(null);
+  const [showStoreDropdown, setShowStoreDropdown] = useState(false);
+  const [noStore, setNoStore] = useState(false);
+  const storeDropdownRef = React.useRef<HTMLDivElement>(null);
   
   // ===== 判断用户角色 =====
   const isHQ = currentUser?.role === 'HQ' || currentUser?.role === 'OPERATOR';
@@ -107,19 +114,68 @@ export const Dashboard: React.FC = () => {
     navigate('/mobile/negative-reply');
   };
 
+  // ===== 获取店铺列表 =====
+  useEffect(() => {
+    const fetchStores = async () => {
+      try {
+        const res = await storesApi.getStores({ page_size: 100 });
+        const stores = res.items || res.data?.items || [];
+        setStoreList(stores);
+        if (stores.length === 0) {
+          setNoStore(true);
+        } else if (!selectedStore) {
+          setSelectedStore(stores[0]);
+        }
+      } catch (err) {
+        console.warn('[Dashboard] 获取店铺列表失败，使用测试数据');
+        const mockStores: Store[] = [
+          { id: 'store_001', name: '旗舰店', type: 'restaurant', status: 'active', platform_count: 3, review_count: 586, created_at: '2025-01-01' },
+          { id: 'store_002', name: '分店', type: 'restaurant', status: 'active', platform_count: 2, review_count: 423, created_at: '2025-02-01' },
+        ];
+        setStoreList(mockStores);
+        if (!selectedStore) {
+          setSelectedStore(mockStores[0]);
+        }
+      }
+    };
+    if (currentUser) {
+      fetchStores();
+    }
+  }, [currentUser]);
+
+  // ===== 店铺切换时重新获取数据 =====
+  useEffect(() => {
+    if (selectedStore?.id) {
+      fetchAllData(selectedStore.id);
+    }
+  }, [selectedStore]);
+
+  // ===== 点击外部关闭店铺下拉框 =====
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (storeDropdownRef.current && !storeDropdownRef.current.contains(event.target as Node)) {
+        setShowStoreDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   // ===== 获取数据 =====
-  const fetchAllData = async () => {
+  const fetchAllData = async (storeId?: string) => {
     try {
       setLoading(true);
       setError(null);
       
+      const currentStoreId = storeId || selectedStore?.id;
+      
       // 并行获取所有数据
       const [coreStatsRes, platformDataRes, recentReviewsRes, storeRankingsRes, healthStatsRes] = await Promise.all([
-        fetchCoreStats(timePeriod),
-        fetchPlatformData(),
-        fetchRecentReviews(5),
-        fetchStoreRankings(5),
-        fetchHealthStatus(),
+        fetchCoreStats(timePeriod, currentStoreId),
+        fetchPlatformData(currentStoreId),
+        fetchRecentReviews(5, currentStoreId),
+        fetchStoreRankings(5, currentStoreId),
+        fetchHealthStatus(currentStoreId),
       ]);
 
       setCoreStats(coreStatsRes);
@@ -130,12 +186,12 @@ export const Dashboard: React.FC = () => {
       if (isHQ) {
         setStoreRankings(storeRankingsRes);
       } else {
-        const storeHealthRes = await fetchStoreHealth();
+        const storeHealthRes = await fetchStoreHealth(currentStoreId);
         setStoreHealth(storeHealthRes);
       }
 
       // 获取告警（可能返回 null）
-      const alertRes = await fetchAlert();
+      const alertRes = await fetchAlert(currentStoreId);
       setAlert(alertRes);
 
       setHealthStats(healthStatsRes);
@@ -175,11 +231,14 @@ export const Dashboard: React.FC = () => {
   if (loading) {
     return (
       <MobileLayout title={isHQ ? "门店动态" : "数据概览"}>
-        <div className="flex items-center justify-center h-64">
-          <div className="text-center">
-            <div className="w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-            <p className="text-sm text-slate-400">加载中...</p>
-          </div>
+        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500 p-4">
+          <Skeleton lines={1} className="h-8 w-48 mb-4" />
+          <Card className="p-5">
+            <Skeleton lines={1} className="h-8 w-32 mb-4" />
+            <Skeleton lines={3} className="space-y-2" />
+          </Card>
+          <Skeleton card className="mt-4" />
+          <Skeleton lines={5} className="mt-4 space-y-3" />
         </div>
       </MobileLayout>
     );
@@ -250,7 +309,90 @@ export const Dashboard: React.FC = () => {
           )}
         </div>
 
-        {/* ===== 核心数据融合卡片（含数据源健康度） ===== */}
+        {/* ===== 店铺切换 ===== */}
+        <div className="relative" ref={storeDropdownRef}>
+          <div className="flex items-center justify-between bg-white p-3 rounded-2xl shadow-sm border border-slate-100">
+            <div className="flex items-center gap-2">
+              <Store className="w-4 h-4 text-slate-400" />
+              <span className="text-sm font-medium text-slate-600 truncate max-w-[180px]">
+                {selectedStore?.name || '请选择店铺'}
+              </span>
+            </div>
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="h-8 text-orange-600 font-semibold gap-1"
+              onClick={() => setShowStoreDropdown(!showStoreDropdown)}
+            >
+              切换 <ChevronRight className={cn("w-3.5 h-3.5 transition-transform", showStoreDropdown && "rotate-90")} />
+            </Button>
+          </div>
+          
+          {/* 店铺列表下拉 */}
+          {showStoreDropdown && (
+            <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-lg border border-slate-100 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+              {storeList.length === 0 ? (
+                <div className="p-4 text-center">
+                  <p className="text-sm text-slate-500 mb-2">暂无绑定店铺</p>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    className="text-xs border-orange-200 text-orange-600"
+                    onClick={() => navigate('/mobile/platform-connection')}
+                  >
+                    去绑定店铺
+                  </Button>
+                </div>
+              ) : (
+                storeList.map((store) => (
+                  <button
+                    key={store.id}
+                    className={cn(
+                      "w-full px-4 py-3 text-left text-sm font-medium transition-colors flex items-center justify-between",
+                      selectedStore?.id === store.id 
+                        ? "bg-orange-50 text-orange-600" 
+                        : "text-slate-700 hover:bg-slate-50"
+                    )}
+                    onClick={() => {
+                      setSelectedStore(store);
+                      setShowStoreDropdown(false);
+                    }}
+                  >
+                    <span>{store.name}</span>
+                    {store.status !== 'active' && (
+                      <Badge className="bg-amber-50 text-amber-600 border-amber-200 text-[9px]">
+                        {store.status === 'pending' ? '审核中' : '未激活'}
+                      </Badge>
+                    )}
+                    {selectedStore?.id === store.id && (
+                      <CheckCircle2 className="w-4 h-4 text-orange-600" />
+                    )}
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* 无店铺提示 */}
+        {noStore && (
+          <Card className="p-6 text-center border-amber-200 bg-amber-50">
+            <Store className="w-12 h-12 text-amber-500 mx-auto mb-4" />
+            <p className="text-sm font-bold text-amber-900 mb-2">暂无绑定店铺</p>
+            <p className="text-xs text-amber-700 mb-4">请先绑定您的店铺，才能查看评价数据</p>
+            <Button 
+              className="bg-orange-500 hover:bg-orange-600 text-white"
+              onClick={() => navigate('/mobile/platform-connection')}
+            >
+              去绑定店铺
+            </Button>
+          </Card>
+        )}
+
+        {/* 有店铺时才显示数据内容 */}
+        {!noStore && (
+          <>
+            {/* ===== 核心数据融合卡片（含数据源健康度） ===== */}
         <Card className="p-5 bg-white border-slate-100 shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
