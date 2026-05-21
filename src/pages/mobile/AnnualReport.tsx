@@ -35,6 +35,7 @@ import { Card } from '../../components/ui/card';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { MobileLayout } from '../../components/MobileLayout';
+import { Skeleton } from '../../components/ui/skeleton';
 import { useToast } from '../../hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { fetchAnnualReport, fetchAllYearlyData, generateAnnualReport } from '../../api/annual-report';
@@ -126,11 +127,24 @@ export const MobileAnnualReport: React.FC = () => {
   if (loading && !currentData) {
     return (
       <MobileLayout title={`${selectedYear} 年度报告`}>
-        <div className="flex items-center justify-center py-20">
-          <div className="text-center">
-            <RefreshCw className="w-12 h-12 text-indigo-600 animate-spin mx-auto mb-4" />
-            <p className="text-slate-500">正在生成年度报告...</p>
+        <div className="space-y-6 p-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          {/* 标题骨架 */}
+          <Skeleton lines={2} className="p-6" />
+          
+          {/* 统计卡片骨架 */}
+          <div className="flex gap-3">
+            <Skeleton lines={3} card={true} className="flex-1 p-4" />
+            <Skeleton lines={3} card={true} className="flex-1 p-4" />
           </div>
+          
+          {/* 图表骨架 */}
+          <Skeleton lines={4} card={true} className="p-6" />
+          
+          {/* 列表骨架 */}
+          <Skeleton lines={4} card={true} className="p-6" />
+          
+          {/* 底部骨架 */}
+          <Skeleton lines={3} card={true} className="p-6" />
         </div>
       </MobileLayout>
     );

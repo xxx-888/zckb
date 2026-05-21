@@ -4,6 +4,8 @@ import { Card } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { MobileLayout } from '../../components/MobileLayout';
+import { Skeleton } from '../../components/ui/skeleton';
+import { Skeleton } from '../../components/ui/skeleton';
 import { useToast } from '../../hooks/use-toast';
 import { useParams, useNavigate } from 'react-router-dom';
 import { fetchReviewById } from '../../api/reviews';
