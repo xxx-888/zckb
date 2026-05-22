@@ -1,4 +1,4 @@
-﻿import { api } from '@/lib/api';
+import { api } from '@/lib/api';
 
 // 类型定义
 export interface Store {
@@ -74,62 +74,62 @@ export const storesApi = {
         }
       });
     }
-    const response = await api.get<any>(`/stores?${searchParams.toString()}`);
+    const response = await api.get<any>(`/v1/stores?${searchParams.toString()}`);
     return response.data || response;
   },
 
   // 获取门店详情
   getStoreById: async (id: string): Promise<Store> => {
-    const response = await api.get<any>(`/stores/${id}`);
+    const response = await api.get<any>(`/v1/stores/${id}`);
     return response.data || response;
   },
 
   // 创建门店
   createStore: async (data: Partial<Store>): Promise<Store> => {
-    const response = await api.post<any, any>('/stores', data);
+    const response = await api.post<any, any>('/v1/stores', data);
     return response.data || response;
   },
 
   // 更新门店
   updateStore: async (id: string, data: Partial<Store>): Promise<Store> => {
-    const response = await api.put<any, any>(`/stores/${id}`, data);
+    const response = await api.put<any, any>(`/v1/stores/${id}`, data);
     return response.data || response;
   },
 
   // 删除门店
   deleteStore: async (id: string): Promise<void> => {
-    const response = await api.delete(`/stores/${id}`);
+    const response = await api.delete(`/v1/stores/${id}`);
     return response.data;
   },
 
   // 激活门店
   activateStore: async (id: string): Promise<Store> => {
-    const response = await api.post<any>(`/stores/${id}/activate`);
+    const response = await api.post<any>(`/v1/stores/${id}/activate`);
     return response.data || response;
   },
 
   // 获取门店评价统计
   getReviewStats: async (id: string, period?: string): Promise<StoreReviewStats> => {
-    const url = period ? `/stores/${id}/review-stats?period=${period}` : `/stores/${id}/review-stats`;
+    const url = period ? `/v1/stores/${id}/review-stats?period=${period}` : `/stores/${id}/review-stats`;
     const response = await api.get<any>(url);
     return response.data || response;
   },
 
   // 获取门店月度统计
   getMonthlyStats: async (id: string): Promise<MonthlyStats[]> => {
-    const response = await api.get<any>(`/stores/${id}/monthly-stats`);
+    const response = await api.get<any>(`/v1/stores/${id}/monthly-stats`);
     return response.data || response;
   },
 
   // 获取门店最近评论
   getRecentReviews: async (id: string, limit: number = 10): Promise<any[]> => {
-    const response = await api.get<any>(`/stores/${id}/recent-reviews?limit=${limit}`);
+    const response = await api.get<any>(`/v1/stores/${id}/recent-reviews?limit=${limit}`);
     return response.data || response;
   },
 
   // 获取门店汇总统计
   getStoresStats: async (): Promise<any> => {
-    const response = await api.get<any>('/stores/stats');
+    const response = await api.get<any>('/v1/stores/stats');
     return response.data || response;
   },
 };

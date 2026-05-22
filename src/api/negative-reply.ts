@@ -1,4 +1,4 @@
-﻿import { api } from '@/lib/api';
+import { api } from '@/lib/api';
 
 // 类型定义
 export interface NegativeReplyTask {
@@ -38,29 +38,29 @@ export interface NegativeReplyHistory {
 
 export const negativeReplyApi = {
   getTasks: async (status?: string, page: number = 1, pageSize: number = 20): Promise<any> => {
-    let url = `/negative-reply/tasks?page=${page}&page_size=${pageSize}`;
+    let url = `/v1/negative-reply/tasks?page=${page}&page_size=${pageSize}`;
     if (status) url += `&status=${status}`;
     const response = await api.get<any>(url);
     return response.data || response;
   },
 
   approveTask: async (taskId: string): Promise<void> => {
-    const response = await api.post(`/negative-reply/tasks/${taskId}/approve`);
+    const response = await api.post(`/v1/negative-reply/tasks/${taskId}/approve`);
     return response.data;
   },
 
   rejectTask: async (taskId: string, reason: string): Promise<void> => {
-    const response = await api.post(`/negative-reply/tasks/${taskId}/reject`, { reason });
+    const response = await api.post(`/v1/negative-reply/tasks/${taskId}/reject`, { reason });
     return response.data;
   },
 
   regenerateReply: async (taskId: string): Promise<void> => {
-    const response = await api.post(`/negative-reply/tasks/${taskId}/regenerate`);
+    const response = await api.post(`/v1/negative-reply/tasks/${taskId}/regenerate`);
     return response.data;
   },
 
   getHistory: async (page: number = 1, pageSize: number = 20): Promise<any> => {
-    const response = await api.get<any>(`/negative-reply/history?page=${page}&page_size=${pageSize}`);
+    const response = await api.get<any>(`/v1/negative-reply/history?page=${page}&page_size=${pageSize}`);
     return response.data || response;
   },
 };

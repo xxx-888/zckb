@@ -391,7 +391,7 @@ export const Dashboard: React.FC = () => {
 
         {/* 有店铺时才显示数据内容 */}
         {!noStore && (
-          <>
+          <React.Fragment>
             {/* ===== 核心数据融合卡片（含数据源健康度） ===== */}
         <Card className="p-5 bg-white border-slate-100 shadow-sm">
           <div className="flex items-center justify-between mb-4">
@@ -680,7 +680,9 @@ export const Dashboard: React.FC = () => {
             </Card>
           ))}
         </div>
-      </div>
+        </React.Fragment>
+        )}
+        </div>
     </MobileLayout>
   );
 };

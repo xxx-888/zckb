@@ -1,4 +1,4 @@
-﻿import { api } from '@/lib/api';
+import { api } from '@/lib/api';
 
 export interface Competitor {
   id: string;
@@ -39,46 +39,47 @@ export interface CompetitorTask {
 
 export const competitorApi = {
   getCompetitors: async (storeId?: string): Promise<Competitor[]> => {
-    const url = storeId ? `/competitors?store_id=${storeId}` : '/competitors';
+    const url = storeId ? `/v1/competitors?store_id=${storeId}` : '/v1/competitors';
     const response = await api.get<any>(url);
     return response.data || response;
   },
 
   createCompetitor: async (data: Partial<Competitor>): Promise<Competitor> => {
-    const response = await api.post<any, any>('/competitors', data);
+    const response = await api.post<any, any>('/v1/competitors', data);
     return response.data || response;
   },
 
   deleteCompetitor: async (id: string): Promise<void> => {
-    const response = await api.delete(`/competitors/${id}`);
+    const response = await api.delete(`/v1/competitors/${id}`);
     return response.data;
   },
 
   getCompetitorDetail: async (id: string): Promise<Competitor> => {
-    const response = await api.get<any>(`/competitors/${id}`);
+    const response = await api.get<any>(`/v1/competitors/${id}`);
     return response.data || response;
   },
 
   generateReport: async (competitorId: string): Promise<any> => {
-    const response = await api.post<any, any>('/competitors/generate-report', { competitor_id: competitorId });
+    const response = await api.post<any, any>('/v1/competitors/generate-report', { competitor_id: competitorId });
     return response.data || response;
   },
 
   getPlans: async (): Promise<CompetitorPlan[]> => {
-    const response = await api.get<any>('/competitors/plans');
+    const response = await api.get<any>('/v1/competitors/plans');
     return response.data || response;
   },
 
   createTask: async (competitorId: string, planId: string): Promise<CompetitorTask> => {
-    const response = await api.post<any, any>('/competitors/tasks', {
+    const response = await api.post<any, any>('/v1/competitors/tasks', {
       competitor_id: competitorId,
       plan_id: planId,
     });
     return response.data || response;
   },
 
-  getTasks: async (): Promise<CompetitorTask[]> => {
-    const response = await api.get<any>('/competitors/tasks');
+  getTasks: async (storeId?: string): Promise<CompetitorTask[]> => {
+    const url = storeId ? `/v1/competitors/tasks?store_id=${storeId}` : '/v1/competitors/tasks';
+    const response = await api.get<any>(url);
     return response.data || response;
   },
 };

@@ -177,7 +177,7 @@ export const Login: React.FC = () => {
       {/* Admin Link */}
       <div className="pb-8 px-8 text-center">
         <button 
-          onClick={() => navigate('/admin/login')}
+          onClick={() => navigate('/admin')}
           className="text-[10px] text-slate-300 hover:text-slate-500 uppercase tracking-widest font-bold border-t border-slate-50 pt-4 w-full"
         >
           系统管理员入口

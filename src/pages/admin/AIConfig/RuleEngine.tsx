@@ -1,478 +1,363 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card } from '../../../components/ui/card';
 import { Button } from '../../../components/ui/button';
 import { Badge } from '../../../components/ui/badge';
-import { Switch } from '../../../components/ui/switch';
-import { 
-  GitBranch, 
-  Layers, 
-  ArrowRight, 
-  Download, 
-  Upload, 
-  Plus, 
-  MoreVertical,
-  CheckCircle,
-  AlertTriangle,
-  FileText,
-  GripVertical,
-  Zap,
-  Split,
-  Settings,
-  Activity,
-  Power,
-  Info,
-  Clock,
-  ArrowDown,
-  Trash2,
-  Copy
-} from 'lucide-react';
-import { cn } from '../../../lib/utils';
 import { useToast } from '../../../hooks/use-toast';
+import { adminApi } from '../../../api/admin';
+import { GitBranch, RefreshCw, AlertCircle, Save, Plus, Edit3, X } from 'lucide-react';
 
-interface Rule {
+interface RuleItem {
   id: string;
   name: string;
-  trigger: string;
-  template: string;
+  description?: string;
+  rules?: Record<string, any>;
   priority: number;
-  status: 'active' | 'draft';
-  enabled: boolean;
-  branch?: string;
-  dependencies?: string[];
+  is_active: boolean;
 }
 
-export const RuleEngine: React.FC = () => {
-  const [globalActive, setGlobalActive] = useState(true);
-  const [rules, setRules] = useState<Rule[]>([
-    {
-      id: '1',
-      name: '食安问题-极速响应',
-      trigger: '标签包含 "食品安全" 或 "异物"',
-      template: '深度致歉模板-食安专用',
-      priority: 100,
-      status: 'active',
-      enabled: true,
-      branch: 'High Risk'
-    },
-    {
-      id: '2',
-      name: '环境差评-优化引导',
-      trigger: '标签包含 "环境" 且 评分 < 3',
-      template: '环境改善说明模板',
-      priority: 80,
-      status: 'active',
-      enabled: true,
-      dependencies: ['1']
-    },
-    {
-      id: '3',
-      name: '日常好评-品牌文化',
-      trigger: '情感极性 = 好评',
-      template: '品牌温度回馈模板',
-      priority: 10,
-      status: 'draft',
-      enabled: false
-    }
-  ]);
-  
-  const [showNewRule, setShowNewRule] = useState(false);
-  const [newRule, setNewRule] = useState({
-    name: '',
-    trigger: '',
-    template: '',
-    priority: 50,
-  });
-  
-  const { success, error } = useToast();
+const emptyForm = {
+  name: '',
+  description: '',
+  rules_json: '{\n  \n}',
+  priority: 0,
+  is_active: true,
+};
 
-  const toggleRule = (id: string) => {
-    setRules(rules.map(r => r.id === id ? { ...r, enabled: !r.enabled } : r));
-    const rule = rules.find(r => r.id === id);
-    if (rule) {
-      success('状态已更新', `规则 "${rule.name}" 已${rule.enabled ? '禁用' : '启用'}`);
+const DEFAULT_RULE_TEMPLATES = [
+  {
+    name: '差评识别规则',
+    description: '自动识别差评并触发相应处理流程',
+    rules: {
+      "min_rating": 3,
+      "trigger_keywords": ["差", "失望", "再也不来", "退款", "投诉"],
+      "auto_escalate": true,
+      "response_timeout_minutes": 30,
+    },
+    priority: 10,
+  },
+  {
+    name: '敏感词过滤规则',
+    description: '过滤回复中的敏感词和不当内容',
+    rules: {
+      "blocked_words": [],
+      "max_reply_length": 500,
+      "check_before_send": true,
+      "alert_on_match": true,
+    },
+    priority: 20,
+  },
+  {
+    name: '自动回复策略',
+    description: '控制 AI 自动回复的触发条件和限制',
+    rules: {
+      "auto_reply_enabled": true,
+      "daily_limit": 100,
+      "cooldown_minutes": 5,
+      "require_human_review": false,
+    },
+    priority: 5,
+  },
+];
+
+export const RuleEngine: React.FC = () => {
+  const [rules, setRules] = useState<RuleItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<RuleItem | null>(null);
+  const [form, setForm] = useState({ ...emptyForm });
+  const [jsonError, setJsonError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const { success, error: toastError } = useToast();
+
+  const fetchRules = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await adminApi.getAIRules().catch(() => []);
+      setRules(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '获取数据失败');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchRules(); }, [fetchRules]);
+
+  const openAddModal = (templateIndex?: number) => {
+    setEditingItem(null);
+    if (templateIndex !== undefined && DEFAULT_RULE_TEMPLATES[templateIndex]) {
+      const tmpl = DEFAULT_RULE_TEMPLATES[templateIndex];
+      setForm({
+        name: tmpl.name,
+        description: tmpl.description,
+        rules_json: JSON.stringify(tmpl.rules, null, 2),
+        priority: tmpl.priority,
+        is_active: true,
+      });
+    } else {
+      setForm({ ...emptyForm });
+    }
+    setJsonError(null);
+    setModalOpen(true);
+  };
+
+  const openEditModal = (item: RuleItem) => {
+    setEditingItem(item);
+    setForm({
+      name: item.name,
+      description: item.description || '',
+      rules_json: item.rules ? JSON.stringify(item.rules, null, 2) : '{\n  \n}',
+      priority: item.priority,
+      is_active: item.is_active,
+    });
+    setJsonError(null);
+    setModalOpen(true);
+  };
+
+  const validateJson = (text: string): boolean => {
+    if (!text.trim() || text.trim() === '{}') {
+      setJsonError(null);
+      return true;
+    }
+    try {
+      JSON.parse(text);
+      setJsonError(null);
+      return true;
+    } catch (e: any) {
+      setJsonError(`JSON 格式错误: ${e.message}`);
+      return false;
     }
   };
 
-  const handleAddRule = () => {
-    if (!newRule.name || !newRule.trigger || !newRule.template) {
-      error('添加失败', '请填写完整的规则信息');
+  const handleSave = async () => {
+    if (!form.name) {
+      toastError('参数错误', '请填写规则名称');
       return;
     }
-    const newId = (rules.length + 1).toString();
-    const rule: Rule = {
-      id: newId,
-      name: newRule.name,
-      trigger: newRule.trigger,
-      template: newRule.template,
-      priority: newRule.priority,
-      status: 'draft',
-      enabled: false
-    };
-    setRules([...rules, rule]);
-    setShowNewRule(false);
-    setNewRule({ name: '', trigger: '', template: '', priority: 50 });
-    success('添加成功', `规则 "${newRule.name}" 已创建，请启用后生效`);
+
+    if (!validateJson(form.rules_json)) {
+      toastError('格式错误', '规则 JSON 格式不正确');
+      return;
+    }
+
+    let parsedRules: any = {};
+    if (form.rules_json.trim()) {
+      try {
+        parsedRules = JSON.parse(form.rules_json);
+      } catch {
+        toastError('格式错误', '规则 JSON 格式不正确，请检查');
+        return;
+      }
+    }
+
+    setSaving(true);
+    try {
+      const payload: any = {
+        name: form.name,
+        description: form.description || undefined,
+        rules: parsedRules,
+        priority: form.priority,
+        is_active: form.is_active,
+      };
+
+      if (editingItem) {
+        await adminApi.updateAIRule(editingItem.id, payload);
+        success('保存成功', '规则已更新');
+      } else {
+        await adminApi.createAIRule(payload);
+        success('创建成功', '新规则已添加');
+      }
+      setModalOpen(false);
+      fetchRules();
+    } catch (err: any) {
+      toastError(editingItem ? '保存失败' : '创建失败', err.message || '请求异常');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleDeleteRule = (id: string) => {
-    const rule = rules.find(r => r.id === id);
-    setRules(rules.filter(r => r.id !== id));
-    success('删除成功', `规则 "${rule?.name}" 已删除`);
+  const getRuleSummary = (rules?: Record<string, any>): string => {
+    if (!rules) return '无规则定义';
+    const keys = Object.keys(rules);
+    if (keys.length === 0) return '空规则';
+    return keys.slice(0, 5).join('、') + (keys.length > 5 ? ` 等 ${keys.length} 项` : '');
   };
 
-  const handleExportConfig = () => {
-    success('导出配置', '正在生成规则配置...');
-    setTimeout(() => {
-      success('导出完成', '配置文件已下载');
-    }, 1000);
+  const getRuleValuePreview = (rules?: Record<string, any>): string => {
+    if (!rules) return '';
+    const entries = Object.entries(rules).slice(0, 2);
+    return entries.map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`).join(' | ');
   };
 
-  const handleTestMode = () => {
-    success('测试模式', '正在启用规则测试模式...');
-    setTimeout(() => {
-      success('测试完成', '所有规则测试通过，未发现冲突');
-    }, 1500);
-  };
-
-  const handleFixDependencies = () => {
-    success('修复依赖', '正在自动修复逻辑依赖...');
-    setTimeout(() => {
-      setRules(rules.map(r => r.id === '3' ? { ...r, enabled: true, status: 'active' as const } : r));
-      success('修复完成', '已启用兜底规则，依赖关系已完善');
-    }, 1000);
-  };
+  if (loading) return <div className="flex items-center justify-center h-64"><RefreshCw className="w-6 h-6 text-slate-400 animate-spin" /></div>;
+  if (error) return <div className="flex flex-col items-center justify-center h-64 gap-4"><AlertCircle className="w-10 h-10 text-rose-400" /><p className="text-slate-500">{error}</p><Button variant="outline" onClick={fetchRules}>重试</Button></div>;
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
-      <div className="flex justify-between items-center mb-2 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
-        <div className="flex items-center gap-6">
-          <div className="flex items-center gap-2">
-            <GitBranch className="w-6 h-6 text-blue-600" />
-            <h3 className="font-bold text-slate-800 text-lg">规则引擎控制中心</h3>
-          </div>
-          <div className="h-8 w-px bg-slate-200" />
-          <div className="flex items-center gap-3">
-            <label className="text-sm font-bold text-slate-500">全域规则开关</label>
-            <div 
-              onClick={() => {
-                setGlobalActive(!globalActive);
-                success('全局开关', `规则引擎已${globalActive ? '暂停' : '开启'}`);
-              }}
-              className={cn(
-                "flex items-center px-3 py-1.5 rounded-full cursor-pointer transition-all gap-2",
-                globalActive ? "bg-emerald-50 text-emerald-600 border border-emerald-100" : "bg-slate-100 text-slate-400 border border-slate-200"
-              )}
-            >
-              <Power className="w-4 h-4" />
-              <span className="text-xs font-bold">{globalActive ? '已开启' : '已暂停'}</span>
-            </div>
-          </div>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+            <GitBranch className="w-5 h-5 text-blue-500" />AI 规则引擎
+          </h2>
+          <p className="text-sm text-slate-500">管理敏感词过滤、回复策略、触发条件</p>
         </div>
-        <div className="flex gap-3">
-          <Button 
-            variant="outline" 
-            size="sm" 
-            className="gap-2 border-slate-200 bg-white"
-            onClick={handleTestMode}
-          >
-            <Activity className="w-4 h-4" /> 测试模式
-          </Button>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            className="gap-2 border-slate-200 bg-white"
-            onClick={handleExportConfig}
-          >
-            <Download className="w-4 h-4" /> 导出配置
-          </Button>
-          <Button 
-            size="sm" 
-            className="gap-2 bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-100"
-            onClick={() => setShowNewRule(true)}
-          >
-            <Plus className="w-4 h-4" /> 新增策略规则
-          </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={fetchRules}><RefreshCw className="w-4 h-4 mr-1" />刷新</Button>
         </div>
       </div>
 
-      {showNewRule && (
-        <Card className="p-6 border-2 border-blue-500 bg-blue-50/10 animate-in zoom-in-95 duration-200">
-          <h4 className="font-bold text-slate-900 mb-4 flex items-center gap-2">
-            <Plus className="w-4 h-4" /> 新增策略规则
-          </h4>
-          <div className="grid grid-cols-2 gap-6 mb-6">
-            <div className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-500">规则名称</label>
-                <input 
-                  value={newRule.name}
-                  onChange={(e) => setNewRule({...newRule, name: e.target.value})}
-                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20" 
-                  placeholder="如：配送延时-补偿方案" 
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-500">触发条件</label>
-                <input 
-                  value={newRule.trigger}
-                  onChange={(e) => setNewRule({...newRule, trigger: e.target.value})}
-                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20" 
-                  placeholder='标签包含 "配送"' 
-                />
-              </div>
+      {rules.length === 0 ? (
+        <Card className="border-dashed border-2 border-slate-200">
+          <div className="text-center py-12 text-slate-400">
+            <GitBranch className="w-12 h-12 mx-auto mb-3 opacity-30" />
+            <p className="mb-1 text-slate-500">暂无规则配置</p>
+            <p className="text-xs text-slate-300 mb-6">选择预设模板快速创建，或自定义规则</p>
+            <div className="flex flex-wrap justify-center gap-3">
+              {DEFAULT_RULE_TEMPLATES.map((tmpl, idx) => (
+                <Button key={idx} size="sm" className="bg-blue-500 hover:bg-blue-600 text-white" onClick={() => openAddModal(idx)}>
+                  <Plus className="w-4 h-4 mr-1" />{tmpl.name}
+                </Button>
+              ))}
+              <Button size="sm" variant="outline" onClick={() => openAddModal()}>
+                <Plus className="w-4 h-4 mr-1" />自定义规则
+              </Button>
             </div>
-            <div className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-500">回复模板</label>
-                <input 
-                  value={newRule.template}
-                  onChange={(e) => setNewRule({...newRule, template: e.target.value})}
-                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20" 
-                  placeholder="诚恳道歉模板" 
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-500">优先级 (0-100)</label>
-                <input 
-                  type="number"
-                  value={newRule.priority}
-                  onChange={(e) => setNewRule({...newRule, priority: parseInt(e.target.value) || 0})}
-                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20" 
-                />
-              </div>
-            </div>
-          </div>
-          <div className="flex gap-3 pt-4 border-t border-slate-100">
-            <Button className="flex-1 bg-blue-600 hover:bg-blue-700" onClick={handleAddRule}>保存规则</Button>
-            <Button variant="ghost" onClick={() => setShowNewRule(false)}>取消</Button>
           </div>
         </Card>
-      )}
-
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        {/* Rules Orchestration */}
-        <div className="xl:col-span-2 space-y-6">
-          <div className="flex justify-between items-center">
-            <div className="flex items-center gap-2">
-               <Layers className="w-4 h-4 text-slate-400" />
-               <span className="text-sm font-bold text-slate-700">策略规则编排 (可拖拽调整优先级)</span>
-            </div>
-            <Badge className="bg-blue-50 text-blue-600 border-none font-bold">
-              共 {rules.length} 条规则
-            </Badge>
+      ) : (
+        <>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={() => openAddModal()}>
+              <Plus className="w-4 h-4 mr-1" />自定义规则
+            </Button>
+            {DEFAULT_RULE_TEMPLATES.filter(t => !rules.some(r => r.name === t.name)).map((tmpl, idx) => (
+              <Button key={idx} size="sm" variant="outline" onClick={() => openAddModal(idx)}>
+                <Plus className="w-4 h-4 mr-1" />{tmpl.name}
+              </Button>
+            ))}
           </div>
-
-          <div className="space-y-4">
-            {rules.sort((a, b) => b.priority - a.priority).map((rule, idx) => (
-              <Card key={rule.id} className={cn(
-                "p-5 border-slate-100 transition-all relative overflow-hidden group",
-                !rule.enabled ? "opacity-60 grayscale-[0.5] bg-slate-50/50" : "hover:shadow-lg hover:border-blue-200"
-              )}>
-                <div className="flex items-start gap-4">
-                  <div className="mt-1 cursor-grab active:cursor-grabbing text-slate-300 hover:text-slate-500">
-                    <GripVertical className="w-5 h-5" />
-                  </div>
-                  
-                  <div className="flex-1">
-                    <div className="flex justify-between items-start mb-4">
-                      <div className="flex items-center gap-3">
-                        <div className={cn(
-                          "w-10 h-10 rounded-xl flex items-center justify-center font-bold text-xs border shadow-sm",
-                          rule.enabled ? "bg-white text-blue-600 border-blue-100" : "bg-slate-100 text-slate-400 border-slate-200"
-                        )}>
-                          P{rule.priority}
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h4 className="font-bold text-slate-900">{rule.name}</h4>
-                            {rule.branch && <Badge className="bg-red-50 text-red-600 border-red-100 text-[9px] py-0 h-4">{rule.branch}</Badge>}
-                          </div>
-                          <div className="flex items-center gap-3 mt-1">
-                             <span className="text-[10px] text-slate-400 flex items-center gap-1">
-                               <Clock className="w-3 h-3" /> 最后修改: 2026-05-09
-                             </span>
-                             {rule.dependencies && (
-                               <span className="text-[10px] text-amber-600 font-bold flex items-center gap-1">
-                                 <GitBranch className="w-3 h-3" /> 依赖: {rule.dependencies.join(', ')}
-                               </span>
-                             )}
-                          </div>
-                        </div>
+          <div className="grid gap-3">
+            {rules.map(r => (
+              <Card key={r.id} className="border-slate-100 shadow-sm hover:shadow-md transition-shadow">
+                <div className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <span className="font-semibold text-slate-900">{r.name || '未命名规则'}</span>
+                        <Badge className={r.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}>
+                          {r.is_active ? '启用' : '禁用'}
+                        </Badge>
+                        <Badge className="bg-blue-50 text-blue-600">优先级 {r.priority}</Badge>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <div className="flex flex-col items-end mr-2">
-                          <span className="text-[10px] font-bold text-slate-400 mb-1 uppercase">启用状态</span>
-                          <Switch 
-                            checked={rule.enabled} 
-                            onCheckedChange={() => toggleRule(rule.id)}
-                            className="data-[state=checked]:bg-blue-600"
-                          />
-                        </div>
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          className="h-8 w-8 text-slate-400 hover:text-blue-600"
-                          onClick={() => success('编辑规则', `正在打开 "${rule.name}" 的编辑界面...`)}
-                        >
-                          <Settings className="w-4 h-4" />
-                        </Button>
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          className="h-8 w-8 text-slate-400 hover:text-red-600"
-                          onClick={() => handleDeleteRule(rule.id)}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
+                      {r.description && <p className="text-sm text-slate-500">{r.description}</p>}
+                      <div className="mt-1.5 space-y-0.5">
+                        <p className="text-xs text-slate-400">规则项: {getRuleSummary(r.rules)}</p>
+                        {getRuleValuePreview(r.rules) && (
+                          <p className="text-xs text-slate-300 font-mono truncate">{getRuleValuePreview(r.rules)}</p>
+                        )}
                       </div>
                     </div>
-
-                    <div className="relative">
-                      {rule.branch && (
-                        <div className="absolute -left-6 top-1/2 -translate-y-1/2 flex flex-col items-center">
-                           <div className="w-0.5 h-12 bg-slate-200" />
-                           <Split className="w-4 h-4 text-slate-300" />
-                        </div>
-                      )}
-                      <div className="flex flex-wrap items-center gap-2 text-sm text-slate-600 bg-slate-50/80 p-4 rounded-xl border border-slate-100 group-hover:bg-blue-50/30 transition-colors">
-                        <div className="flex items-center gap-1.5 font-bold text-blue-600 text-xs uppercase tracking-tight">
-                          <Zap className="w-3.5 h-3.5 fill-blue-600" /> Trigger
-                        </div>
-                        <div className="px-3 py-1 bg-white border border-slate-200 rounded-lg text-xs font-mono font-medium shadow-sm">
-                          {rule.trigger}
-                        </div>
-                        <ArrowRight className="w-4 h-4 text-slate-300 mx-2" />
-                        <div className="flex items-center gap-1.5 font-bold text-purple-600 text-xs uppercase tracking-tight">
-                          <FileText className="w-3.5 h-3.5" /> Action
-                        </div>
-                        <div className="px-3 py-1 bg-white border border-slate-200 rounded-lg text-xs font-mono font-medium shadow-sm">
-                          {rule.template}
-                        </div>
-                      </div>
-                    </div>
+                    <Button size="sm" variant="outline" className="ml-3 shrink-0" onClick={() => openEditModal(r)}>
+                      <Edit3 className="w-3.5 h-3.5 mr-1" />编辑
+                    </Button>
                   </div>
                 </div>
               </Card>
             ))}
           </div>
-        </div>
+        </>
+      )}
 
-        {/* Rule Chain Visualizer */}
-        <div className="space-y-6">
-          <Card className="p-6 border-slate-100 bg-slate-900 text-white relative overflow-hidden">
-             <div className="absolute -right-10 -top-10 opacity-10">
-                <GitBranch className="w-48 h-48" />
-             </div>
-             
-             <div className="relative z-10">
-               <h4 className="font-bold text-white mb-6 flex items-center gap-2">
-                 <Layers className="w-5 h-5 text-blue-400" />
-                 AI 处理流水线 (Visual Chain)
-               </h4>
-               
-               <div className="space-y-0">
-                 {[
-                   { step: 1, label: '情感与意图分析', icon: '🧠', status: 'completed', desc: 'NLP 极性判断与核心诉求提取' },
-                   { step: 2, label: '条件分支分流', icon: '⑂', status: 'processing', type: 'branch', desc: '根据风险等级分配处理链路' },
-                   { step: 3, label: '规则引擎匹配', icon: '🎯', status: 'waiting', desc: '匹配预设策略与回复模板' },
-                   { step: 4, label: 'AI 内容生成', icon: '✍️', status: 'waiting', desc: '基于角色设定渲染回复初稿' },
-                   { step: 5, label: '多重安全合规检查', icon: '🛡️', status: 'waiting', desc: '禁忌词过滤与逻辑合理性检查' },
-                 ].map((step, i) => (
-                   <div key={i} className="relative pb-8 last:pb-0">
-                     {i < 4 && (
-                       <div className={cn(
-                         "absolute left-4 top-8 bottom-0 w-0.5",
-                         step.status === 'completed' ? "bg-blue-500" : "bg-white/10"
-                       )} />
-                     )}
-                     
-                     <div className="flex gap-4">
-                       <div className={cn(
-                         "w-8 h-8 rounded-full flex items-center justify-center text-xs shrink-0 z-10 border-2",
-                         step.status === 'completed' ? "bg-blue-600 border-blue-400 text-white" :
-                         step.status === 'processing' ? "bg-white border-blue-500 text-blue-600 animate-pulse" : "bg-slate-800 border-slate-700 text-slate-500"
-                       )}>
-                         {step.status === 'completed' ? <CheckCircle className="w-4 h-4" /> : step.step}
-                       </div>
-                       
-                       <div className={cn(
-                         "flex-1 p-3 rounded-xl border transition-all",
-                         step.status === 'processing' ? "bg-white/10 border-white/20 shadow-lg" : "border-transparent"
-                       )}>
-                         <div className="flex justify-between items-start">
-                            <div>
-                               <div className="flex items-center gap-2">
-                                 <span className="text-xs font-bold text-white">{step.label}</span>
-                                 <span className="text-[14px]">{step.icon}</span>
-                               </div>
-                               <p className="text-[10px] text-slate-400 mt-1">{step.desc}</p>
-                            </div>
-                            {step.status === 'processing' && (
-                              <Badge className="bg-blue-500 text-white text-[8px] h-4 py-0">RUNNING</Badge>
-                            )}
-                         </div>
-                         
-                         {step.type === 'branch' && step.status === 'processing' && (
-                           <div className="mt-4 grid grid-cols-2 gap-2 animate-in slide-in-from-top-2">
-                             <div className="p-2 bg-red-500/20 border border-red-500/30 rounded-lg text-[9px] text-red-200">
-                               <div className="font-bold mb-1 flex items-center gap-1"><AlertTriangle className="w-2.5 h-2.5" /> High Risk</div>
-                               进入极速响应链路
-                             </div>
-                             <div className="p-2 bg-blue-500/20 border border-blue-500/30 rounded-lg text-[9px] text-blue-200">
-                               <div className="font-bold mb-1 flex items-center gap-1"><Zap className="w-2.5 h-2.5" /> Standard</div>
-                               进入常规回复生成
-                             </div>
-                           </div>
-                         )}
-                       </div>
-                     </div>
-                   </div>
-                 ))}
-               </div>
-             </div>
-          </Card>
+      {/* 新增/编辑模态框 */}
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setModalOpen(false)}>
+          <Card className="w-[560px] max-h-[80vh] overflow-y-auto p-6 space-y-5" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-slate-900">{editingItem ? `编辑规则: ${editingItem.name}` : '新增规则'}</h3>
+              <button className="text-slate-400 hover:text-slate-600" onClick={() => setModalOpen(false)}><X className="w-5 h-5" /></button>
+            </div>
 
-          <Card className="p-5 border-slate-100 bg-amber-50 border-amber-100">
-            <h4 className="text-xs font-bold text-amber-900 mb-2 flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4" />
-              逻辑完整性检查
-            </h4>
-            <p className="text-[11px] text-amber-700 leading-relaxed mb-4">
-              检测到"日常好评"规则处于未启用状态，且没有任何降级处理规则。
-            </p>
-            <div className="space-y-2">
-               <div className="flex items-center gap-2 text-[10px] text-amber-800 bg-white/50 p-2 rounded border border-amber-200">
-                 <Info className="w-3 h-3" /> 建议：添加一条优先级最低的通配兜底规则。
-               </div>
-               <Button 
-                 size="sm" 
-                 variant="outline" 
-                 className="w-full text-[10px] h-7 border-amber-300 text-amber-700 hover:bg-amber-100"
-                 onClick={handleFixDependencies}
-               >
-                 一键修复依赖项
-               </Button>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-sm font-medium text-slate-700 mb-1 block">规则名称 <span className="text-rose-400">*</span></label>
+                  <input
+                    className="w-full p-2.5 border border-slate-200 rounded-lg text-sm outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-200 transition"
+                    placeholder="如：差评识别规则"
+                    value={form.name}
+                    onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-slate-700 mb-1 block">优先级</label>
+                  <input
+                    className="w-full p-2.5 border border-slate-200 rounded-lg text-sm outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-200 transition"
+                    type="number"
+                    min={0}
+                    value={form.priority}
+                    onChange={e => setForm(p => ({ ...p, priority: parseInt(e.target.value) || 0 }))}
+                  />
+                  <p className="text-xs text-slate-400 mt-0.5">数字越小优先级越高</p>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-slate-700 mb-1 block">描述</label>
+                <input
+                  className="w-full p-2.5 border border-slate-200 rounded-lg text-sm outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-200 transition"
+                  placeholder="规则用途简述"
+                  value={form.description}
+                  onChange={e => setForm(p => ({ ...p, description: e.target.value }))}
+                />
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-slate-700 mb-1 block">规则定义 (JSON)</label>
+                <textarea
+                  className={`w-full p-3 border rounded-lg text-sm outline-none transition min-h-[200px] font-mono ${jsonError ? 'border-rose-300 focus:border-rose-400 focus:ring-1 focus:ring-rose-200' : 'border-slate-200 focus:border-blue-400 focus:ring-1 focus:ring-blue-200'}`}
+                  placeholder={'{\n  "sensitive_words": ["脏话"],\n  "max_reply_length": 200\n}'}
+                  value={form.rules_json}
+                  onChange={e => {
+                    setForm(p => ({ ...p, rules_json: e.target.value }));
+                    validateJson(e.target.value);
+                  }}
+                  onBlur={() => validateJson(form.rules_json)}
+                />
+                {jsonError ? (
+                  <p className="text-xs text-rose-500 mt-1">{jsonError}</p>
+                ) : (
+                  <p className="text-xs text-slate-400 mt-1">使用 JSON 格式定义规则，如敏感词列表、回复限制、触发条件等</p>
+                )}
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-slate-700 mb-1 block">状态</label>
+                <button
+                  type="button"
+                  className={`px-4 py-2 rounded-lg text-sm font-medium border transition ${form.is_active ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-slate-50 border-slate-200 text-slate-500'}`}
+                  onClick={() => setForm(p => ({ ...p, is_active: !p.is_active }))}
+                >
+                  {form.is_active ? '启用' : '禁用'}
+                </button>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-1">
+              <Button variant="ghost" onClick={() => setModalOpen(false)}>取消</Button>
+              <Button
+                className="bg-blue-500 hover:bg-blue-600 text-white"
+                onClick={handleSave}
+                disabled={saving || !form.name || !!jsonError}
+              >
+                {saving ? '保存中...' : <><Save className="w-4 h-4 mr-1" />{editingItem ? '保存' : '创建'}</>}
+              </Button>
             </div>
           </Card>
-
-          <Card className="p-5 border-slate-100 bg-slate-50 border-slate-200">
-             <h4 className="text-xs font-bold text-slate-800 mb-4 flex items-center gap-2">
-               <Activity className="w-4 h-4 text-blue-500" />
-               规则生效统计
-             </h4>
-             <div className="grid grid-cols-2 gap-4">
-                <div className="text-center p-3 bg-white rounded-xl border border-slate-200 shadow-sm">
-                   <p className="text-2xl font-black text-slate-900">2.4k</p>
-                   <p className="text-[9px] font-bold text-slate-400 uppercase mt-1">今日触发</p>
-                </div>
-                <div className="text-center p-3 bg-white rounded-xl border border-slate-200 shadow-sm">
-                   <p className="text-2xl font-black text-emerald-600">98.2%</p>
-                   <p className="text-[9px] font-bold text-slate-400 uppercase mt-1">执行成功率</p>
-                </div>
-             </div>
-          </Card>
         </div>
-      </div>
+      )}
     </div>
   );
 };

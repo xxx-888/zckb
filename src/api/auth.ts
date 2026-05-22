@@ -41,7 +41,7 @@ export const authApi = {
       username_or_phone: data.phone,
       password: data.password,
     };
-    const response = await api.post<any, any>('/auth/login', loginData);
+    const response = await api.post<any, any>('/v1/auth/login', loginData);
     if (response.code === 200 && response.data) {
       // 保存token
       localStorage.setItem('auth_token', response.data.access_token);
@@ -53,7 +53,7 @@ export const authApi = {
 
   // 注册
   register: async (data: RegisterRequest): Promise<AuthResponse> => {
-    const response = await api.post<any, any>('/auth/register', data);
+    const response = await api.post<any, any>('/v1/auth/register', data);
     if (response.code === 200 && response.data) {
       localStorage.setItem('auth_token', response.data.access_token);
       localStorage.setItem('user_info', JSON.stringify(response.data.user));
@@ -64,7 +64,7 @@ export const authApi = {
 
   // 获取当前用户
   getCurrentUser: async (): Promise<UserInfo> => {
-    const response = await api.get<any>('/auth/current');
+    const response = await api.get<any>('/v1/auth/current');
     if (response.code === 200 && response.data) {
       return response.data;
     }
@@ -74,7 +74,7 @@ export const authApi = {
   // 登出
   logout: async (): Promise<void> => {
     try {
-      await api.post('/auth/logout');
+      await api.post('/v1/auth/logout');
     } finally {
       localStorage.removeItem('auth_token');
       localStorage.removeItem('user_info');
@@ -94,7 +94,7 @@ export const authApi = {
 
   // 发送注册验证码
   sendRegisterCode: async (phone: string): Promise<void> => {
-    const response = await api.post('/auth/register/send-code', { phone });
+    const response = await api.post('/v1/auth/register/send-code', { phone });
     if (response.code !== 200) {
       throw new Error(response.message || '发送验证码失败');
     }
@@ -102,7 +102,7 @@ export const authApi = {
 
   // 发送验证码（忘记密码）
   sendVerifyCode: async (phone: string): Promise<void> => {
-    const response = await api.post('/auth/forgot-password/send-code', { phone });
+    const response = await api.post('/v1/auth/forgot-password/send-code', { phone });
     if (response.code !== 200) {
       throw new Error(response.message || '发送验证码失败');
     }
@@ -110,7 +110,7 @@ export const authApi = {
 
   // 验证验证码（忘记密码）
   verifyCode: async (phone: string, code: string): Promise<void> => {
-    const response = await api.post('/auth/forgot-password/verify-code', { phone, code });
+    const response = await api.post('/v1/auth/forgot-password/verify-code', { phone, code });
     if (response.code !== 200) {
       throw new Error(response.message || '验证码错误');
     }
@@ -118,7 +118,7 @@ export const authApi = {
 
   // 重置密码
   resetPassword: async (phone: string, code: string, newPassword: string): Promise<void> => {
-    const response = await api.post('/auth/forgot-password/reset', { phone, code, new_password: newPassword });
+    const response = await api.post('/v1/auth/forgot-password/reset', { phone, code, new_password: newPassword });
     if (response.code !== 200) {
       throw new Error(response.message || '重置密码失败');
     }

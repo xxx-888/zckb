@@ -1,630 +1,273 @@
-import React, { useState } from 'react';
-import { 
-  Shield, 
-  Search, 
-  Plus, 
-  MoreHorizontal, 
-  Users, 
-  Building, 
-  Edit, 
-  Trash2, 
-  Eye,
-  CheckCircle,
-  XCircle,
-  RefreshCw,
-  Download,
-  UserPlus
-} from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Shield, Search, Plus, Users, UserPlus, XCircle, CheckCircle, RefreshCw, AlertCircle, Store, Settings } from 'lucide-react';
 import { Card } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
-import { Input } from '../../components/ui/input';
 import { AdminLayout } from '../../components/AdminLayout';
-import { cn } from '../../lib/utils';
 import { useToast } from '../../hooks/use-toast';
-
-interface Role {
-  id: number;
-  name: string;
-  description: string;
-  permissions: string[];
-  userCount: number;
-  createdAt: string;
-}
-
-interface Admin {
-  id: number;
-  name: string;
-  email: string;
-  role: string;
-  status: 'active' | 'inactive';
-  lastLogin: string;
-}
-
-interface Structure {
-  id: number;
-  name: string;
-  type: 'department' | 'team';
-  parentId: number | null;
-  memberCount: number;
-}
+import { adminApi, AdminUser, Role } from '../../api/admin';
+import { storesApi } from '../../api/stores';
+import type { Store as StoreType } from '../../api/stores';
 
 export const PermissionManagement: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'roles' | 'admins' | 'structure'>('roles');
-  
-  // Roles state
-  const [roles, setRoles] = useState<Role[]>([
-    { id: 1, name: '超级管理员', description: '拥有所有权限', permissions: ['all'], userCount: 1, createdAt: '2026-01-01' },
-    { id: 2, name: '运营经理', description: '管理店铺和评论', permissions: ['store.manage', 'review.manage'], userCount: 3, createdAt: '2026-01-15' },
-    { id: 3, name: '客服主管', description: '审核回复和查看数据', permissions: ['reply.audit', 'data.view'], userCount: 5, createdAt: '2026-02-01' },
-  ]);
-  
-  // Admins state
-  const [admins, setAdmins] = useState<Admin[]>([
-    { id: 1, name: '张三', email: 'zhangsan@company.com', role: '超级管理员', status: 'active', lastLogin: '2026-05-12 10:30' },
-    { id: 2, name: '李四', email: 'lisi@company.com', role: '运营经理', status: 'active', lastLogin: '2026-05-11 16:45' },
-    { id: 3, name: '王五', email: 'wangwu@company.com', role: '客服主管', status: 'inactive', lastLogin: '2026-05-10 09:20' },
-  ]);
-  
-  // Structure state
-  const [structures, setStructures] = useState<Structure[]>([
-    { id: 1, name: '总部', type: 'department', parentId: null, memberCount: 15 },
-    { id: 2, name: '技术部', type: 'team', parentId: 1, memberCount: 8 },
-    { id: 3, name: '运营部', type: 'team', parentId: 1, memberCount: 7 },
-  ]);
-  
-  // UI state
-  const [showAddRole, setShowAddRole] = useState(false);
-  const [showEditRole, setShowEditRole] = useState(false);
-  const [showViewRole, setShowViewRole] = useState(false);
-  const [showAddAdmin, setShowAddAdmin] = useState(false);
-  const [showEditAdmin, setShowEditAdmin] = useState(false);
-  const [showViewAdmin, setShowViewAdmin] = useState(false);
-  
-  const [editingRole, setEditingRole] = useState<Role | null>(null);
-  const [viewingRole, setViewingRole] = useState<Role | null>(null);
-  const [editingAdmin, setEditingAdmin] = useState<Admin | null>(null);
-  const [viewingAdmin, setViewingAdmin] = useState<Admin | null>(null);
-  
-  const [newRole, setNewRole] = useState({ name: '', description: '', permissions: [] as string[] });
-  const [newAdmin, setNewAdmin] = useState({ name: '', email: '', role: '运营经理' });
-  
+  const [tab, setTab] = useState<'users' | 'roles'>('users');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [admins, setAdmins] = useState<AdminUser[]>([]);
+  const [roles, setRoles] = useState<Role[]>([]);
+  const [allStores, setAllStores] = useState<StoreType[]>([]);
+  const [showAdd, setShowAdd] = useState(false);
+  const [showStoreAssign, setShowStoreAssign] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
+  const [selectedStoreIds, setSelectedStoreIds] = useState<string[]>([]);
+  const [newItem, setNewItem] = useState({ name: '', username: '', email: '', phone: '', password: '', role: 'OPERATOR', permissions: '', description: '' });
   const [searchQuery, setSearchQuery] = useState('');
-  const { success, error } = useToast();
 
-  // Role handlers
-  const handleAddRole = () => {
-    if (!newRole.name) {
-      error('添加失败', '请输入角色名称');
-      return;
-    }
-    const newId = roles.length + 1;
-    const role: Role = {
-      id: newId,
-      name: newRole.name,
-      description: newRole.description,
-      permissions: newRole.permissions,
-      userCount: 0,
-      createdAt: new Date().toISOString().split('T')[0]
-    };
-    setRoles([...roles, role]);
-    setShowAddRole(false);
-    setNewRole({ name: '', description: '', permissions: [] });
-    success('添加成功', `角色 "${newRole.name}" 已创建`);
+  const { success, error: toastError } = useToast();
+
+  const fetchData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [aRes, rRes, sRes] = await Promise.allSettled([
+        adminApi.getAdminUsers().catch(err => { console.warn('[Permission] 获取管理员列表失败:', err); return []; }),
+        adminApi.getRoles().catch(err => { console.warn('[Permission] 获取角色列表失败:', err); return []; }),
+        storesApi.getStores({ page_size: 100 }).catch(err => { console.warn('[Permission] 获取门店列表失败:', err); return { items: [] }; }),
+      ]);
+      if (aRes.status === 'fulfilled') {
+        const data = aRes.value;
+        const list = (Array.isArray(data) ? data : []) as AdminUser[];
+        // 兼容后端 snake_case 字段名
+        setAdmins(list.map(a => ({ ...a, assignedStores: a.assignedStores || (a as any).assigned_stores || [] })));
+      }
+      if (rRes.status === 'fulfilled') {
+        const rolesData = rRes.value;
+        setRoles(Array.isArray(rolesData) ? rolesData : []);
+      }
+      if (sRes.status === 'fulfilled') {
+        const storesData = sRes.value;
+        setAllStores(Array.isArray((storesData as any)?.items) ? (storesData as any).items : Array.isArray(storesData) ? storesData : []);
+      }
+    } catch (err) {
+      console.error('[Permission] 数据加载异常:', err);
+      setError(err instanceof Error ? err.message : '获取数据失败');
+    } finally { setLoading(false); }
   };
 
-  const handleEditRole = (id: number) => {
-    const role = roles.find(r => r.id === id);
-    if (role) {
-      setEditingRole(role);
-      setShowEditRole(true);
-    }
+  useEffect(() => { fetchData(); }, []);
+
+  const filteredUsers = admins.filter(a =>
+    (a.username || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (a.phone || '').includes(searchQuery) ||
+    (a.email || '').toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const handleAddAdmin = async () => {
+    if (!newItem.username || !newItem.password) { toastError('参数错误', '请填写用户名和密码'); return; }
+    try {
+      await adminApi.createAdminUser({ username: newItem.username, email: newItem.email || undefined, phone: newItem.phone || undefined, password: newItem.password, role: newItem.role });
+      success('添加成功', '管理员已创建');
+      setShowAdd(false);
+      setNewItem({ name: '', username: '', email: '', phone: '', password: '', role: 'OPERATOR', permissions: '', description: '' });
+      fetchData();
+    } catch (err: any) { toastError('添加失败', err.message); }
   };
 
-  const handleUpdateRole = () => {
-    if (!editingRole) return;
-    setRoles(roles.map(r => r.id === editingRole.id ? editingRole : r));
-    setShowEditRole(false);
-    setEditingRole(null);
-    success('更新成功', `角色 "${editingRole.name}" 已更新`);
+  const handleAddRole = async () => {
+    if (!newItem.name) { toastError('参数错误', '请填写角色名称'); return; }
+    try {
+      await adminApi.createRole({ name: newItem.name, permissions: newItem.permissions.split(',').map(s => s.trim()).filter(Boolean), description: newItem.description || undefined });
+      success('添加成功', '角色已创建');
+      setShowAdd(false);
+      setNewItem({ name: '', username: '', email: '', phone: '', password: '', role: 'OPERATOR', permissions: '', description: '' });
+      fetchData();
+    } catch (err: any) { toastError('添加失败', err.message); }
   };
 
-  const handleDeleteRole = (id: number) => {
-    const role = roles.find(r => r.id === id);
-    if (role && role.userCount > 0) {
-      error('删除失败', '该角色下还有用户，无法删除');
-      return;
-    }
-    setRoles(roles.filter(r => r.id !== id));
-    success('删除成功', `角色 "${role?.name}" 已删除`);
+  const handleDisableAdmin = async (id: string) => {
+    try { await adminApi.disableAdminUser(id); success('已禁用', '管理员已禁用'); fetchData(); }
+    catch (err: any) { toastError('操作失败', err.message); }
   };
 
-  const handleViewRole = (id: number) => {
-    const role = roles.find(r => r.id === id);
-    if (role) {
-      setViewingRole(role);
-      setShowViewRole(true);
-    }
+  const handleDeleteRole = async (id: string) => {
+    try { await adminApi.deleteRole(id); success('已删除', '角色已移除'); fetchData(); }
+    catch (err: any) { toastError('删除失败', err.message); }
   };
 
-  // Admin handlers
-  const handleAddAdmin = () => {
-    if (!newAdmin.name || !newAdmin.email) {
-      error('添加失败', '请填写完整信息');
-      return;
-    }
-    const newId = admins.length + 1;
-    const admin: Admin = {
-      id: newId,
-      name: newAdmin.name,
-      email: newAdmin.email,
-      role: newAdmin.role,
-      status: 'active',
-      lastLogin: '-'
-    };
-    setAdmins([...admins, admin]);
-    setShowAddAdmin(false);
-    setNewAdmin({ name: '', email: '', role: '运营经理' });
-    success('添加成功', `管理员 "${newAdmin.name}" 已创建`);
+  const openStoreAssign = (user: AdminUser) => {
+    setSelectedUser(user);
+    setSelectedStoreIds(user.assignedStores || []);
+    setShowStoreAssign(true);
   };
 
-  const handleEditAdmin = (id: number) => {
-    const admin = admins.find(a => a.id === id);
-    if (admin) {
-      setEditingAdmin(admin);
-      setShowEditAdmin(true);
-    }
+  const handleSaveStoreAssign = async () => {
+    if (!selectedUser) return;
+    try {
+      await adminApi.assignStores(selectedUser.id, selectedStoreIds);
+      success('分配成功', '门店权限已更新');
+      setShowStoreAssign(false);
+      fetchData();
+    } catch (err: any) { toastError('分配失败', err.message); }
   };
 
-  const handleUpdateAdmin = () => {
-    if (!editingAdmin) return;
-    setAdmins(admins.map(a => a.id === editingAdmin.id ? editingAdmin : a));
-    setShowEditAdmin(false);
-    setEditingAdmin(null);
-    success('更新成功', `管理员 "${editingAdmin.name}" 信息已更新`);
+  const toggleStore = (storeId: string) => {
+    setSelectedStoreIds(prev =>
+      prev.includes(storeId) ? prev.filter(id => id !== storeId) : [...prev, storeId]
+    );
   };
 
-  const handleDeleteAdmin = (id: number) => {
-    const admin = admins.find(a => a.id === id);
-    setAdmins(admins.filter(a => a.id !== id));
-    success('删除成功', `管理员 "${admin?.name}" 已删除`);
-  };
-
-  const handleViewAdmin = (id: number) => {
-    const admin = admins.find(a => a.id === id);
-    if (admin) {
-      setViewingAdmin(admin);
-      setShowViewAdmin(true);
-    }
-  };
-
-  const handleToggleAdminStatus = (id: number) => {
-    setAdmins(admins.map(a => 
-      a.id === id ? { ...a, status: a.status === 'active' ? 'inactive' as const : 'active' as const } : a
-    ));
-    const admin = admins.find(a => a.id === id);
-    success('状态已更新', `管理员 "${admin?.name}" 状态已切换`);
-  };
+  if (loading) return <AdminLayout><div className="flex items-center justify-center h-64"><RefreshCw className="w-6 h-6 text-slate-400 animate-spin" /></div></AdminLayout>;
+  if (error) return <AdminLayout><div className="flex flex-col items-center justify-center h-64 gap-4"><AlertCircle className="w-10 h-10 text-rose-400" /><p className="text-slate-500">{error}</p><Button variant="outline" onClick={fetchData}>重试</Button></div></AdminLayout>;
 
   return (
     <AdminLayout>
-      <div className="space-y-6">
-        <div className="flex justify-between items-center">
-          <div>
-            <h2 className="text-2xl font-bold text-slate-900">权限管理</h2>
-            <p className="text-slate-500 mt-1">管理系统角色、管理员和组织架构</p>
-          </div>
-          <div className="flex gap-3">
-            <Button 
-              variant="outline" 
-              className="gap-2"
-              onClick={() => success('导出数据', '正在导出权限配置...')}
-            >
-              <Download className="w-4 h-4" /> 导出配置
-            </Button>
-            {activeTab === 'roles' && (
-              <Button 
-                className="bg-amber-500 hover:bg-amber-600 text-white gap-2"
-                onClick={() => setShowAddRole(true)}
-              >
-                <Plus className="w-4 h-4" /> 新增角色
-              </Button>
-            )}
-            {activeTab === 'admins' && (
-              <Button 
-                className="bg-amber-500 hover:bg-amber-600 text-white gap-2"
-                onClick={() => setShowAddAdmin(true)}
-              >
-                <UserPlus className="w-4 h-4" /> 新增管理员
-              </Button>
-            )}
-          </div>
+      <div className="space-y-6 pb-8">
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold text-slate-900">用户与权限管理</h1>
+          <Button onClick={() => setShowAdd(true)}><Plus className="w-4 h-4 mr-1" />{tab === 'users' ? '添加用户' : '添加角色'}</Button>
         </div>
 
-        {/* Tab Switcher */}
-        <Card className="p-1 bg-slate-50 inline-flex gap-1">
-          {[
-            { key: 'roles', label: '角色管理', icon: Shield },
-            { key: 'admins', label: '管理员', icon: Users },
-            { key: 'structure', label: '组织架构', icon: Building },
-          ].map(tab => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key as any)}
-              className={cn(
-                "px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2",
-                activeTab === tab.key 
-                  ? "bg-white text-amber-600 shadow-sm" 
-                  : "text-slate-500 hover:text-slate-900"
-              )}
-            >
-              <tab.icon className="w-4 h-4" />
-              {tab.label}
-            </button>
-          ))}
-        </Card>
+        {/* Tab Switch */}
+        <div className="flex gap-2 bg-slate-50 rounded-xl p-1 w-fit">
+          <button onClick={() => setTab('users')} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${tab === 'users' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>
+            <Users className="w-4 h-4" />用户管理
+          </button>
+          <button onClick={() => setTab('roles')} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${tab === 'roles' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>
+            <Shield className="w-4 h-4" />角色管理
+          </button>
+        </div>
+
+        {/* Search */}
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <input className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm outline-none" placeholder={tab === 'users' ? '搜索用户名、手机号、邮箱...' : '搜索角色名称...'} value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+        </div>
+
+        {/* Users Tab */}
+        {tab === 'users' && (
+          <div className="space-y-3">
+            {filteredUsers.length === 0 ? (
+              <div className="text-center py-16 text-slate-400"><Users className="w-12 h-12 mx-auto mb-3 opacity-30" /><p>暂无用户，点击"添加用户"</p></div>
+            ) : filteredUsers.map(a => (
+              <Card key={a.id} className="p-5 border-slate-100 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600 font-bold text-sm">{a.username?.[0]?.toUpperCase() || '?'}</div>
+                      <div>
+                        <p className="font-bold text-slate-900">{a.username}</p>
+                        <div className="flex items-center gap-2 text-xs text-slate-500">
+                          <span>{a.phone || '无手机号'}</span>
+                          {a.email && <><span>·</span><span>{a.email}</span></>}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 mt-2">
+                      <Badge className="bg-indigo-50 text-indigo-700">{a.role}</Badge>
+                      {a.is_active ? <Badge className="bg-emerald-50 text-emerald-700">启用</Badge> : <Badge className="bg-slate-100 text-slate-500">禁用</Badge>}
+                      {a.assignedStores && a.assignedStores.length > 0 && (
+                        <span className="text-xs text-slate-500 flex items-center gap-1">
+                          <Store className="w-3 h-3" />
+                          管理 {a.assignedStores.length} 家门店
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button size="sm" variant="outline" onClick={() => openStoreAssign(a)}>
+                      <Store className="w-3 h-3 mr-1" />门店设置
+                    </Button>
+                    {a.is_active && (
+                      <Button size="sm" variant="ghost" className="text-rose-500" onClick={() => handleDisableAdmin(a.id)}>
+                        <XCircle className="w-4 h-4" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        )}
 
         {/* Roles Tab */}
-        {activeTab === 'roles' && (
-          <>
-            {/* Add Role Form */}
-            {showAddRole && (
-              <Card className="p-6 border-2 border-amber-500 bg-amber-50/10 animate-in zoom-in-95 duration-200">
-                <h4 className="font-bold text-slate-900 mb-4 flex items-center gap-2">
-                  <Plus className="w-4 h-4" /> 新增角色
-                </h4>
-                <div className="space-y-4 mb-6">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-500">角色名称</label>
-                    <Input 
-                      value={newRole.name}
-                      onChange={(e) => setNewRole({...newRole, name: e.target.value})}
-                      placeholder="请输入角色名称" 
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-500">角色描述</label>
-                    <Input 
-                      value={newRole.description}
-                      onChange={(e) => setNewRole({...newRole, description: e.target.value})}
-                      placeholder="请输入角色描述" 
-                    />
-                  </div>
-                </div>
-                <div className="flex gap-3 pt-4 border-t border-slate-100">
-                  <Button className="flex-1 bg-amber-600 hover:bg-amber-700" onClick={handleAddRole}>创建角色</Button>
-                  <Button variant="ghost" onClick={() => setShowAddRole(false)}>取消</Button>
-                </div>
-              </Card>
-            )}
-
-            {/* Edit Role Form */}
-            {showEditRole && editingRole && (
-              <Card className="p-6 border-2 border-blue-500 bg-blue-50/10 animate-in zoom-in-95 duration-200">
-                <h4 className="font-bold text-slate-900 mb-4 flex items-center gap-2">
-                  <Edit className="w-4 h-4" /> 编辑角色
-                </h4>
-                <div className="space-y-4 mb-6">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-500">角色名称</label>
-                    <Input 
-                      value={editingRole.name}
-                      onChange={(e) => setEditingRole({...editingRole, name: e.target.value})}
-                      placeholder="请输入角色名称" 
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-500">角色描述</label>
-                    <Input 
-                      value={editingRole.description}
-                      onChange={(e) => setEditingRole({...editingRole, description: e.target.value})}
-                      placeholder="请输入角色描述" 
-                    />
-                  </div>
-                </div>
-                <div className="flex gap-3 pt-4 border-t border-slate-100">
-                  <Button className="flex-1 bg-blue-600 hover:bg-blue-700" onClick={handleUpdateRole}>更新角色</Button>
-                  <Button variant="ghost" onClick={() => { setShowEditRole(false); setEditingRole(null); }}>取消</Button>
-                </div>
-              </Card>
-            )}
-
-            {/* View Role Detail */}
-            {showViewRole && viewingRole && (
-              <Card className="p-6 border-2 border-green-500 bg-green-50/10 animate-in zoom-in-95 duration-200">
-                <div className="flex justify-between items-start mb-6">
-                  <h4 className="font-bold text-slate-900 flex items-center gap-2">
-                    <Eye className="w-4 h-4" /> 角色详情
-                  </h4>
-                  <Button variant="ghost" size="sm" onClick={() => { setShowViewRole(false); setViewingRole(null); }}>
-                    ✕
-                  </Button>
-                </div>
-                <div className="space-y-4">
-                  <div>
-                    <p className="text-xs font-bold text-slate-500 mb-1">角色名称</p>
-                    <p className="text-sm text-slate-900">{viewingRole.name}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold text-slate-500 mb-1">角色描述</p>
-                    <p className="text-sm text-slate-900">{viewingRole.description}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold text-slate-500 mb-1">用户数量</p>
-                    <p className="text-sm text-slate-900">{viewingRole.userCount} 人</p>
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold text-slate-500 mb-1">创建时间</p>
-                    <p className="text-sm text-slate-900">{viewingRole.createdAt}</p>
-                  </div>
-                </div>
-              </Card>
-            )}
-
-            {/* Roles Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {roles.map(role => (
-                <Card key={role.id} className="p-6 hover:shadow-md transition-all">
-                  <div className="flex justify-between items-start mb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-amber-50 flex items-center justify-center">
-                        <Shield className="w-5 h-5 text-amber-600" />
-                      </div>
-                      <div>
-                        <p className="font-bold text-slate-900">{role.name}</p>
-                        <p className="text-xs text-slate-400">{role.userCount} 个用户</p>
-                      </div>
-                    </div>
-                    <div className="flex gap-1">
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-blue-600" onClick={() => handleEditRole(role.id)}>
-                        <Edit className="w-4 h-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-red-600" onClick={() => handleDeleteRole(role.id)}>
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </div>
-                  <p className="text-sm text-slate-500 mb-3">{role.description}</p>
-                  <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-                    <Badge variant="outline">{role.permissions.length} 个权限</Badge>
-                    <Button variant="ghost" size="sm" className="text-amber-600" onClick={() => handleViewRole(role.id)}>
-                      <Eye className="w-3 h-3 mr-1" /> 查看详情
-                    </Button>
-                  </div>
-                </Card>
-              ))}
-            </div>
-          </>
-        )}
-
-        {/* Admins Tab */}
-        {activeTab === 'admins' && (
-          <>
-            {/* Add Admin Form */}
-            {showAddAdmin && (
-              <Card className="p-6 border-2 border-amber-500 bg-amber-50/10 animate-in zoom-in-95 duration-200">
-                <h4 className="font-bold text-slate-900 mb-4 flex items-center gap-2">
-                  <UserPlus className="w-4 h-4" /> 新增管理员
-                </h4>
-                <div className="grid grid-cols-2 gap-6 mb-6">
-                  <div className="space-y-4">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-500">姓名</label>
-                      <Input 
-                        value={newAdmin.name}
-                        onChange={(e) => setNewAdmin({...newAdmin, name: e.target.value})}
-                        placeholder="请输入姓名" 
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-500">邮箱</label>
-                      <Input 
-                        value={newAdmin.email}
-                        onChange={(e) => setNewAdmin({...newAdmin, email: e.target.value})}
-                        placeholder="请输入邮箱" 
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-4">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-500">分配角色</label>
-                      <select 
-                        value={newAdmin.role}
-                        onChange={(e) => setNewAdmin({...newAdmin, role: e.target.value})}
-                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-amber-500/20"
-                      >
-                        {roles.map(role => (
-                          <option key={role.id}>{role.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                </div>
-                <div className="flex gap-3 pt-4 border-t border-slate-100">
-                  <Button className="flex-1 bg-amber-600 hover:bg-amber-700" onClick={handleAddAdmin}>创建管理员</Button>
-                  <Button variant="ghost" onClick={() => setShowAddAdmin(false)}>取消</Button>
-                </div>
-              </Card>
-            )}
-
-            {/* Edit Admin Form */}
-            {showEditAdmin && editingAdmin && (
-              <Card className="p-6 border-2 border-blue-500 bg-blue-50/10 animate-in zoom-in-95 duration-200">
-                <h4 className="font-bold text-slate-900 mb-4 flex items-center gap-2">
-                  <Edit className="w-4 h-4" /> 编辑管理员
-                </h4>
-                <div className="grid grid-cols-2 gap-6 mb-6">
-                  <div className="space-y-4">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-500">姓名</label>
-                      <Input 
-                        value={editingAdmin.name}
-                        onChange={(e) => setEditingAdmin({...editingAdmin, name: e.target.value})}
-                        placeholder="请输入姓名" 
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-500">邮箱</label>
-                      <Input 
-                        value={editingAdmin.email}
-                        onChange={(e) => setEditingAdmin({...editingAdmin, email: e.target.value})}
-                        placeholder="请输入邮箱" 
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-4">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-500">分配角色</label>
-                      <select 
-                        value={editingAdmin.role}
-                        onChange={(e) => setEditingAdmin({...editingAdmin, role: e.target.value})}
-                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
-                      >
-                        {roles.map(role => (
-                          <option key={role.id}>{role.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-500">状态</label>
-                      <select 
-                        value={editingAdmin.status}
-                        onChange={(e) => setEditingAdmin({...editingAdmin, status: e.target.value as 'active' | 'inactive'})}
-                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
-                      >
-                        <option value="active">正常</option>
-                        <option value="inactive">禁用</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-                <div className="flex gap-3 pt-4 border-t border-slate-100">
-                  <Button className="flex-1 bg-blue-600 hover:bg-blue-700" onClick={handleUpdateAdmin}>更新管理员</Button>
-                  <Button variant="ghost" onClick={() => { setShowEditAdmin(false); setEditingAdmin(null); }}>取消</Button>
-                </div>
-              </Card>
-            )}
-
-            {/* View Admin Detail */}
-            {showViewAdmin && viewingAdmin && (
-              <Card className="p-6 border-2 border-green-500 bg-green-50/10 animate-in zoom-in-95 duration-200">
-                <div className="flex justify-between items-start mb-6">
-                  <h4 className="font-bold text-slate-900 flex items-center gap-2">
-                    <Eye className="w-4 h-4" /> 管理员详情
-                  </h4>
-                  <Button variant="ghost" size="sm" onClick={() => { setShowViewAdmin(false); setViewingAdmin(null); }}>
-                    ✕
-                  </Button>
-                </div>
-                <div className="grid grid-cols-2 gap-6">
-                  <div className="space-y-4">
-                    <div>
-                      <p className="text-xs font-bold text-slate-500 mb-1">姓名</p>
-                      <p className="text-sm text-slate-900">{viewingAdmin.name}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold text-slate-500 mb-1">邮箱</p>
-                      <p className="text-sm text-slate-900">{viewingAdmin.email}</p>
-                    </div>
-                  </div>
-                  <div className="space-y-4">
-                    <div>
-                      <p className="text-xs font-bold text-slate-500 mb-1">角色</p>
-                      <Badge variant="outline">{viewingAdmin.role}</Badge>
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold text-slate-500 mb-1">状态</p>
-                      <Badge className={viewingAdmin.status === 'active' ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-400"}>
-                        {viewingAdmin.status === 'active' ? '正常' : '已禁用'}
-                      </Badge>
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold text-slate-500 mb-1">最后登录</p>
-                      <p className="text-sm text-slate-900">{viewingAdmin.lastLogin}</p>
-                    </div>
-                  </div>
-                </div>
-              </Card>
-            )}
-
-            {/* Admin Table */}
-            <Card className="overflow-hidden">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-slate-50/50 border-b border-slate-100">
-                    <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">管理员</th>
-                    <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">角色</th>
-                    <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">状态</th>
-                    <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">最后登录</th>
-                    <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase text-right">操作</th>
+        {tab === 'roles' && (
+          <Card className="border-slate-100 shadow-sm overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-slate-500 text-xs">
+                <tr><th className="text-left p-4">角色名称</th><th className="text-left">描述</th><th className="text-left">权限</th><th className="text-right p-4">操作</th></tr>
+              </thead>
+              <tbody>
+                {roles.length === 0 ? (
+                  <tr><td colSpan={4} className="text-center py-12 text-slate-400"><Shield className="w-8 h-8 mx-auto mb-2 opacity-50" /><p>暂无角色</p></td></tr>
+                ) : roles.map(r => (
+                  <tr key={r.id} className="border-t border-slate-50">
+                    <td className="p-4 font-medium text-slate-900">{r.name}</td>
+                    <td className="text-slate-500">{r.description || '-'}</td>
+                    <td><div className="flex flex-wrap gap-1">{(r.permissions || []).map(p => <Badge key={p} className="bg-slate-100 text-slate-600 text-xs">{p}</Badge>)}</div></td>
+                    <td className="text-right p-4"><Button size="sm" variant="ghost" className="text-rose-500" onClick={() => handleDeleteRole(r.id)}><XCircle className="w-4 h-4" /></Button></td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {admins.map(admin => (
-                    <tr key={admin.id} className="hover:bg-slate-50/50 transition-colors">
-                      <td className="px-6 py-4">
-                        <div>
-                          <p className="font-bold text-slate-900">{admin.name}</p>
-                          <p className="text-xs text-slate-400">{admin.email}</p>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <Badge variant="outline">{admin.role}</Badge>
-                      </td>
-                      <td className="px-6 py-4">
-                        <Badge className={admin.status === 'active' ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-400"}>
-                          {admin.status === 'active' ? '正常' : '已禁用'}
-                        </Badge>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-slate-600">
-                        {admin.lastLogin}
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <div className="flex justify-end gap-1">
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-emerald-600" onClick={() => handleToggleAdminStatus(admin.id)}>
-                            {admin.status === 'active' ? <XCircle className="w-4 h-4" /> : <CheckCircle className="w-4 h-4" />}
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-blue-600" onClick={() => handleEditAdmin(admin.id)}>
-                            <Edit className="w-4 h-4" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-red-600" onClick={() => handleDeleteAdmin(admin.id)}>
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-green-600" onClick={() => handleViewAdmin(admin.id)}>
-                            <Eye className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </Card>
-          </>
-        )}
-
-        {/* Structure Tab */}
-        {activeTab === 'structure' && (
-          <Card className="p-6">
-            <h4 className="font-bold text-slate-900 mb-4">组织架构</h4>
-            <div className="space-y-4">
-              {structures.map(struct => (
-                <div key={struct.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center">
-                      {struct.type === 'department' ? <Building className="w-5 h-5 text-blue-600" /> : <Users className="w-5 h-5 text-blue-600" />}
-                    </div>
-                    <div>
-                      <p className="font-medium text-slate-900">{struct.name}</p>
-                      <p className="text-xs text-slate-400">{struct.type === 'department' ? '部门' : '团队'} · {struct.memberCount} 人</p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </tbody>
+            </table>
           </Card>
         )}
       </div>
+
+      {/* Add Dialog */}
+      {showAdd && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <Card className="w-96 p-6 space-y-4">
+            <h3 className="font-bold text-slate-900">{tab === 'users' ? '添加用户' : '添加角色'}</h3>
+            {tab === 'users' ? (
+              <>
+                <input className="w-full p-2.5 border border-slate-200 rounded-lg text-sm outline-none" placeholder="用户名 *" value={newItem.username} onChange={e => setNewItem(p => ({ ...p, username: e.target.value }))} />
+                <input className="w-full p-2.5 border border-slate-200 rounded-lg text-sm outline-none" placeholder="密码 *" type="password" value={newItem.password} onChange={e => setNewItem(p => ({ ...p, password: e.target.value }))} />
+                <input className="w-full p-2.5 border border-slate-200 rounded-lg text-sm outline-none" placeholder="邮箱" value={newItem.email} onChange={e => setNewItem(p => ({ ...p, email: e.target.value }))} />
+                <input className="w-full p-2.5 border border-slate-200 rounded-lg text-sm outline-none" placeholder="手机号" value={newItem.phone} onChange={e => setNewItem(p => ({ ...p, phone: e.target.value }))} />
+                <select className="w-full p-2.5 border border-slate-200 rounded-lg text-sm" value={newItem.role} onChange={e => setNewItem(p => ({ ...p, role: e.target.value }))}>
+                  <option value="HQ">HQ 总部</option><option value="OPERATOR">OPERATOR 运营</option><option value="STORE">STORE 门店</option>
+                </select>
+                <div className="flex justify-end gap-3"><Button variant="ghost" onClick={() => setShowAdd(false)}>取消</Button><Button className="bg-indigo-500 text-white" onClick={handleAddAdmin}>添加</Button></div>
+              </>
+            ) : (
+              <>
+                <input className="w-full p-2.5 border border-slate-200 rounded-lg text-sm outline-none" placeholder="角色名称 *" value={newItem.name} onChange={e => setNewItem(p => ({ ...p, name: e.target.value }))} />
+                <input className="w-full p-2.5 border border-slate-200 rounded-lg text-sm outline-none" placeholder="权限 (逗号分隔)" value={newItem.permissions} onChange={e => setNewItem(p => ({ ...p, permissions: e.target.value }))} />
+                <input className="w-full p-2.5 border border-slate-200 rounded-lg text-sm outline-none" placeholder="描述" value={newItem.description} onChange={e => setNewItem(p => ({ ...p, description: e.target.value }))} />
+                <div className="flex justify-end gap-3"><Button variant="ghost" onClick={() => setShowAdd(false)}>取消</Button><Button className="bg-indigo-500 text-white" onClick={handleAddRole}>添加</Button></div>
+              </>
+            )}
+          </Card>
+        </div>
+      )}
+
+      {/* Store Assignment Dialog */}
+      {showStoreAssign && selectedUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <Card className="w-[500px] max-h-[600px] p-6 space-y-4 overflow-hidden flex flex-col">
+            <h3 className="font-bold text-slate-900">门店权限设置 - {selectedUser.username}</h3>
+            <p className="text-sm text-slate-500">选择该用户可以管理的门店</p>
+            <div className="flex-1 overflow-y-auto space-y-2 pr-2">
+              {allStores.length === 0 ? (
+                <p className="text-center py-8 text-slate-400">暂无门店数据</p>
+              ) : allStores.map(s => (
+                <label key={s.id} className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${selectedStoreIds.includes(s.id) ? 'border-indigo-300 bg-indigo-50' : 'border-slate-100 hover:border-slate-200'}`}>
+                  <input type="checkbox" checked={selectedStoreIds.includes(s.id)} onChange={() => toggleStore(s.id)} className="w-4 h-4 rounded border-slate-300 text-indigo-500 focus:ring-indigo-400" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-slate-900">{s.name}</p>
+                    <p className="text-xs text-slate-400">{s.address || '无地址'} · {s.type || '未知类型'}</p>
+                  </div>
+                  {selectedStoreIds.includes(s.id) && <CheckCircle className="w-4 h-4 text-indigo-500" />}
+                </label>
+              ))}
+            </div>
+            <div className="flex justify-end gap-3 pt-2 border-t border-slate-100">
+              <Button variant="ghost" onClick={() => setShowStoreAssign(false)}>取消</Button>
+              <Button className="bg-indigo-500 text-white" onClick={handleSaveStoreAssign}>保存设置</Button>
+            </div>
+          </Card>
+        </div>
+      )}
     </AdminLayout>
   );
 };

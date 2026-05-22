@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ShieldCheck, Lock, User, ArrowRight, Eye, EyeOff, Settings2, Loader2 } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { useToast } from '../../hooks/use-toast';
+import { authApi } from '../../api/auth';
 
 export const AdminLogin: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
@@ -14,7 +15,7 @@ export const AdminLogin: React.FC = () => {
   const navigate = useNavigate();
   const { success, error: showError } = useToast();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     
@@ -30,17 +31,29 @@ export const AdminLogin: React.FC = () => {
     
     setIsLoading(true);
     
-    // 模拟登录请求
-    setTimeout(() => {
-      setIsLoading(false);
-      if (username === 'admin' && password === '123456') {
+    try {
+      const result = await authApi.login({ phone: username, password });
+      
+      // 仅限 HQ（总部管理员）角色可登录后台
+      const role = result.user.role;
+      if (role === 'HQ') {
         success('登录成功', '正在跳转到管理后台...');
         navigate('/admin/dashboard');
       } else {
-        setError('账号或密码错误');
-        showError('登录失败', '账号或密码错误，请重试');
+        // 非 HQ 角色：提示后自动跳转到移动端
+        showError('权限不足', '无后台管理权限，正在跳转到移动端...');
+        // 保留登录状态（token 不清除，移动端可用）
+        setTimeout(() => {
+          navigate('/mobile/dashboard');
+        }, 1500);
       }
-    }, 1500);
+    } catch (err: any) {
+      const msg = err.message || '登录失败';
+      setError(msg);
+      showError('登录失败', msg);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (

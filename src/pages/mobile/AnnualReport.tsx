@@ -40,6 +40,7 @@ import { useToast } from '../../hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { fetchAnnualReport, fetchAllYearlyData, generateAnnualReport } from '../../api/annual-report';
 import type { YearlyData, ReportInsights, HistoricalTrends } from '../../api/annual-report';
+import { useStore } from '../../context/StoreContext';
 
 export const MobileAnnualReport: React.FC = () => {
   const [selectedYear, setSelectedYear] = useState(2025);
@@ -52,14 +53,17 @@ export const MobileAnnualReport: React.FC = () => {
 
   const { success } = useToast();
   const navigate = useNavigate();
+  const { selectedStoreId } = useStore();
 
   const loadData = async (year: number) => {
     try {
       setLoading(true);
-      const data = await fetchAnnualReport(year);
-      setYearlyData(prev => ({ ...prev, [year]: data.yearlyData }));
-      setInsights(data.insights);
-      setHistorical(data.historicalTrends);
+      const data = await fetchAnnualReport(selectedStoreId || '', year);
+      if (data.yearlyData) {
+        setYearlyData(prev => ({ ...prev, [year]: data.yearlyData! }));
+      }
+      if (data.insights) setInsights(data.insights);
+      if (data.historicalTrends) setHistorical(data.historicalTrends);
     } catch (err) {
       console.error('加载年度报告失败', err);
     } finally {
@@ -73,8 +77,10 @@ export const MobileAnnualReport: React.FC = () => {
     const allYears = [2023, 2024, 2025];
     let loaded = 0;
     allYears.forEach(y => {
-      fetchAnnualReport(y).then(data => {
-        setYearlyData(prev => ({ ...prev, [y]: data.yearlyData }));
+      fetchAnnualReport(selectedStoreId || '', y).then(data => {
+        if (data.yearlyData) {
+          setYearlyData(prev => ({ ...prev, [y]: data.yearlyData! }));
+        }
         loaded++;
         if (loaded === allYears.length) setLoading(false);
       }).catch(() => {
@@ -88,9 +94,9 @@ export const MobileAnnualReport: React.FC = () => {
   useEffect(() => {
     if (lastYearRef.current === selectedYear) return;
     lastYearRef.current = selectedYear;
-    fetchAnnualReport(selectedYear).then(data => {
-      setInsights(data.insights);
-      setHistorical(data.historicalTrends);
+    fetchAnnualReport(selectedStoreId || '', selectedYear).then(data => {
+      if (data.insights) setInsights(data.insights);
+      if (data.historicalTrends) setHistorical(data.historicalTrends);
     }).catch(console.error);
   }, [selectedYear]);
 

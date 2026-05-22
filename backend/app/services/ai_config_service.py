@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import BusinessException, NotFoundException
 from app.core.security import get_password_hash
 from app.models.ai_config import AIModelConfig, AIPromptTemplate, AIRuleEngine
-from app.schemas.ai_config import AIModelConfigCreateRequest
+from app.schemas.ai_config import AIModelConfigCreateRequest, AIPromptConfigCreateRequest, AIRuleEngineCreateRequest
 
 
 async def get_model_configs(db: AsyncSession) -> list[AIModelConfig]:
@@ -156,16 +156,31 @@ async def test_model_config(db: AsyncSession, config_id: UUID) -> dict:
 async def get_prompt_configs(db: AsyncSession) -> list[AIPromptTemplate]:
     """
     获取提示词配置列表
-
-    Args:
-        db: 数据库会话
-
-    Returns:
-        list[AIPromptTemplate]: 提示词配置列表
     """
     stmt = select(AIPromptTemplate).order_by(AIPromptTemplate.type)
     result = await db.execute(stmt)
     return list(result.scalars().all())
+
+
+async def create_prompt_config(
+    db: AsyncSession, data: AIPromptConfigCreateRequest
+) -> AIPromptTemplate:
+    """
+    创建提示词配置
+    """
+    config = AIPromptTemplate(
+        name=data.name,
+        type=data.type,
+        template_text=data.template_text,
+        variables=data.variables,
+        system_prompt=data.system_prompt,
+        is_default=data.is_default if data.is_default is not None else False,
+        is_active=data.is_active if data.is_active is not None else True,
+    )
+
+    db.add(config)
+    await db.flush()
+    return config
 
 
 async def update_prompt_config(
@@ -201,16 +216,29 @@ async def update_prompt_config(
 async def get_rule_engines(db: AsyncSession) -> list[AIRuleEngine]:
     """
     获取规则引擎列表
-
-    Args:
-        db: 数据库会话
-
-    Returns:
-        list[AIRuleEngine]: 规则引擎列表
     """
     stmt = select(AIRuleEngine).order_by(desc(AIRuleEngine.priority))
     result = await db.execute(stmt)
     return list(result.scalars().all())
+
+
+async def create_rule_engine(
+    db: AsyncSession, data: AIRuleEngineCreateRequest
+) -> AIRuleEngine:
+    """
+    创建规则引擎
+    """
+    engine = AIRuleEngine(
+        name=data.name,
+        description=data.description,
+        rules=data.rules,
+        priority=data.priority if data.priority is not None else 0,
+        is_active=data.is_active if data.is_active is not None else True,
+    )
+
+    db.add(engine)
+    await db.flush()
+    return engine
 
 
 async def update_rule_engine(

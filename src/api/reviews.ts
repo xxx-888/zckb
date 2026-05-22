@@ -1,4 +1,4 @@
-﻿import { api } from '@/lib/api';
+import { api } from '@/lib/api';
 
 // 类型定义
 export interface Review {
@@ -74,68 +74,68 @@ export const reviewsApi = {
         }
       });
     }
-    const response = await api.get<any>(`/reviews?${params.toString()}`);
+    const response = await api.get<any>(`/v1/reviews?${params.toString()}`);
     return response.data || response;
   },
 
   // 获取评论详情
   getReviewById: async (id: string): Promise<Review> => {
-    const response = await api.get<any>(`/reviews/${id}`);
+    const response = await api.get<any>(`/v1/reviews/${id}`);
     return response.data || response;
   },
 
   // 获取相似评论
   getSimilarReviews: async (id: string): Promise<Review[]> => {
-    const response = await api.get<any>(`/reviews/${id}/similar`);
+    const response = await api.get<any>(`/v1/reviews/${id}/similar`);
     return response.data || response;
   },
 
   // 获取评论统计
   getStats: async (period?: string): Promise<ReviewStats> => {
-    const url = period ? `/reviews/stats?period=${period}` : '/reviews/stats';
+    const url = period ? `/v1/reviews/stats?period=${period}` : '/v1/reviews/stats';
     const response = await api.get<any>(url);
     return response.data || response;
   },
 
   // 更新评论（如添加回复）
   updateReview: async (id: string, data: { reply?: string; status?: string }): Promise<Review> => {
-    const response = await api.put<any, any>(`/reviews/${id}`, data);
+    const response = await api.put<any, any>(`/v1/reviews/${id}`, data);
     return response.data || response;
   },
 
   // 快速回复
   quickReply: async (id: string, replyContent: string): Promise<Review> => {
-    const response = await api.post<any, any>(`/reviews/${id}/reply`, { reply_content: replyContent });
+    const response = await api.post<any, any>(`/v1/reviews/${id}/reply`, { reply_content: replyContent });
     return response.data || response;
   },
 
   // 审核通过并发送回复
   approveReply: async (id: string): Promise<Review> => {
-    const response = await api.post<any, any>(`/reviews/${id}/approve-reply`);
+    const response = await api.post<any, any>(`/v1/reviews/${id}/approve-reply`);
     return response.data || response;
   },
 
   // 批量删除
   batchDelete: async (ids: string[]): Promise<void> => {
-    const response = await api.post('/reviews/batch-delete', { ids });
+    const response = await api.post('/v1/reviews/batch-delete', { ids });
     return response.data;
   },
 
   // 点赞评论
   likeReview: async (id: string): Promise<void> => {
-    const response = await api.post(`/reviews/${id}/like`);
+    const response = await api.post(`/v1/reviews/${id}/like`);
     return response.data;
   },
 
   // 创建评论（用于管理后台）
   createReview: async (data: Partial<Review>): Promise<Review> => {
-    const response = await api.post<any, any>('/reviews', data);
+    const response = await api.post<any, any>('/v1/reviews', data);
     return response.data || response;
   },
 
   // 删除评论
   deleteReview: async (id: string): Promise<void> => {
-    const response = await api.delete(`/reviews/${id}`);
+    const response = await api.delete(`/v1/reviews/${id}`);
     return response.data;
   },
 };

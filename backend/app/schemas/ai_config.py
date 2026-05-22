@@ -7,11 +7,12 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class AIModelConfigResponse(BaseModel):
     """AI模型配置响应模型"""
+    model_config = ConfigDict(from_attributes=True)
 
     id: UUID = Field(..., description="配置ID")
     provider: str = Field(..., description="提供商: openai/zhipu/wenxin/deepseek/local")
@@ -39,6 +40,7 @@ class AIModelConfigCreateRequest(BaseModel):
 
 class AIPromptConfigResponse(BaseModel):
     """AI提示词配置响应模型"""
+    model_config = ConfigDict(from_attributes=True)
 
     id: UUID = Field(..., description="配置ID")
     name: str = Field(..., description="模板名称")
@@ -52,6 +54,7 @@ class AIPromptConfigResponse(BaseModel):
 
 class AIRuleEngineResponse(BaseModel):
     """AI规则引擎响应模型"""
+    model_config = ConfigDict(from_attributes=True)
 
     id: UUID = Field(..., description="引擎ID")
     name: str = Field(..., description="规则名称")
@@ -59,6 +62,28 @@ class AIRuleEngineResponse(BaseModel):
     rules: Optional[dict] = Field(None, description="规则定义")
     priority: int = Field(..., description="优先级")
     is_active: bool = Field(..., description="是否启用")
+
+
+class AIPromptConfigCreateRequest(BaseModel):
+    """AI提示词配置创建请求模型"""
+
+    name: str = Field(..., description="模板名称")
+    type: str = Field(..., description="类型: good_review/bad_review/neutral_review/appeal/weekly_report")
+    template_text: str = Field(..., description="模板文本")
+    variables: Optional[list[str]] = Field(None, description="变量列表")
+    system_prompt: Optional[str] = Field(None, description="系统提示词")
+    is_default: Optional[bool] = Field(False, description="是否为默认模板")
+    is_active: Optional[bool] = Field(True, description="是否启用")
+
+
+class AIRuleEngineCreateRequest(BaseModel):
+    """AI规则引擎创建请求模型"""
+
+    name: str = Field(..., description="规则名称")
+    description: Optional[str] = Field(None, description="规则描述")
+    rules: Optional[dict] = Field(None, description="规则定义")
+    priority: Optional[int] = Field(0, description="优先级")
+    is_active: Optional[bool] = Field(True, description="是否启用")
 
 
 class AIMonitoringResponse(BaseModel):

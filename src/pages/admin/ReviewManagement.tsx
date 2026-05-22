@@ -1,615 +1,201 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  MessageSquare, 
-  Search, 
-  Filter, 
-  Download, 
-  Trash2, 
-  Eye, 
-  Flag, 
-  Calendar, 
-  MoreVertical,
-  CheckCircle,
-  RefreshCw,
-  Star,
-  Plus,
-  Edit2,
-} from 'lucide-react';
+import { MessageSquare, Search, Download, Trash2, Eye, Star, RefreshCw, AlertCircle, StoreIcon, Filter } from 'lucide-react';
 import { Card } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
-import { Input } from '../../components/ui/input';
 import { AdminLayout } from '../../components/AdminLayout';
-import { cn } from '../../lib/utils';
 import { useToast } from '../../hooks/use-toast';
-import { fetchReviews, createReview, updateReview, deleteReview } from '../../api/reviews';
+import { fetchReviews, deleteReview } from '../../api/reviews';
+import { storesApi } from '../../api/stores';
 import type { Review } from '../../api/reviews';
+import type { Store as StoreType } from '../../api/stores';
 
 export const ReviewManagement: React.FC = () => {
   const [reviews, setReviews] = useState<Review[]>([]);
+  const [stores, setStores] = useState<StoreType[]>([]);
   const [loading, setLoading] = useState(true);
-  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedSentiment, setSelectedSentiment] = useState<string>('all');
-  const [selectedReviews, setSelectedReviews] = useState<number[]>([]);
-  const [showAddReview, setShowAddReview] = useState(false);
-  const [showEditReview, setShowEditReview] = useState(false);
-  const [showViewDetail, setShowViewDetail] = useState(false);
-  const [editingReview, setEditingReview] = useState<Review | null>(null);
+  const [sentimentFilter, setSentimentFilter] = useState('all');
+  const [storeFilter, setStoreFilter] = useState('all');
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [viewingReview, setViewingReview] = useState<Review | null>(null);
-  const [newReview, setNewReview] = useState<Partial<Review>>({ store: '', platform: '美团', rating: 5, user: '', content: '', sentiment: 'positive' });
+
   const { success, error: toastError } = useToast();
 
-  // 加载评论数据
-  const loadReviews = async () => {
+  const loadData = async () => {
+    setLoading(true);
+    setError(null);
     try {
-      setLoading(true);
-      setFetchError(null);
-      const data = await fetchReviews();
-      setReviews(data);
+      const [rRes, sRes] = await Promise.allSettled([
+        fetchReviews({ page_size: 200 }).catch(err => { console.warn('[ReviewMgmt] 获取评论失败:', err); return { items: [] }; }),
+        storesApi.getStores({ page_size: 100 }).catch(err => { console.warn('[ReviewMgmt] 获取门店失败:', err); return { items: [] }; }),
+      ]);
+      if (rRes.status === 'fulfilled') setReviews((rRes.value as any)?.items || []);
+      if (sRes.status === 'fulfilled') setStores((sRes.value as any)?.items || []);
     } catch (err) {
-      setFetchError(err instanceof Error ? err.message : '获取数据失败');
-    } finally {
-      setLoading(false);
-    }
+      setError(err instanceof Error ? err.message : '获取数据失败');
+    } finally { setLoading(false); }
   };
 
-  useEffect(() => {
-    loadReviews();
-  }, []);
+  useEffect(() => { loadData(); }, []);
 
-  const filteredReviews = reviews.filter(r => {
-    const matchesSearch = r.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          r.user.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          r.store.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesSentiment = selectedSentiment === 'all' || r.sentiment === selectedSentiment;
-    return matchesSearch && matchesSentiment;
+  const filtered = reviews.filter(r => {
+    const match = (r.content || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+                  (r.user_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+                  (r.store_name || r.store || '').toLowerCase().includes(searchQuery.toLowerCase());
+    const sentiment = sentimentFilter === 'all' || r.sentiment === sentimentFilter;
+    const store = storeFilter === 'all' || r.store_id === storeFilter;
+    return match && sentiment && store;
   });
 
-  const handleSearch = (query: string) => {
-    setSearchQuery(query);
-    if (query.trim()) {
-      success('搜索中', `正在搜索 "${query}"...`);
-    }
-  };
-
-  const handleFilterSentiment = (sentiment: string) => {
-    setSelectedSentiment(sentiment);
-    success('筛选已更新', `已筛选${sentiment === 'all' ? '所有评论' : sentiment === 'positive' ? '正面评论' : sentiment === 'negative' ? '负面评论' : '中性评论'}`);
-  };
-
-  const handleAddReview = async () => {
-    if (!newReview.store || !newReview.user || !newReview.content) {
-      toastError('添加失败', '请填写店铺名称、用户名和评论内容');
-      return;
-    }
-    try {
-      await createReview({
-        avatar: '',
-        store: newReview.store!,
-        platform: newReview.platform || '美团',
-        rating: newReview.rating || 5,
-        user: newReview.user!,
-        content: newReview.content!,
-        time: new Date().toISOString().split('T')[0] + ' ' + new Date().toTimeString().split(' ')[0].substring(0, 5),
-        sentiment: newReview.sentiment || 'positive',
-        replied: false,
-      });
-      setShowAddReview(false);
-      setNewReview({ store: '', platform: '美团', rating: 5, user: '', content: '', sentiment: 'positive' });
-      success('添加成功', '评论已添加');
-      loadReviews();
-    } catch (err) {
-      toastError('添加失败', err instanceof Error ? err.message : '未知错误');
-    }
-  };
-
-  const handleEditReview = (id: number) => {
-    const review = reviews.find(r => r.id === id);
-    if (review) {
-      setEditingReview(review);
-      setShowEditReview(true);
-    }
-  };
-
-  const handleUpdateReview = async () => {
-    if (!editingReview) return;
-    if (!editingReview.store || !editingReview.user || !editingReview.content) {
-      toastError('更新失败', '请填写完整信息');
-      return;
-    }
-    try {
-      await updateReview(editingReview.id, editingReview);
-      setShowEditReview(false);
-      setEditingReview(null);
-      success('更新成功', '评论已更新');
-      loadReviews();
-    } catch (err) {
-      toastError('更新失败', err instanceof Error ? err.message : '未知错误');
-    }
-  };
-
-  const handleViewDetail = (id: number) => {
-    const review = reviews.find(r => r.id === id);
-    if (review) {
-      setViewingReview(review);
-      setShowViewDetail(true);
-    }
-  };
-
-  const handleFlagReview = (id: number) => {
-    const review = reviews.find(r => r.id === id);
-    success('已标记', `评论已标记为需要处理：${review?.content.substring(0, 20)}...`);
-  };
-
-  const handleDeleteReview = async (id: number) => {
-    try {
-      await deleteReview(id);
-      success('删除成功', '评论已删除');
-      loadReviews();
-    } catch (err) {
-      toastError('删除失败', err instanceof Error ? err.message : '未知错误');
-    }
+  const handleDelete = async (id: string) => {
+    try { await deleteReview(id); success('已删除', '评论已移除'); loadData(); }
+    catch (err: any) { toastError('删除失败', err.message); }
   };
 
   const handleBatchDelete = async () => {
-    if (selectedReviews.length === 0) {
-      toastError('批量删除失败', '请先选择要删除的评论');
-      return;
-    }
-    try {
-      await Promise.all(selectedReviews.map(id => deleteReview(id)));
-      success('批量删除成功', `已删除 ${selectedReviews.length} 条评论`);
-      setSelectedReviews([]);
-      loadReviews();
-    } catch (err) {
-      toastError('批量删除失败', err instanceof Error ? err.message : '未知错误');
-    }
+    if (!selectedIds.length) return;
+    try { await Promise.all(selectedIds.map(id => deleteReview(id))); success('批量删除', `已删除 ${selectedIds.length} 条`); setSelectedIds([]); loadData(); }
+    catch (err: any) { toastError('删除失败', err.message); }
   };
 
-  const handleExport = () => {
-    success('导出数据', '正在生成评论数据报表...');
-    setTimeout(() => {
-      success('导出完成', '评论数据报表已下载');
-    }, 1500);
+  const toggleSelect = (id: string) => setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  const toggleAll = () => selectedIds.length === filtered.length ? setSelectedIds([]) : setSelectedIds(filtered.map(r => r.id));
+
+  const sentimentBadge = (s: string) => {
+    const m: Record<string, { c: string; t: string }> = {
+      positive: { c: 'bg-emerald-100 text-emerald-700', t: '好评' },
+      negative: { c: 'bg-rose-100 text-rose-700', t: '差评' },
+      neutral: { c: 'bg-slate-100 text-slate-600', t: '中评' },
+    };
+    const x = m[s] || { c: 'bg-slate-100 text-slate-600', t: s };
+    return <Badge className={x.c}>{x.t}</Badge>;
   };
 
-  const handleSelectReview = (id: number) => {
-    if (selectedReviews.includes(id)) {
-      setSelectedReviews(selectedReviews.filter(rid => rid !== id));
-    } else {
-      setSelectedReviews([...selectedReviews, id]);
-    }
-  };
+  const starRating = (r: number) => '★'.repeat(r) + '☆'.repeat(5 - r);
 
-  const handleSelectAll = () => {
-    if (selectedReviews.length === filteredReviews.length) {
-      setSelectedReviews([]);
-    } else {
-      setSelectedReviews(filteredReviews.map(r => r.id));
-    }
-  };
-
-  if (loading) {
-    return (
-      <AdminLayout>
-        <div className="flex items-center justify-center h-64">
-          <div className="text-center">
-            <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-            <p className="text-sm text-slate-400">加载中...</p>
-          </div>
-        </div>
-      </AdminLayout>
-    );
-  }
-
-  if (fetchError) {
-    return (
-      <AdminLayout>
-        <div className="text-center py-20">
-          <p className="text-rose-500 mb-4">{fetchError}</p>
-          <Button onClick={() => loadReviews()}>重试</Button>
-        </div>
-      </AdminLayout>
-    );
-  }
+  if (loading) return <AdminLayout><div className="flex items-center justify-center h-64"><RefreshCw className="w-6 h-6 text-slate-400 animate-spin" /></div></AdminLayout>;
+  if (error) return <AdminLayout><div className="flex flex-col items-center justify-center h-64 gap-4"><AlertCircle className="w-10 h-10 text-rose-400" /><p className="text-slate-500">{error}</p><Button variant="outline" onClick={loadData}>重试</Button></div></AdminLayout>;
 
   return (
     <AdminLayout>
-      <div className="space-y-6">
-        <div className="flex justify-between items-center">
+      <div className="space-y-6 pb-8">
+        <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-slate-900">评论数据管理</h2>
-            <p className="text-slate-500 mt-1">查看和管理全系统采集的客户评价数据（共 {reviews.length} 条）</p>
+            <h1 className="text-2xl font-bold text-slate-900">评论管理</h1>
+            <p className="text-sm text-slate-500 mt-1">共 {filtered.length} 条评论</p>
           </div>
-          <div className="flex gap-2">
-            <Button 
-              className="gap-2 h-10 bg-blue-600 hover:bg-blue-700 text-white"
-              onClick={() => setShowAddReview(true)}
-            >
-              <Plus className="w-4 h-4" /> 添加评论
-            </Button>
-            {selectedReviews.length > 0 && (
-              <Button variant="outline" className="gap-2 h-10 text-rose-600 border-rose-200" onClick={handleBatchDelete}>
-                <Trash2 className="w-4 h-4" /> 删除选中 ({selectedReviews.length})
+          <div className="flex items-center gap-2">
+            {selectedIds.length > 0 && (
+              <Button variant="outline" className="text-rose-500 border-rose-200" onClick={handleBatchDelete}>
+                <Trash2 className="w-4 h-4 mr-1" />批量删除({selectedIds.length})
               </Button>
             )}
-            <Button variant="outline" className="gap-2 h-10" onClick={handleExport}>
-              <Download className="w-4 h-4" /> 导出数据
+            <Button variant="outline" onClick={() => success('导出', '正在生成报表...')}>
+              <Download className="w-4 h-4 mr-1" />导出
             </Button>
           </div>
         </div>
 
-        {/* Add Review Form */}
-        {showAddReview && (
-          <Card className="p-6 border-2 border-blue-500 bg-blue-50/10 animate-in zoom-in-95 duration-200">
-            <h4 className="font-bold text-slate-900 mb-4 flex items-center gap-2">
-              <Plus className="w-4 h-4" /> 添加评论
-            </h4>
-            <div className="grid grid-cols-2 gap-6 mb-6">
-              <div className="space-y-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-500">店铺名称</label>
-                  <Input 
-                    value={newReview.store}
-                    onChange={(e) => setNewReview({...newReview, store: e.target.value})}
-                    placeholder="请输入店铺名称" 
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-500">用户名</label>
-                  <Input 
-                    value={newReview.user}
-                    onChange={(e) => setNewReview({...newReview, user: e.target.value})}
-                    placeholder="请输入用户名" 
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-500">评分</label>
-                  <div className="flex gap-1">
-                    {[1, 2, 3, 4, 5].map(i => (
-                      <Star 
-                        key={i} 
-                        className={cn("w-6 h-6 cursor-pointer", i <= (newReview.rating || 5) ? "text-amber-400 fill-current" : "text-slate-300")}
-                        onClick={() => setNewReview({...newReview, rating: i})}
-                      />
-                    ))}
-                  </div>
-                </div>
-              </div>
-              <div className="space-y-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-500">平台</label>
-                  <select 
-                    value={newReview.platform}
-                    onChange={(e) => setNewReview({...newReview, platform: e.target.value})}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
-                  >
-                    <option>美团</option>
-                    <option>点评</option>
-                    <option>抖音</option>
-                  </select>
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-500">情感分类</label>
-                  <select 
-                    value={newReview.sentiment}
-                    onChange={(e) => setNewReview({...newReview, sentiment: e.target.value as 'positive' | 'negative' | 'neutral'})}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
-                  >
-                    <option value="positive">正面</option>
-                    <option value="negative">负面</option>
-                    <option value="neutral">中性</option>
-                  </select>
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-500">评论内容</label>
-                  <textarea 
-                    value={newReview.content}
-                    onChange={(e) => setNewReview({...newReview, content: e.target.value})}
-                    className="w-full h-20 p-3 bg-white border border-slate-200 rounded-lg text-sm resize-none outline-none focus:ring-2 focus:ring-blue-500/20"
-                    placeholder="请输入评论内容..." 
-                  />
-                </div>
-              </div>
-            </div>
-            <div className="flex gap-3 pt-4 border-t border-slate-100">
-              <Button className="flex-1 bg-blue-600 hover:bg-blue-700" onClick={handleAddReview}>添加评论</Button>
-              <Button variant="ghost" onClick={() => { setShowAddReview(false); setNewReview({ store: '', platform: '美团', rating: 5, user: '', content: '', sentiment: 'positive' }); }}>取消</Button>
-            </div>
-          </Card>
-        )}
-
-        {/* Edit Review Form */}
-        {showEditReview && editingReview && (
-          <Card className="p-6 border-2 border-amber-500 bg-amber-50/10 animate-in zoom-in-95 duration-200">
-            <h4 className="font-bold text-slate-900 mb-4 flex items-center gap-2">
-              <Edit2 className="w-4 h-4" /> 编辑评论
-            </h4>
-            <div className="grid grid-cols-2 gap-6 mb-6">
-              <div className="space-y-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-500">店铺名称</label>
-                  <Input 
-                    value={editingReview.store}
-                    onChange={(e) => setEditingReview({...editingReview, store: e.target.value})}
-                    placeholder="请输入店铺名称" 
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-500">用户名</label>
-                  <Input 
-                    value={editingReview.user}
-                    onChange={(e) => setEditingReview({...editingReview, user: e.target.value})}
-                    placeholder="请输入用户名" 
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-500">评分</label>
-                  <div className="flex gap-1">
-                    {[1, 2, 3, 4, 5].map(i => (
-                      <Star 
-                        key={i} 
-                        className={cn("w-6 h-6 cursor-pointer", i <= editingReview.rating ? "text-amber-400 fill-current" : "text-slate-300")}
-                        onClick={() => setEditingReview({...editingReview, rating: i})}
-                      />
-                    ))}
-                  </div>
-                </div>
-              </div>
-              <div className="space-y-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-500">平台</label>
-                  <select 
-                    value={editingReview.platform}
-                    onChange={(e) => setEditingReview({...editingReview, platform: e.target.value})}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-amber-500/20"
-                  >
-                    <option>美团</option>
-                    <option>点评</option>
-                    <option>抖音</option>
-                  </select>
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-500">情感分类</label>
-                  <select 
-                    value={editingReview.sentiment}
-                    onChange={(e) => setEditingReview({...editingReview, sentiment: e.target.value as 'positive' | 'negative' | 'neutral'})}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-amber-500/20"
-                  >
-                    <option value="positive">正面</option>
-                    <option value="negative">负面</option>
-                    <option value="neutral">中性</option>
-                  </select>
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-500">评论内容</label>
-                  <textarea 
-                    value={editingReview.content}
-                    onChange={(e) => setEditingReview({...editingReview, content: e.target.value})}
-                    className="w-full h-20 p-3 bg-white border border-slate-200 rounded-lg text-sm resize-none outline-none focus:ring-2 focus:ring-amber-500/20"
-                    placeholder="请输入评论内容..." 
-                  />
-                </div>
-              </div>
-            </div>
-            <div className="flex gap-3 pt-4 border-t border-slate-100">
-              <Button className="flex-1 bg-amber-600 hover:bg-amber-700" onClick={handleUpdateReview}>更新评论</Button>
-              <Button variant="ghost" onClick={() => { setShowEditReview(false); setEditingReview(null); }}>取消</Button>
-            </div>
-          </Card>
-        )}
-
-        {/* View Review Detail */}
-        {showViewDetail && viewingReview && (
-          <Card className="p-6 border-2 border-green-500 bg-green-50/10 animate-in zoom-in-95 duration-200">
-            <div className="flex justify-between items-start mb-6">
-              <h4 className="font-bold text-slate-900 flex items-center gap-2">
-                <Eye className="w-4 h-4" /> 评论详情
-              </h4>
-              <Button variant="ghost" size="sm" onClick={() => { setShowViewDetail(false); setViewingReview(null); }}>
-                ✕
-              </Button>
-            </div>
-            <div className="grid grid-cols-2 gap-6 mb-6">
-              <div className="space-y-4">
-                <div>
-                  <p className="text-xs font-bold text-slate-500 mb-1">店铺名称</p>
-                  <p className="text-sm text-slate-900">{viewingReview.store}</p>
-                </div>
-                <div>
-                  <p className="text-xs font-bold text-slate-500 mb-1">用户名</p>
-                  <p className="text-sm text-slate-900">{viewingReview.user}</p>
-                </div>
-                <div>
-                  <p className="text-xs font-bold text-slate-500 mb-1">平台</p>
-                  <Badge variant="outline">{viewingReview.platform}</Badge>
-                </div>
-              </div>
-              <div className="space-y-4">
-                <div>
-                  <p className="text-xs font-bold text-slate-500 mb-1">评分</p>
-                  <div className="flex text-amber-400">
-                    {[...Array(5)].map((_, i) => (
-                      <Star key={i} className={cn("w-4 h-4", i < viewingReview.rating ? "fill-current" : "text-slate-200 fill-none")} />
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <p className="text-xs font-bold text-slate-500 mb-1">情感分类</p>
-                  <Badge className={cn(
-                    "border-none text-[10px] py-0 h-4",
-                    viewingReview.sentiment === 'positive' ? "bg-emerald-50 text-emerald-600" : 
-                    viewingReview.sentiment === 'negative' ? "bg-rose-50 text-rose-600" : 
-                    "bg-slate-50 text-slate-600"
-                  )}>
-                    {viewingReview.sentiment === 'positive' ? '正面' : viewingReview.sentiment === 'negative' ? '负面' : '中性'}
-                  </Badge>
-                </div>
-                <div>
-                  <p className="text-xs font-bold text-slate-500 mb-1">采集时间</p>
-                  <p className="text-sm text-slate-500">{viewingReview.time}</p>
-                </div>
-              </div>
-            </div>
-            <div className="p-4 bg-slate-50 rounded-lg">
-              <p className="text-xs font-bold text-slate-500 mb-2">评论内容</p>
-              <p className="text-sm text-slate-700 leading-relaxed">{viewingReview.content}</p>
-            </div>
-            {viewingReview.replied && (
-              <div className="mt-4 p-4 bg-blue-50 rounded-lg">
-                <p className="text-xs font-bold text-blue-600 mb-2">AI 回复</p>
-                <p className="text-sm text-blue-700 leading-relaxed">已自动回复</p>
-              </div>
-            )}
-          </Card>
-        )}
-
-        <Card className="p-4 border-none shadow-sm flex flex-wrap gap-4 items-center bg-white">
-          <div className="relative flex-1 min-w-[300px]">
+        {/* Filters */}
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="relative flex-1 min-w-[200px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <Input 
-              placeholder="搜索评论内容、用户或店铺..." 
-              className="pl-10 h-10" 
-              value={searchQuery}
-              onChange={(e) => handleSearch(e.target.value)}
-            />
+            <input className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm outline-none" placeholder="搜索评论内容、用户名、门店..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
           </div>
-          <Button 
-            variant="outline" 
-            className={cn("gap-2 h-10", selectedSentiment !== 'all' && "bg-orange-50 text-orange-600 border-orange-200")}
-            onClick={() => handleFilterSentiment(selectedSentiment === 'all' ? 'positive' : 'all')}
-          >
-            <Filter className="w-4 h-4" /> 
-            {selectedSentiment === 'all' ? '情感分类' : '正面评论'}
-          </Button>
-          <Button 
-            variant="outline" 
-            className="gap-2 h-10"
-            onClick={() => success('时间筛选', '正在打开时间范围选择器...')}
-          >
-            <Calendar className="w-4 h-4" /> 时间范围
-          </Button>
-        </Card>
+          <select className="bg-white border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none" value={sentimentFilter} onChange={e => setSentimentFilter(e.target.value)}>
+            <option value="all">全部情感</option>
+            <option value="positive">好评</option>
+            <option value="negative">差评</option>
+            <option value="neutral">中评</option>
+          </select>
+          <select className="bg-white border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none min-w-[140px]" value={storeFilter} onChange={e => setStoreFilter(e.target.value)}>
+            <option value="all">全部门店</option>
+            {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+          <Button variant="ghost" size="sm" onClick={loadData}><RefreshCw className="w-4 h-4 mr-1" />刷新</Button>
+        </div>
 
-        <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-slate-50/50">
-                <th className="px-6 py-4">
-                  <input 
-                    type="checkbox" 
-                    checked={selectedReviews.length === filteredReviews.length && filteredReviews.length > 0}
-                    onChange={handleSelectAll}
-                    className="w-4 h-4 rounded border-slate-300" 
-                  />
-                </th>
-                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">评论信息</th>
-                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">所属门店</th>
-                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">星级/情感</th>
-                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">采集时间</th>
-                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase text-right">操作</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filteredReviews.map((r) => (
-                <tr key={r.id} className="hover:bg-slate-50/50 transition-colors">
-                  <td className="px-6 py-4">
-                    <input 
-                      type="checkbox" 
-                      checked={selectedReviews.includes(r.id)}
-                      onChange={() => handleSelectReview(r.id)}
-                      className="w-4 h-4 rounded border-slate-300" 
-                    />
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="max-w-xs">
-                      <p className="text-sm font-bold text-slate-900 mb-1">{r.user}</p>
-                      <p className="text-xs text-slate-500 line-clamp-1">{r.content}</p>
-                      <div className="flex gap-2 mt-2">
-                        <Badge variant="outline" className="text-[10px] py-0 h-4">{r.platform}</Badge>
-                        {r.replied && (
-                          <Badge className="bg-emerald-50 text-emerald-600 border-emerald-200 text-[9px] py-0 h-4">
-                            <CheckCircle className="w-2.5 h-2.5 mr-0.5" /> 已回复
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-sm text-slate-600 font-medium">
-                    {r.store}
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex flex-col gap-1.5">
-                      <div className="flex text-amber-400">
-                        {[...Array(5)].map((_, i) => (
-                          <Star key={i} className={cn("w-3 h-3", i < r.rating ? "fill-current" : "text-slate-200 fill-none")} />
-                        ))}
-                      </div>
-                      <Badge className={cn(
-                        "w-fit text-[10px] py-0 h-4 border-none",
-                        r.sentiment === 'positive' ? "bg-emerald-50 text-emerald-600" : 
-                        r.sentiment === 'negative' ? "bg-rose-50 text-rose-600" : 
-                        "bg-slate-50 text-slate-600"
-                      )}>
-                        {r.sentiment === 'positive' ? '正面' : r.sentiment === 'negative' ? '负面' : '中性'}
-                      </Badge>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-xs text-slate-400 font-mono">
-                    {r.time}
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <div className="flex justify-end gap-1">
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        className="h-8 w-8 text-slate-400 hover:text-indigo-600"
-                        onClick={() => handleViewDetail(r.id)}
-                      >
-                        <Eye className="w-4 h-4" />
-                      </Button>
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        className="h-8 w-8 text-slate-400 hover:text-amber-600"
-                        onClick={() => handleFlagReview(r.id)}
-                      >
-                        <Flag className="w-4 h-4" />
-                      </Button>
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        className="h-8 w-8 text-slate-400 hover:text-rose-600"
-                        onClick={() => handleDeleteReview(r.id)}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </td>
+        {/* Table */}
+        {filtered.length === 0 ? (
+          <div className="text-center py-16 text-slate-400"><MessageSquare className="w-12 h-12 mx-auto mb-3 opacity-30" /><p>暂无评论数据</p></div>
+        ) : (
+          <Card className="border-slate-100 shadow-sm overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-slate-500 text-xs">
+                <tr>
+                  <th className="p-3 w-10"><input type="checkbox" checked={selectedIds.length === filtered.length && filtered.length > 0} onChange={toggleAll} /></th>
+                  <th className="text-left p-3">门店</th>
+                  <th className="text-left p-3">用户</th>
+                  <th className="text-left p-3">评论内容</th>
+                  <th className="text-center p-3">评分</th>
+                  <th className="text-center p-3">情感</th>
+                  <th className="text-center p-3">回复</th>
+                  <th className="text-right p-3">操作</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-          
-          {filteredReviews.length === 0 && (
-            <div className="text-center py-12">
-              <MessageSquare className="w-12 h-12 text-slate-200 mx-auto mb-4" />
-              <p className="text-sm text-slate-400">没有找到匹配的评论</p>
-            </div>
-          )}
-        </div>
+              </thead>
+              <tbody>
+                {filtered.map(r => (
+                  <tr key={r.id} className="border-t border-slate-50 hover:bg-slate-50/50">
+                    <td className="p-3"><input type="checkbox" checked={selectedIds.includes(r.id)} onChange={() => toggleSelect(r.id)} /></td>
+                    <td className="p-3">
+                      <div className="flex items-center gap-1.5">
+                        <StoreIcon className="w-3.5 h-3.5 text-blue-500" />
+                        <span className="font-medium text-slate-900 text-xs">{r.store_name || r.store || '未知门店'}</span>
+                        {r.platform && <span className="text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">{r.platform}</span>}
+                      </div>
+                    </td>
+                    <td className="p-3 text-xs text-slate-600">{r.user_name || r.user || '匿名'}</td>
+                    <td className="p-3 max-w-[300px]"><p className="text-xs text-slate-700 line-clamp-2">{r.content}</p></td>
+                    <td className="p-3 text-center text-amber-500 text-xs">{starRating(r.rating)}</td>
+                    <td className="p-3 text-center">{sentimentBadge(r.sentiment)}</td>
+                    <td className="p-3 text-center">{r.replied ? <Badge className="bg-blue-100 text-blue-700 text-xs">已回复</Badge> : <span className="text-xs text-slate-400">未回复</span>}</td>
+                    <td className="p-3 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <Button size="sm" variant="ghost" onClick={() => setViewingReview(r)}><Eye className="w-3.5 h-3.5" /></Button>
+                        <Button size="sm" variant="ghost" className="text-rose-500" onClick={() => handleDelete(r.id)}><Trash2 className="w-3.5 h-3.5" /></Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Card>
+        )}
 
-        <div className="flex justify-between items-center text-sm text-slate-500">
-          <span>共 {filteredReviews.length} 条评论</span>
-          <div className="flex gap-2">
-            <Button variant="ghost" size="sm" className="h-8">上一页</Button>
-            <Button variant="ghost" size="sm" className="h-8 bg-slate-100">1</Button>
-            <Button variant="ghost" size="sm" className="h-8">2</Button>
-            <Button variant="ghost" size="sm" className="h-8">3</Button>
-            <Button variant="ghost" size="sm" className="h-8">下一页</Button>
+        {/* Detail Modal */}
+        {viewingReview && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setViewingReview(null)}>
+            <Card className="w-[500px] max-h-[80vh] overflow-y-auto p-6 space-y-4" onClick={e => e.stopPropagation()}>
+              <h3 className="font-bold text-slate-900">评论详情</h3>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div><span className="text-slate-400">门店:</span> <span className="font-medium">{viewingReview.store_name || viewingReview.store || '-'}</span></div>
+                <div><span className="text-slate-400">平台:</span> <span className="font-medium">{viewingReview.platform || '-'}</span></div>
+                <div><span className="text-slate-400">用户:</span> <span className="font-medium">{viewingReview.user_name || viewingReview.user || '-'}</span></div>
+                <div><span className="text-slate-400">评分:</span> <span className="text-amber-500">{starRating(viewingReview.rating)}</span></div>
+                <div><span className="text-slate-400">情感:</span> {sentimentBadge(viewingReview.sentiment)}</div>
+                <div><span className="text-slate-400">状态:</span> {viewingReview.replied ? <Badge className="bg-blue-100 text-blue-700 text-xs">已回复</Badge> : <span className="text-xs text-slate-400">未回复</span>}</div>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-4">
+                <p className="text-xs text-slate-400 mb-1">评论内容</p>
+                <p className="text-sm text-slate-700">{viewingReview.content}</p>
+              </div>
+              {viewingReview.reply && (
+                <div className="bg-indigo-50 rounded-xl p-4">
+                  <p className="text-xs text-indigo-500 mb-1">回复内容</p>
+                  <p className="text-sm text-slate-700">{viewingReview.reply}</p>
+                </div>
+              )}
+              {viewingReview.images && viewingReview.images.length > 0 && (
+                <div className="flex gap-2 flex-wrap">
+                  {viewingReview.images.map((img, i) => <img key={i} src={img} alt="" className="w-20 h-20 object-cover rounded-lg" />)}
+                </div>
+              )}
+              <div className="flex justify-end"><Button variant="outline" onClick={() => setViewingReview(null)}>关闭</Button></div>
+            </Card>
           </div>
-        </div>
+        )}
       </div>
     </AdminLayout>
   );

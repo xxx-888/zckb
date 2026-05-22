@@ -200,43 +200,43 @@ const fetchAPI = async <T,>(url: string, mockData: T): Promise<T> => {
 export const dashboardApi = {
   // 获取核心统计
   getCoreStats: async (period: string = '7d', storeId?: string): Promise<CoreStats> => {
-    const url = storeId ? `/dashboard/core-stats?period=${period}&store_id=${storeId}` : `/dashboard/core-stats?period=${period}`;
+    const url = storeId ? `/v1/dashboard/core-stats?period=${period}&store_id=${storeId}` : `/v1/dashboard/core-stats?period=${period}`;
     return fetchAPI<CoreStats>(url, MOCK_CORE_STATS);
   },
 
   // 获取平台分布
   getPlatformDistribution: async (storeId?: string): Promise<PlatformData[]> => {
-    const url = storeId ? `/dashboard/platform-distribution?store_id=${storeId}` : '/dashboard/platform-distribution';
+    const url = storeId ? `/v1/dashboard/platform-distribution?store_id=${storeId}` : '/v1/dashboard/platform-distribution';
     return fetchAPI<PlatformData[]>(url, MOCK_PLATFORM_DATA);
   },
 
   // 获取最新评论
   getRecentReviews: async (limit: number = 10, storeId?: string): Promise<Review[]> => {
-    const url = storeId ? `/dashboard/recent-reviews?limit=${limit}&store_id=${storeId}` : `/dashboard/recent-reviews?limit=${limit}`;
+    const url = storeId ? `/v1/dashboard/recent-reviews?limit=${limit}&store_id=${storeId}` : `/v1/dashboard/recent-reviews?limit=${limit}`;
     return fetchAPI<Review[]>(url, MOCK_RECENT_REVIEWS.slice(0, limit));
   },
 
   // 获取门店排行
   getStoreRankings: async (limit: number = 10, storeId?: string): Promise<StoreRanking[]> => {
-    const url = storeId ? `/dashboard/store-rankings?limit=${limit}&store_id=${storeId}` : `/dashboard/store-rankings?limit=${limit}`;
+    const url = storeId ? `/v1/dashboard/store-rankings?limit=${limit}&store_id=${storeId}` : `/v1/dashboard/store-rankings?limit=${limit}`;
     return fetchAPI<StoreRanking[]>(url, MOCK_STORE_RANKINGS.slice(0, limit));
   },
 
   // 获取数据源健康状态
   getHealthStatus: async (storeId?: string): Promise<HealthStatus[]> => {
-    const url = storeId ? `/dashboard/health-status?store_id=${storeId}` : '/dashboard/health-status';
+    const url = storeId ? `/v1/dashboard/health-status?store_id=${storeId}` : '/v1/dashboard/health-status';
     return fetchAPI<HealthStatus[]>(url, MOCK_HEALTH_STATUS);
   },
 
   // 获取警告信息
   getAlerts: async (storeId?: string): Promise<AlertData[]> => {
-    const url = storeId ? `/dashboard/alerts?store_id=${storeId}` : '/dashboard/alerts';
+    const url = storeId ? `/v1/dashboard/alert?store_id=${storeId}` : '/v1/dashboard/alert';
     return fetchAPI<AlertData[]>(url, [MOCK_ALERT]);
   },
 
   // 获取单个门店健康值（商户视图）
   getStoreHealth: async (storeId?: string): Promise<any> => {
-    const url = storeId ? `/dashboard/store-health?store_id=${storeId}` : '/dashboard/store-health';
+    const url = storeId ? `/v1/dashboard/store-health?store_id=${storeId}` : '/v1/dashboard/store-health';
     return fetchAPI<any>(url, MOCK_STORE_HEALTH);
   },
 };

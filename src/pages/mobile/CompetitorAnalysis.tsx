@@ -24,6 +24,7 @@ import { useToast } from '../../hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { fetchCompetitorTasks, createCompetitorTask } from '../../api/competitor';
 import type { CompetitorTask } from '../../api/competitor';
+import { useStore } from '../../context/StoreContext';
 
 const plans = [
   {
@@ -69,12 +70,13 @@ export const MobileCompetitorAnalysis: React.FC = () => {
 
   const { success, error: toastError } = useToast();
   const navigate = useNavigate();
+  const { selectedStoreId } = useStore();
 
   const loadData = async () => {
     try {
       setLoading(true);
       setError(null);
-      const tasksData = await fetchCompetitorTasks();
+      const tasksData = await fetchCompetitorTasks(selectedStoreId);
       setTasks(tasksData);
     } catch (err) {
       setError(err instanceof Error ? err.message : '获取数据失败');

@@ -1,4 +1,4 @@
-﻿import { api } from '@/lib/api';
+import { api } from '@/lib/api';
 
 // 类型定义
 export interface ReplyTemplate {
@@ -60,91 +60,91 @@ export interface NotificationRule {
 export const settingsApi = {
   // 回复模板
   getReplyTemplates: async (): Promise<ReplyTemplate[]> => {
-    const response = await api.get<any>('/settings/reply-templates');
+    const response = await api.get<any>('/v1/settings/reply-templates');
     return response.data || response;
   },
 
   createReplyTemplate: async (data: Partial<ReplyTemplate>): Promise<ReplyTemplate> => {
-    const response = await api.post<any, any>('/settings/reply-templates', data);
+    const response = await api.post<any, any>('/v1/settings/reply-templates', data);
     return response.data || response;
   },
 
   updateReplyTemplate: async (id: string, data: Partial<ReplyTemplate>): Promise<ReplyTemplate> => {
-    const response = await api.put<any, any>(`/settings/reply-templates/${id}`, data);
+    const response = await api.put<any, any>(`/v1/settings/reply-templates/${id}`, data);
     return response.data || response;
   },
 
   deleteReplyTemplate: async (id: string): Promise<void> => {
-    const response = await api.delete(`/settings/reply-templates/${id}`);
+    const response = await api.delete(`/v1/settings/reply-templates/${id}`);
     return response.data;
   },
 
   // 自动回复配置
   getAutoReplyConfig: async (): Promise<AutoReplyConfig> => {
-    const response = await api.get<any>('/settings/auto-reply');
+    const response = await api.get<any>('/v1/settings/auto-reply');
     return response.data || response;
   },
 
   updateAutoReplyConfig: async (data: Partial<AutoReplyConfig>): Promise<AutoReplyConfig> => {
-    const response = await api.put<any, any>('/settings/auto-reply', data);
+    const response = await api.put<any, any>('/v1/settings/auto-reply', data);
     return response.data || response;
   },
 
   // 用户通知设置
   getNotificationSetting: async (): Promise<UserNotificationSetting> => {
-    const response = await api.get<any>('/settings/notification');
+    const response = await api.get<any>('/v1/settings/notification');
     return response.data || response;
   },
 
   updateNotificationSetting: async (data: Partial<UserNotificationSetting>): Promise<UserNotificationSetting> => {
-    const response = await api.put<any, any>('/settings/notification', data);
+    const response = await api.put<any, any>('/v1/settings/notification', data);
     return response.data || response;
   },
 
   // 通知渠道
   getNotificationChannels: async (): Promise<NotificationChannel[]> => {
-    const response = await api.get<any>('/notifications/channels');
+    const response = await api.get<any>('/v1/notifications/channels');
     return response.data || response;
   },
 
   createNotificationChannel: async (data: Partial<NotificationChannel>): Promise<NotificationChannel> => {
-    const response = await api.post<any, any>('/notifications/channels', data);
+    const response = await api.post<any, any>('/v1/notifications/channels', data);
     return response.data || response;
   },
 
   updateNotificationChannel: async (id: string, data: Partial<NotificationChannel>): Promise<NotificationChannel> => {
-    const response = await api.put<any, any>(`/notifications/channels/${id}`, data);
+    const response = await api.put<any, any>(`/v1/notifications/channels/${id}`, data);
     return response.data || response;
   },
 
   deleteNotificationChannel: async (id: string): Promise<void> => {
-    const response = await api.delete(`/notifications/channels/${id}`);
+    const response = await api.delete(`/v1/notifications/channels/${id}`);
     return response.data;
   },
 
   testNotificationChannel: async (id: string): Promise<void> => {
-    const response = await api.post(`/notifications/channels/${id}/test`);
+    const response = await api.post(`/v1/notifications/channels/${id}/test`);
     return response.data;
   },
 
   // 通知规则
   getNotificationRules: async (): Promise<NotificationRule[]> => {
-    const response = await api.get<any>('/notifications/rules');
+    const response = await api.get<any>('/v1/notifications/rules');
     return response.data || response;
   },
 
   createNotificationRule: async (data: Partial<NotificationRule>): Promise<NotificationRule> => {
-    const response = await api.post<any, any>('/notifications/rules', data);
+    const response = await api.post<any, any>('/v1/notifications/rules', data);
     return response.data || response;
   },
 
   updateNotificationRule: async (id: string, data: Partial<NotificationRule>): Promise<NotificationRule> => {
-    const response = await api.put<any, any>(`/notifications/rules/${id}`, data);
+    const response = await api.put<any, any>(`/v1/notifications/rules/${id}`, data);
     return response.data || response;
   },
 
   deleteNotificationRule: async (id: string): Promise<void> => {
-    const response = await api.delete(`/notifications/rules/${id}`);
+    const response = await api.delete(`/v1/notifications/rules/${id}`);
     return response.data;
   },
 };

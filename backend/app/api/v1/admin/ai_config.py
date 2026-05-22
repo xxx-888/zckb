@@ -16,7 +16,9 @@ from app.schemas.ai_config import (
     AIModelConfigCreateRequest,
     AIModelConfigResponse,
     AIMonitoringResponse,
+    AIPromptConfigCreateRequest,
     AIPromptConfigResponse,
+    AIRuleEngineCreateRequest,
     AIRuleEngineResponse,
     AIEvaluationResponse,
 )
@@ -143,6 +145,24 @@ async def get_prompt_configs(
     )
 
 
+@router.post("/prompts", summary="新增提示词配置")
+async def create_prompt_config(
+    request: AIPromptConfigCreateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> dict:
+    """
+    新增提示词配置
+    - 创建好评/差评/中评回复模板
+    - 创建申诉模板、周报模板等
+    """
+    config = await ai_config_service.create_prompt_config(db, request)
+    return success(
+        data=AIPromptConfigResponse.model_validate(config).model_dump(mode="json"),
+        message="提示词配置创建成功",
+    )
+
+
 @router.put("/prompts/{config_id}", summary="更新提示词配置")
 async def update_prompt_config(
     config_id: UUID,
@@ -175,6 +195,25 @@ async def get_rule_engines(
     engines = await ai_config_service.get_rule_engines(db)
     return success(
         data=[AIRuleEngineResponse.model_validate(e).model_dump(mode="json") for e in engines]
+    )
+
+
+@router.post("/rules", summary="新增规则引擎")
+async def create_rule_engine(
+    request: AIRuleEngineCreateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> dict:
+    """
+    新增规则引擎
+    - 差评识别规则
+    - 自动回复触发规则
+    - 风险分级规则等
+    """
+    engine = await ai_config_service.create_rule_engine(db, request)
+    return success(
+        data=AIRuleEngineResponse.model_validate(engine).model_dump(mode="json"),
+        message="规则引擎创建成功",
     )
 
 

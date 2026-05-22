@@ -1,4 +1,4 @@
-﻿import { api } from '@/lib/api';
+import { api } from '@/lib/api';
 
 export interface HighQualityReview {
   id: string;
@@ -32,27 +32,27 @@ export interface BrandScript {
 
 export const positiveActivationApi = {
   getHighQualityReviews: async (page: number = 1, pageSize: number = 20): Promise<any> => {
-    const response = await api.get<any>(`/positive-activation/high-quality-reviews?page=${page}&page_size=${pageSize}`);
+    const response = await api.get<any>(`/v1/positive-activation/high-quality-reviews?page=${page}&page_size=${pageSize}`);
     return response.data || response;
   },
 
   getBrandScripts: async (): Promise<BrandScript[]> => {
-    const response = await api.get<any>('/positive-activation/brand-scripts');
+    const response = await api.get<any>('/v1/positive-activation/brand-scripts');
     return response.data || response;
   },
 
   copyScript: async (scriptId: string): Promise<void> => {
-    const response = await api.post(`/positive-activation/copy-script/${scriptId}`);
+    const response = await api.post(`/v1/positive-activation/copy-script/${scriptId}`);
     return response.data;
   },
 
   sendAuthorization: async (reviewId: string): Promise<void> => {
-    const response = await api.post(`/positive-activation/send-authorization/${reviewId}`);
+    const response = await api.post(`/v1/positive-activation/send-authorization/${reviewId}`);
     return response.data;
   },
 
   generateContent: async (reviewId: string, platform: string): Promise<any> => {
-    const response = await api.post<any, any>('/positive-activation/generate-content', {
+    const response = await api.post<any, any>('/v1/positive-activation/generate-content', {
       review_id: reviewId,
       platform,
     });

@@ -1,4 +1,4 @@
-﻿import { api } from '@/lib/api';
+import { api } from '@/lib/api';
 
 // 类型定义
 export interface Topic {
@@ -66,19 +66,19 @@ export interface AppealSuggestion {
 
 export const aiAnalysisApi = {
   getTopics: async (period?: string): Promise<Topic[]> => {
-    const url = period ? `/ai-analysis/topics?period=${period}` : '/ai-analysis/topics';
+    const url = period ? `/v1/ai-analysis/topics?period=${period}` : '/v1/ai-analysis/topics';
     const response = await api.get<any>(url);
     return response.data || response;
   },
 
   getTagClustering: async (period?: string): Promise<TagCluster[]> => {
-    const url = period ? `/ai-analysis/tag-clustering?period=${period}` : '/ai-analysis/tag-clustering';
+    const url = period ? `/v1/ai-analysis/tag-clustering?period=${period}` : '/v1/ai-analysis/tag-clustering';
     const response = await api.get<any>(url);
     return response.data || response;
   },
 
   getSentimentSummary: async (): Promise<SentimentSummary> => {
-    const response = await api.get<any>('/ai-analysis/sentiment-summary');
+    const response = await api.get<any>('/v1/ai-analysis/sentiment-summary');
     const data = response.data || response;
     return {
       score: data.score,
@@ -90,7 +90,7 @@ export const aiAnalysisApi = {
   },
 
   getRiskLevels: async (): Promise<RiskLevels> => {
-    const response = await api.get<any>('/ai-analysis/risk-levels');
+    const response = await api.get<any>('/v1/ai-analysis/risk-levels');
     const data = response.data || response;
     // 后端返回扁平结构，转换为前端期望的嵌套结构
     return {
@@ -101,17 +101,17 @@ export const aiAnalysisApi = {
   },
 
   getReplyHistory: async (page: number = 1, pageSize: number = 20): Promise<any> => {
-    const response = await api.get<any>(`/ai-analysis/reply-history?page=${page}&page_size=${pageSize}`);
+    const response = await api.get<any>(`/v1/ai-analysis/reply-history?page=${page}&page_size=${pageSize}`);
     return response.data || response;
   },
 
   getReplyStats: async (): Promise<ReplyStats> => {
-    const response = await api.get<any>('/ai-analysis/reply-stats');
+    const response = await api.get<any>('/v1/ai-analysis/reply-stats');
     return response.data || response;
   },
 
   getAppealSuggestion: async (reviewId: string): Promise<AppealSuggestion> => {
-    const response = await api.get<any>(`/ai-analysis/appeal-suggestion/${reviewId}`);
+    const response = await api.get<any>(`/v1/ai-analysis/appeal-suggestion/${reviewId}`);
     return response.data || response;
   },
 };
@@ -231,7 +231,7 @@ export const fetchReplyStats = async (): Promise<ReplyStats> => {
 
 export const fetchAppealSuggestions = async (reviewId?: string): Promise<AppealSuggestion[]> => {
   if (reviewId) {
-    const response = await api.get<any>(`/ai-analysis/appeal-suggestion/${reviewId}`);
+    const response = await api.get<any>(`/v1/ai-analysis/appeal-suggestion/${reviewId}`);
     const items = response.data || response;
     return Array.isArray(items) ? items : [items];
   }

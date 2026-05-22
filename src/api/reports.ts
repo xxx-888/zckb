@@ -1,4 +1,4 @@
-﻿import { api } from '@/lib/api';
+import { api } from '@/lib/api';
 
 export interface YearlyData {
   year: number;
@@ -47,30 +47,30 @@ export interface WeeklyBrief {
 
 export const reportsApi = {
   getAnnualReport: async (storeId: string, year: number): Promise<AnnualReport> => {
-    const response = await api.get<any>(`/reports/annual?store_id=${storeId}&year=${year}`);
+    const response = await api.get<any>(`/v1/reports/annual?store_id=${storeId}&year=${year}`);
     return response.data || response;
   },
 
   getAllYearsData: async (storeId: string): Promise<YearlyData[]> => {
-    const response = await api.get<any>(`/reports/annual/all-years?store_id=${storeId}`);
+    const response = await api.get<any>(`/v1/reports/annual/all-years?store_id=${storeId}`);
     return response.data || response;
   },
 
   generateAnnualReport: async (storeId: string, year: number): Promise<AnnualReport> => {
-    const response = await api.post<any, any>('/reports/annual/generate', { store_id: storeId, year });
+    const response = await api.post<any, any>('/v1/reports/annual/generate', { store_id: storeId, year });
     return response.data || response;
   },
 
   getWeeklyBrief: async (storeId: string, weekStart?: string): Promise<WeeklyBrief> => {
     const url = weekStart 
-      ? `/reports/weekly?store_id=${storeId}&week_start=${weekStart}`
-      : `/reports/weekly?store_id=${storeId}`;
+      ? `/v1/reports/weekly?store_id=${storeId}&week_start=${weekStart}`
+      : `/v1/reports/weekly?store_id=${storeId}`;
     const response = await api.get<any>(url);
     return response.data || response;
   },
 
   generateWeeklyBrief: async (storeId: string): Promise<WeeklyBrief> => {
-    const response = await api.post<any, any>('/reports/weekly/generate', { store_id: storeId });
+    const response = await api.post<any, any>('/v1/reports/weekly/generate', { store_id: storeId });
     return response.data || response;
   },
 };

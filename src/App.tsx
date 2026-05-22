@@ -4,6 +4,7 @@ import Toaster from './components/ui/toaster';
 
 // 管理员页面
 import { AdminLogin } from './pages/admin/AdminLogin';
+import { AdminGuard } from './components/AdminGuard';
 import { AdminDashboard } from './pages/admin/AdminDashboard';
 import { AIConfig } from './pages/admin/AIConfig';
 import { CompetitorAnalysis } from './pages/admin/CompetitorAnalysis';
@@ -94,35 +95,35 @@ function AppContent() {
         <Route path="/mobile/dish-elimination" element={<DishElimination />} />
         <Route path="/mobile/traceability-detail/:reportId" element={<TraceabilityDetail />} />
         
-        {/* ==================== 管理员路由 ==================== */}
+        {/* ==================== 管理员路由（仅限HQ） ==================== */}
         <Route path="/admin" element={<AdminLogin />} />
-        <Route path="/admin/dashboard" element={<AdminDashboard />} />
+        <Route path="/admin/dashboard" element={<AdminGuard><AdminDashboard /></AdminGuard>} />
         
         {/* 管理员 - 主要功能 */}
-        <Route path="/admin/ai-config" element={<AIConfig />} />
-        <Route path="/admin/competitor-analysis" element={<CompetitorAnalysis />} />
-        <Route path="/admin/notification-config" element={<NotificationConfig />} />
-        <Route path="/admin/permission-management" element={<PermissionManagement />} />
-        <Route path="/admin/reply-audit" element={<ReplyAudit />} />
-        <Route path="/admin/review-management" element={<ReviewManagement />} />
-        <Route path="/admin/spider-management" element={<SpiderManagement />} />
-        <Route path="/admin/store-management" element={<StoreManagement />} />
-        <Route path="/admin/annual-report" element={<AnnualReport />} />
-        <Route path="/admin/xiaohongshu" element={<XiaohongshuPage />} />
-        <Route path="/admin/xiaohongshu-analysis" element={<XiaohongshuAnalysis />} />
+        <Route path="/admin/ai-config" element={<AdminGuard><AIConfig /></AdminGuard>} />
+        <Route path="/admin/competitor-analysis" element={<AdminGuard><CompetitorAnalysis /></AdminGuard>} />
+        <Route path="/admin/notification-config" element={<AdminGuard><NotificationConfig /></AdminGuard>} />
+        <Route path="/admin/permission-management" element={<AdminGuard><PermissionManagement /></AdminGuard>} />
+        <Route path="/admin/reply-audit" element={<AdminGuard><ReplyAudit /></AdminGuard>} />
+        <Route path="/admin/review-management" element={<AdminGuard><ReviewManagement /></AdminGuard>} />
+        <Route path="/admin/spider-management" element={<AdminGuard><SpiderManagement /></AdminGuard>} />
+        <Route path="/admin/store-management" element={<AdminGuard><StoreManagement /></AdminGuard>} />
+        <Route path="/admin/annual-report" element={<AdminGuard><AnnualReport /></AdminGuard>} />
+        <Route path="/admin/xiaohongshu" element={<AdminGuard><XiaohongshuPage /></AdminGuard>} />
+        <Route path="/admin/xiaohongshu-analysis" element={<AdminGuard><XiaohongshuAnalysis /></AdminGuard>} />
         {/* 新增：后台管理缺失的5个功能模块 */}
-        <Route path="/admin/negative-reply" element={<AdminNegativeReply />} />
-        <Route path="/admin/positive-activation" element={<AdminPositiveActivation />} />
-        <Route path="/admin/insights" element={<AdminInsights />} />
-        <Route path="/admin/ai-analysis" element={<AdminAIAnalysis />} />
-        <Route path="/admin/mobile-settings" element={<AdminMobileSettings />} />
+        <Route path="/admin/negative-reply" element={<AdminGuard><AdminNegativeReply /></AdminGuard>} />
+        <Route path="/admin/positive-activation" element={<AdminGuard><AdminPositiveActivation /></AdminGuard>} />
+        <Route path="/admin/insights" element={<AdminGuard><AdminInsights /></AdminGuard>} />
+        <Route path="/admin/ai-analysis" element={<AdminGuard><AdminAIAnalysis /></AdminGuard>} />
+        <Route path="/admin/mobile-settings" element={<AdminGuard><AdminMobileSettings /></AdminGuard>} />
         
         {/* 管理员 - AI配置子页面 */}
-        <Route path="/admin/ai-config/evaluation" element={<Evaluation />} />
-        <Route path="/admin/ai-config/model-config" element={<ModelConfig />} />
-        <Route path="/admin/ai-config/monitoring" element={<Monitoring />} />
-        <Route path="/admin/ai-config/prompt-config" element={<PromptConfig />} />
-        <Route path="/admin/ai-config/rule-engine" element={<RuleEngine />} />
+        <Route path="/admin/ai-config/evaluation" element={<AdminGuard><Evaluation /></AdminGuard>} />
+        <Route path="/admin/ai-config/model" element={<AdminGuard><ModelConfig /></AdminGuard>} />
+        <Route path="/admin/ai-config/monitoring" element={<AdminGuard><Monitoring /></AdminGuard>} />
+        <Route path="/admin/ai-config/prompts" element={<AdminGuard><PromptConfig /></AdminGuard>} />
+        <Route path="/admin/ai-config/rules" element={<AdminGuard><RuleEngine /></AdminGuard>} />
         
         {/* 404 */}
         <Route path="*" element={<div>404 - 页面不存在</div>} />

@@ -1,4 +1,4 @@
-﻿import { api } from '@/lib/api';
+import { api } from '@/lib/api';
 
 export interface SpiderPlatform {
   id: string;
@@ -40,60 +40,60 @@ export interface SpiderTask {
 
 export const spiderApi = {
   getPlatforms: async (): Promise<SpiderPlatform[]> => {
-    const response = await api.get<any>('/spider/platforms');
+    const response = await api.get<any>('/v1/spider/platforms');
     return response.data || response;
   },
 
   createPlatform: async (data: Partial<SpiderPlatform>): Promise<SpiderPlatform> => {
-    const response = await api.post<any, any>('/spider/platforms', data);
+    const response = await api.post<any, any>('/v1/spider/platforms', data);
     return response.data || response;
   },
 
   updatePlatform: async (id: string, data: Partial<SpiderPlatform>): Promise<SpiderPlatform> => {
-    const response = await api.put<any, any>(`/spider/platforms/${id}`, data);
+    const response = await api.put<any, any>(`/v1/spider/platforms/${id}`, data);
     return response.data || response;
   },
 
   deletePlatform: async (id: string): Promise<void> => {
-    const response = await api.delete(`/spider/platforms/${id}`);
+    const response = await api.delete(`/v1/spider/platforms/${id}`);
     return response.data;
   },
 
   syncPlatform: async (id: string): Promise<void> => {
-    const response = await api.post(`/spider/platforms/${id}/sync`);
+    const response = await api.post(`/v1/spider/platforms/${id}/sync`);
     return response.data;
   },
 
   syncAllPlatforms: async (): Promise<void> => {
-    const response = await api.post('/spider/sync-all');
+    const response = await api.post('/v1/spider/sync-all');
     return response.data;
   },
 
   getSyncLogs: async (platformId?: string, page: number = 1, pageSize: number = 20): Promise<any> => {
-    let url = `/spider/logs?page=${page}&page_size=${pageSize}`;
+    let url = `/v1/spider/logs?page=${page}&page_size=${pageSize}`;
     if (platformId) url += `&platform_id=${platformId}`;
     const response = await api.get<any>(url);
     return response.data || response;
   },
 
   testPlatformConnection: async (id: string): Promise<void> => {
-    const response = await api.post(`/spider/platforms/${id}/test`);
+    const response = await api.post(`/v1/spider/platforms/${id}/test`);
     return response.data;
   },
 
   getTasks: async (status?: string): Promise<SpiderTask[]> => {
-    const url = status ? `/spider/tasks?status=${status}` : '/spider/tasks';
+    const url = status ? `/v1/spider/tasks?status=${status}` : '/v1/spider/tasks';
     const response = await api.get<any>(url);
     return response.data || response;
   },
 
   createTask: async (data: Partial<SpiderTask>): Promise<SpiderTask> => {
-    const response = await api.post<any, any>('/spider/tasks', data);
+    const response = await api.post<any, any>('/v1/spider/tasks', data);
     return response.data || response;
   },
 
   cancelTask: async (id: string): Promise<void> => {
-    const response = await api.post(`/spider/tasks/${id}/cancel`);
+    const response = await api.post(`/v1/spider/tasks/${id}/cancel`);
     return response.data;
   },
 };

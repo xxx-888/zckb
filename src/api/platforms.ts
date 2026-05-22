@@ -1,4 +1,4 @@
-﻿import { api } from '@/lib/api';
+import { api } from '@/lib/api';
 
 // 类型定义
 export interface PlatformConnectRequest {
@@ -32,19 +32,19 @@ export const platformsApi = {
     message: string;
     stores: PlatformStoreInfo[];
   }> => {
-    const response = await api.post<any, any>('/platforms/connect', data);
+    const response = await api.post<any, any>('/v1/platforms/connect', data);
     return response.data || response;
   },
 
   // 获取平台店铺列表
   getPlatformStores: async (platform: string): Promise<PlatformStoreInfo[]> => {
-    const response = await api.get<any>(`/platforms/${platform}/stores`);
+    const response = await api.get<any>(`/v1/platforms/${platform}/stores`);
     return response.data || response;
   },
 
   // 绑定平台店铺
   bindPlatformStore: async (platformStoreId: string, storeId: string): Promise<void> => {
-    const response = await api.post('/platforms/bind', {
+    const response = await api.post('/v1/platforms/bind', {
       platform_store_id: platformStoreId,
       store_id: storeId,
     });
@@ -53,13 +53,13 @@ export const platformsApi = {
 
   // 解绑平台店铺
   unbindPlatformStore: async (storePlatformId: string): Promise<void> => {
-    const response = await api.delete(`/platforms/${storePlatformId}`);
+    const response = await api.delete(`/v1/platforms/${storePlatformId}`);
     return response.data;
   },
 
   // 同步平台数据
   syncPlatformData: async (storeId: string, platform: string, fullSync: boolean = false): Promise<void> => {
-    const response = await api.post('/platforms/sync', {
+    const response = await api.post('/v1/platforms/sync', {
       store_id: storeId,
       platform,
       full_sync: fullSync,
@@ -69,13 +69,13 @@ export const platformsApi = {
 
   // 获取同步状态
   getSyncStatus: async (storePlatformId: string): Promise<any> => {
-    const response = await api.get<any>(`/platforms/sync-status/${storePlatformId}`);
+    const response = await api.get<any>(`/v1/platforms/sync-status/${storePlatformId}`);
     return response.data || response;
   },
 
   // 在平台上回复评论
   replyOnPlatform: async (storePlatformId: string, reviewId: string, content: string): Promise<void> => {
-    const response = await api.post(`/platforms/${storePlatformId}/reply`, {
+    const response = await api.post(`/v1/platforms/${storePlatformId}/reply`, {
       review_id: reviewId,
       content,
     });
@@ -84,7 +84,7 @@ export const platformsApi = {
 
   // 获取已连接的平台账号
   getConnectedAccounts: async (): Promise<PlatformAccount[]> => {
-    const response = await api.get<any>('/platforms/accounts');
+    const response = await api.get<any>('/v1/platforms/accounts');
     return response.data || response;
   },
 };

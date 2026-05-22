@@ -47,8 +47,18 @@ class ApiClient {
       },
       (error) => {
         // 优先使用后端返回的错误信息
-        const backendMessage = error.response?.data?.message;
         const statusCode = error.response?.status;
+        const responseData = error.response?.data;
+
+        // FastAPI 422 错误：提取 detail 中的具体校验信息
+        let backendMessage = responseData?.message;
+        if (!backendMessage && statusCode === 422 && responseData?.detail) {
+          const details = Array.isArray(responseData.detail)
+            ? responseData.detail.map((d: any) => `${d.loc?.join('.')}: ${d.msg}`).join('; ')
+            : JSON.stringify(responseData.detail);
+          backendMessage = `参数校验失败: ${details}`;
+        }
+
         const message = backendMessage || `请求失败 (${statusCode || '网络错误'})`;
         
         console.error('API Error:', {

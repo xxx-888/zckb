@@ -1,4 +1,4 @@
-﻿import { api } from '@/lib/api';
+import { api } from '@/lib/api';
 
 export interface AuditItem {
   id: string;
@@ -46,32 +46,32 @@ export const auditApi = {
         }
       });
     }
-    const response = await api.get<any>(`/audit/list?${searchParams.toString()}`);
+    const response = await api.get<any>(`/v1/audit/list?${searchParams.toString()}`);
     return response.data || response;
   },
 
   getAuditById: async (id: string): Promise<AuditItem> => {
-    const response = await api.get<any>(`/audit/${id}`);
+    const response = await api.get<any>(`/v1/audit/${id}`);
     return response.data || response;
   },
 
   approveAudit: async (id: string): Promise<void> => {
-    const response = await api.post(`/audit/${id}/approve`);
+    const response = await api.post(`/v1/audit/${id}/approve`);
     return response.data;
   },
 
   rejectAudit: async (id: string, reason: string): Promise<void> => {
-    const response = await api.post(`/audit/${id}/reject`, { reason });
+    const response = await api.post(`/v1/audit/${id}/reject`, { reason });
     return response.data;
   },
 
   regenerateReply: async (id: string): Promise<void> => {
-    const response = await api.post(`/audit/${id}/regenerate`);
+    const response = await api.post(`/v1/audit/${id}/regenerate`);
     return response.data;
   },
 
   getStats: async (): Promise<AuditStats> => {
-    const response = await api.get<any>('/audit/stats');
+    const response = await api.get<any>('/v1/audit/stats');
     return response.data || response;
   },
 };

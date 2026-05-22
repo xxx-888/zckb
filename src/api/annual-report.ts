@@ -64,7 +64,7 @@ export interface HistoricalTrends {
   totalReviews3Years: number;
 }
 
-const BASE_URL = '/api';
+import { api } from '@/lib/api';
 
 // 测试数据
 const MOCK_ANNUAL_REPORT = {
@@ -122,26 +122,40 @@ const MOCK_ANNUAL_REPORT = {
 
 async function fetchAPI<T>(endpoint: string): Promise<T> {
   try {
-    const res = await fetch(`${BASE_URL}${endpoint}`);
-    if (!res.ok) throw new Error(`API 请求失败: ${res.status}`);
-    return res.json();
+    const res = await api.get<any>(endpoint);
+    if (res?.code === 200 && res?.data) return res.data;
+    if (res?.data) return res.data;
+    return res as T;
   } catch (err) {
     console.warn(`接口 ${endpoint} 调用失败，使用测试数据:`, err);
-    // 根据 endpoint 返回对应的测试数据
-    if (endpoint === '/annual_report') {
+    if (endpoint.includes('/reports/annual')) {
       return MOCK_ANNUAL_REPORT as T;
     }
     throw err;
   }
 }
 
-/** 获取年度报告数据 GET /api/annual_report */
-export async function fetchAnnualReport(year: number): Promise<{
+/** 获取年度报告数据 GET /v1/reports/annual */
+export async function fetchAnnualReport(storeId: string, year: number): Promise<{
   yearlyData: YearlyData;
   insights: ReportInsights;
   historicalTrends: HistoricalTrends;
 }> {
-  const data = await fetchAPI<any>('/annual_report');
+  if (!storeId) {
+    return {
+      yearlyData: null as any,
+      insights: {
+        yearOverYear: { reviewGrowth: 0, ratingChange: 0, replyRateChange: 0 },
+        highlights: [],
+        improvements: [],
+        aiSummary: '',
+        personalityType: '',
+        recommendations: [],
+      },
+      historicalTrends: { bestYear: year, worstYear: year - 2, averageRating3Years: 0, totalReviews3Years: 0 },
+    };
+  }
+  const data = await fetchAPI<any>(`/v1/reports/annual?store_id=${storeId}&year=${year}`);
   const yd = data?.yearlyData?.[String(year)] || null;
   const yearInsights = data?.insights?.[String(year)] || null;
   return {
@@ -163,19 +177,15 @@ export async function fetchAnnualReport(year: number): Promise<{
   };
 }
 
-/** 获取所有年份数据 GET /api/annual_report */
-export async function fetchAllYearlyData(): Promise<Record<number, YearlyData>> {
-  const data = await fetchAPI<any>('/annual_report');
-  return data.yearlyData || {};
+/** 获取所有年份数据 GET /v1/reports/annual */
+export async function fetchAllYearlyData(storeId?: string): Promise<Record<number, YearlyData>> {
+  const endpoint = storeId ? `/v1/reports/annual?store_id=${storeId}` : '/v1/reports/annual';
+  const data = await fetchAPI<any>(endpoint);
+  return data?.yearlyData || data || {};
 }
 
-/** 生成年度报告 POST /api/annual_report/generate */
-export async function generateAnnualReport(year: number): Promise<{success: boolean; message: string}> {
-  const res = await fetch(`${BASE_URL}/annual_report/generate`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ year }),
-  });
-  if (!res.ok) throw new Error(`生成报告失败: ${res.status}`);
-  return res.json();
+/** 生成年度报告 POST /v1/reports/annual/generate */
+export async function generateAnnualReport(year: number, storeId?: string): Promise<{success: boolean; message: string}> {
+  const response = await api.post<any, any>('/v1/reports/annual/generate', { year, store_id: storeId });
+  return response.data || response;
 }
