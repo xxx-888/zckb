@@ -1,10 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  TrendingUp, 
-  MessageSquare, 
-  Star, 
-  ThumbsUp, 
-  ArrowUpRight, 
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  TrendingUp,
+  MessageSquare,
+  Star,
+  ThumbsUp,
   Calendar,
   Filter,
   ChevronRight,
@@ -14,18 +13,17 @@ import {
   ShieldCheck,
   Zap,
   Flame,
-  UtensilsCrossed,
   ChefHat,
   CheckCircle2,
   Bot,
-  Store,
-  TrendingDown
+  TrendingDown,
+  Store as StoreIcon
 } from 'lucide-react';
 import { Card } from '../../components/ui/card';
 import { Badge } from '../../components/ui/badge';
 import { Skeleton } from '../../components/ui/skeleton';
 import { Button } from '../../components/ui/button';
-import { MobileLayout } from '../../components/MobileLayout';
+import { MobileLayout, useStore } from '../../components/MobileLayout';
 import { cn } from '../../lib/utils';
 import { useToast } from '../../hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
@@ -37,26 +35,21 @@ import {
   fetchHealthStatus,
   fetchAlert,
   fetchStoreHealth,
-  CoreStats,
-  PlatformData,
-  Review,
-  StoreRanking,
-  HealthStatus,
-  AlertData
+  type CoreStats,
+  type PlatformData,
+  type Review,
+  type StoreRanking,
+  type HealthStatus,
+  type AlertData
 } from '../../api/dashboard';
 import { authApi } from '../../api/auth';
-import { storesApi, type Store } from '../../api/stores';
 
 export const Dashboard: React.FC = () => {
   const { success } = useToast();
   const navigate = useNavigate();
+  const { selectedStore } = useStore();
   const [currentUser, setCurrentUser] = useState<any>(null);
-  const [storeList, setStoreList] = useState<Store[]>([]);
-  const [selectedStore, setSelectedStore] = useState<Store | null>(null);
-  const [showStoreDropdown, setShowStoreDropdown] = useState(false);
-  const [noStore, setNoStore] = useState(false);
-  const storeDropdownRef = React.useRef<HTMLDivElement>(null);
-  
+
   // ===== 判断用户角色 =====
   const isHQ = currentUser?.role === 'HQ' || currentUser?.role === 'OPERATOR';
   const [showTimeDropdown, setShowTimeDropdown] = useState(false);
@@ -78,7 +71,7 @@ export const Dashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const lastPeriodRef = React.useRef<string | null>(null);
-  
+
   // ===== 时间筛选选项 =====
   const timeOptions = [
     { value: 'today', label: '今天', dateRange: '2026年05月12日' },
@@ -114,62 +107,18 @@ export const Dashboard: React.FC = () => {
     navigate('/mobile/negative-reply');
   };
 
-  // ===== 获取店铺列表 =====
-  useEffect(() => {
-    const fetchStores = async () => {
-      try {
-        const res = await storesApi.getStores({ page_size: 100 });
-        const stores = res.items || res.data?.items || [];
-        setStoreList(stores);
-        if (stores.length === 0) {
-          setNoStore(true);
-        } else if (!selectedStore) {
-          setSelectedStore(stores[0]);
-        }
-      } catch (err) {
-        console.warn('[Dashboard] 获取店铺列表失败，使用测试数据');
-        const mockStores: Store[] = [
-          { id: 'store_001', name: '旗舰店', type: 'restaurant', status: 'active', platform_count: 3, review_count: 586, created_at: '2025-01-01' },
-          { id: 'store_002', name: '分店', type: 'restaurant', status: 'active', platform_count: 2, review_count: 423, created_at: '2025-02-01' },
-        ];
-        setStoreList(mockStores);
-        if (!selectedStore) {
-          setSelectedStore(mockStores[0]);
-        }
-      }
-    };
-    if (currentUser) {
-      fetchStores();
-    }
-  }, [currentUser]);
-
-  // ===== 店铺切换时重新获取数据 =====
-  useEffect(() => {
-    if (selectedStore?.id) {
-      fetchAllData(selectedStore.id);
-    }
-  }, [selectedStore]);
-
-  // ===== 点击外部关闭店铺下拉框 =====
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (storeDropdownRef.current && !storeDropdownRef.current.contains(event.target as Node)) {
-        setShowStoreDropdown(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
   // ===== 获取数据 =====
-  const fetchAllData = async (storeId?: string) => {
+  const fetchAllData = useCallback(async (storeId?: string) => {
     try {
       setLoading(true);
       setError(null);
-      
+
       const currentStoreId = storeId || selectedStore?.id;
-      
-      // 并行获取所有数据
+      if (!currentStoreId) {
+        setLoading(false);
+        return;
+      }
+
       const [coreStatsRes, platformDataRes, recentReviewsRes, storeRankingsRes, healthStatsRes] = await Promise.all([
         fetchCoreStats(timePeriod, currentStoreId),
         fetchPlatformData(currentStoreId),
@@ -181,8 +130,7 @@ export const Dashboard: React.FC = () => {
       setCoreStats(coreStatsRes);
       setPlatformData(platformDataRes);
       setRecentReviews(recentReviewsRes);
-      
-      // 根据角色获取不同数据
+
       if (isHQ) {
         setStoreRankings(storeRankingsRes);
       } else {
@@ -190,7 +138,6 @@ export const Dashboard: React.FC = () => {
         setStoreHealth(storeHealthRes);
       }
 
-      // 获取告警（可能返回 null）
       const alertRes = await fetchAlert(currentStoreId);
       setAlert(alertRes);
 
@@ -200,13 +147,22 @@ export const Dashboard: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [timePeriod, selectedStore, isHQ]);
+
+  // ===== 店铺切换时重新获取数据 =====
+  useEffect(() => {
+    if (selectedStore?.id) {
+      fetchAllData(selectedStore.id);
+    }
+  }, [selectedStore, fetchAllData]);
 
   useEffect(() => {
     if (lastPeriodRef.current === timePeriod) return;
     lastPeriodRef.current = timePeriod;
-    fetchAllData();
-  }, [timePeriod]);
+    if (selectedStore?.id) {
+      fetchAllData();
+    }
+  }, [timePeriod, selectedStore, fetchAllData]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -217,7 +173,7 @@ export const Dashboard: React.FC = () => {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
-  
+
   // ===== 获取当前用户 =====
   useEffect(() => {
     const user = authApi.getStoredUser();
@@ -244,6 +200,23 @@ export const Dashboard: React.FC = () => {
     );
   }
 
+  // ===== 无店铺状态 =====
+  if (!loading && !selectedStore) {
+    return (
+      <MobileLayout title={isHQ ? "门店动态" : "数据概览"}>
+        <div className="flex-1 flex items-center justify-center p-4">
+          <div className="text-center">
+            <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4">
+              <StoreIcon className="w-8 h-8 text-slate-300" />
+            </div>
+            <p className="text-base font-semibold text-slate-400 mb-2">暂无数据</p>
+            <p className="text-sm text-slate-400">请通过顶部导航切换店铺</p>
+          </div>
+        </div>
+      </MobileLayout>
+    );
+  }
+
   // ===== 错误状态 =====
   if (error) {
     return (
@@ -252,7 +225,7 @@ export const Dashboard: React.FC = () => {
           <Card className="p-6 text-center">
             <AlertCircle className="w-12 h-12 text-rose-500 mx-auto mb-4" />
             <p className="text-sm text-slate-600 mb-4">{error}</p>
-            <Button onClick={fetchAllData} className="bg-orange-500 hover:bg-orange-600 text-white">
+            <Button onClick={() => fetchAllData()} className="bg-orange-500 hover:bg-orange-600 text-white">
               重试
             </Button>
           </Card>
@@ -264,7 +237,7 @@ export const Dashboard: React.FC = () => {
   return (
     <MobileLayout title={isHQ ? "门店动态" : "数据概览"}>
       <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
-        
+
         {/* Date/Filter Summary */}
         <div className="relative" ref={dropdownRef}>
           <div className="flex items-center justify-between bg-white p-3 rounded-2xl shadow-sm border border-slate-100">
@@ -272,16 +245,16 @@ export const Dashboard: React.FC = () => {
               <Calendar className="w-4 h-4 text-slate-400" />
               <span className="text-sm font-medium text-slate-600">{getCurrentDateRange()}</span>
             </div>
-            <Button 
-              variant="ghost" 
-              size="sm" 
+            <Button
+              variant="ghost"
+              size="sm"
               className="h-8 text-orange-600 font-semibold gap-1"
               onClick={handleFilterClick}
             >
               {timeOptions.find(opt => opt.value === timePeriod)?.label} <Filter className="w-3.5 h-3.5" />
             </Button>
           </div>
-          
+
           {/* Time Period Dropdown */}
           {showTimeDropdown && (
             <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-lg border border-slate-100 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
@@ -290,8 +263,8 @@ export const Dashboard: React.FC = () => {
                   key={option.value}
                   className={cn(
                     "w-full px-4 py-3 text-left text-sm font-medium transition-colors flex items-center justify-between",
-                    timePeriod === option.value 
-                      ? "bg-orange-50 text-orange-600" 
+                    timePeriod === option.value
+                      ? "bg-orange-50 text-orange-600"
                       : "text-slate-700 hover:bg-slate-50"
                   )}
                   onClick={() => handleTimePeriodChange(option.value as any)}
@@ -309,90 +282,7 @@ export const Dashboard: React.FC = () => {
           )}
         </div>
 
-        {/* ===== 店铺切换 ===== */}
-        <div className="relative" ref={storeDropdownRef}>
-          <div className="flex items-center justify-between bg-white p-3 rounded-2xl shadow-sm border border-slate-100">
-            <div className="flex items-center gap-2">
-              <Store className="w-4 h-4 text-slate-400" />
-              <span className="text-sm font-medium text-slate-600 truncate max-w-[180px]">
-                {selectedStore?.name || '请选择店铺'}
-              </span>
-            </div>
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              className="h-8 text-orange-600 font-semibold gap-1"
-              onClick={() => setShowStoreDropdown(!showStoreDropdown)}
-            >
-              切换 <ChevronRight className={cn("w-3.5 h-3.5 transition-transform", showStoreDropdown && "rotate-90")} />
-            </Button>
-          </div>
-          
-          {/* 店铺列表下拉 */}
-          {showStoreDropdown && (
-            <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-lg border border-slate-100 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-              {storeList.length === 0 ? (
-                <div className="p-4 text-center">
-                  <p className="text-sm text-slate-500 mb-2">暂无绑定店铺</p>
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    className="text-xs border-orange-200 text-orange-600"
-                    onClick={() => navigate('/mobile/platform-connection')}
-                  >
-                    去绑定店铺
-                  </Button>
-                </div>
-              ) : (
-                storeList.map((store) => (
-                  <button
-                    key={store.id}
-                    className={cn(
-                      "w-full px-4 py-3 text-left text-sm font-medium transition-colors flex items-center justify-between",
-                      selectedStore?.id === store.id 
-                        ? "bg-orange-50 text-orange-600" 
-                        : "text-slate-700 hover:bg-slate-50"
-                    )}
-                    onClick={() => {
-                      setSelectedStore(store);
-                      setShowStoreDropdown(false);
-                    }}
-                  >
-                    <span>{store.name}</span>
-                    {store.status !== 'active' && (
-                      <Badge className="bg-amber-50 text-amber-600 border-amber-200 text-[9px]">
-                        {store.status === 'pending' ? '审核中' : '未激活'}
-                      </Badge>
-                    )}
-                    {selectedStore?.id === store.id && (
-                      <CheckCircle2 className="w-4 h-4 text-orange-600" />
-                    )}
-                  </button>
-                ))
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* 无店铺提示 */}
-        {noStore && (
-          <Card className="p-6 text-center border-amber-200 bg-amber-50">
-            <Store className="w-12 h-12 text-amber-500 mx-auto mb-4" />
-            <p className="text-sm font-bold text-amber-900 mb-2">暂无绑定店铺</p>
-            <p className="text-xs text-amber-700 mb-4">请先绑定您的店铺，才能查看评价数据</p>
-            <Button 
-              className="bg-orange-500 hover:bg-orange-600 text-white"
-              onClick={() => navigate('/mobile/platform-connection')}
-            >
-              去绑定店铺
-            </Button>
-          </Card>
-        )}
-
-        {/* 有店铺时才显示数据内容 */}
-        {!noStore && (
-          <React.Fragment>
-            {/* ===== 核心数据融合卡片（含数据源健康度） ===== */}
+        {/* ===== 核心数据融合卡片（含数据源健康度） ===== */}
         <Card className="p-5 bg-white border-slate-100 shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
@@ -409,38 +299,38 @@ export const Dashboard: React.FC = () => {
           {/* 第一行：评论总数 + 趋势 */}
           <div className="flex items-end justify-between mb-4">
             <div>
-            <p className="text-4xl font-black text-slate-900">{coreStats?.total_reviews?.toLocaleString() || '0'}</p>
-            <p className="text-xs text-slate-400 mt-1">评论总数</p>
-          </div>
-          <div className="flex items-center gap-1 bg-emerald-50 px-2 py-1 rounded-full">
-            <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />
-            <span className="text-xs font-bold text-emerald-600">{coreStats?.review_trend || '0%'}</span>
+              <p className="text-4xl font-black text-slate-900">{coreStats?.total_reviews?.toLocaleString() || '0'}</p>
+              <p className="text-xs text-slate-400 mt-1">评论总数</p>
+            </div>
+            <div className="flex items-center gap-1 bg-emerald-50 px-2 py-1 rounded-full">
+              <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />
+              <span className="text-xs font-bold text-emerald-600">{coreStats?.review_trend || '0%'}</span>
             </div>
           </div>
 
           {/* 第二行：三个核心指标紧凑展示 */}
-            <div className="grid grid-cols-3 gap-3 mb-4">
-              <div className="bg-slate-50 rounded-xl p-3 text-center">
-                <Star className="w-4 h-4 fill-amber-400 text-amber-400 mx-auto mb-1" />
-                <p className="text-lg font-black text-slate-900">{(coreStats?.avg_rating || 0).toFixed(1)}</p>
-                <p className="text-[9px] text-slate-400">平均星级</p>
-                <p className="text-[9px] text-emerald-500 mt-0.5">+{coreStats?.rating_trend || '0%'}</p>
-              </div>
-              <div className="bg-slate-50 rounded-xl p-3 text-center">
-                <ThumbsUp className="w-4 h-4 text-emerald-500 mx-auto mb-1" />
-                <p className="text-lg font-black text-slate-900">{coreStats?.positive_rate || '0%'}</p>
-                <p className="text-[9px] text-slate-400">好评率</p>
-                <p className="text-[9px] text-emerald-500 mt-0.5">{coreStats?.positive_trend || '0%'}</p>
-              </div>
-              <div className="bg-slate-50 rounded-xl p-3 text-center">
-                <Bot className="w-4 h-4 text-blue-500 mx-auto mb-1" />
-                <p className="text-lg font-black text-slate-900">{coreStats?.ai_reply_rate || '0%'}</p>
-                <p className="text-[9px] text-slate-400">AI回复率</p>
-                <p className="text-[9px] text-emerald-500 mt-0.5">{coreStats?.reply_trend || '0%'}</p>
-              </div>
+          <div className="grid grid-cols-3 gap-3 mb-4">
+            <div className="bg-slate-50 rounded-xl p-3 text-center">
+              <Star className="w-4 h-4 fill-amber-400 text-amber-400 mx-auto mb-1" />
+              <p className="text-lg font-black text-slate-900">{(coreStats?.avg_rating || 0).toFixed(1)}</p>
+              <p className="text-[9px] text-slate-400">平均星级</p>
+              <p className="text-[9px] text-emerald-500 mt-0.5">+{coreStats?.rating_trend || '0%'}</p>
             </div>
+            <div className="bg-slate-50 rounded-xl p-3 text-center">
+              <ThumbsUp className="w-4 h-4 text-emerald-500 mx-auto mb-1" />
+              <p className="text-lg font-black text-slate-900">{coreStats?.positive_rate || '0%'}</p>
+              <p className="text-[9px] text-slate-400">好评率</p>
+              <p className="text-[9px] text-emerald-500 mt-0.5">{coreStats?.positive_trend || '0%'}</p>
+            </div>
+            <div className="bg-slate-50 rounded-xl p-3 text-center">
+              <Bot className="w-4 h-4 text-blue-500 mx-auto mb-1" />
+              <p className="text-lg font-black text-slate-900">{coreStats?.ai_reply_rate || '0%'}</p>
+              <p className="text-[9px] text-slate-400">AI回复率</p>
+              <p className="text-[9px] text-emerald-500 mt-0.5">{coreStats?.reply_trend || '0%'}</p>
+            </div>
+          </div>
 
-          {/* 第三行：平台分布 - 独立区域 */}
+          {/* 第三行：平台分布 */}
           <div className="mb-3">
             <p className="text-[9px] text-slate-400 mb-2 font-medium flex items-center gap-1">
               <BarChart3 className="w-3 h-3" /> 平台分布
@@ -451,7 +341,7 @@ export const Dashboard: React.FC = () => {
                   <iconify-icon icon={item.icon} class="text-sm opacity-90 w-5 flex-shrink-0"></iconify-icon>
                   <span className="text-[9px] text-slate-600 w-10 flex-shrink-0">{item.platform === '大众点评' ? '点评' : item.platform === '小红书' ? '小红书' : item.platform}</span>
                   <div className="flex-1 bg-slate-200 rounded-full h-2">
-                    <div 
+                    <div
                       className={`h-full rounded-full ${item.color}`}
                       style={{ width: `${item.percentage}%` }}
                     ></div>
@@ -462,7 +352,7 @@ export const Dashboard: React.FC = () => {
             </div>
           </div>
 
-          {/* 第四行：数据源健康度 - 独立区域 */}
+          {/* 第四行：数据源健康度 */}
           <div>
             <p className="text-[9px] text-slate-400 mb-2 font-medium flex items-center gap-1">
               <ShieldCheck className="w-3 h-3" /> 数据源状态
@@ -472,17 +362,16 @@ export const Dashboard: React.FC = () => {
                 {healthStats.map((stat, i) => (
                   <div key={i} className="flex flex-col items-center gap-1">
                     <div className="relative">
-                      <iconify-icon 
-                        icon={stat.platform === '美团' ? 'simple-icons:meituan' : 
-                               stat.platform === '大众点评' ? 'simple-icons:dianping' : 
-                               stat.platform === '抖音' ? 'simple-icons:tiktok' : 'simple-icons:xiaohongshu'} 
-                        class={cn("text-lg", 
-                          stat.platform === '美团' ? 'text-yellow-500' : 
-                          stat.platform === '大众点评' ? 'text-orange-500' : 
+                      <iconify-icon
+                        icon={stat.platform === '美团' ? 'simple-icons:meituan' :
+                               stat.platform === '大众点评' ? 'simple-icons:dianping' :
+                               stat.platform === '抖音' ? 'simple-icons:tiktok' : 'simple-icons:xiaohongshu'}
+                        class={cn("text-lg",
+                          stat.platform === '美团' ? 'text-yellow-500' :
+                          stat.platform === '大众点评' ? 'text-orange-500' :
                           stat.platform === '抖音' ? 'text-slate-900' : 'text-red-500'
                         )}
                       ></iconify-icon>
-                      {/* 状态指示灯 */}
                       <div className={cn(
                         "absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full border-2 border-white",
                         stat.status === 'normal' ? 'bg-emerald-500' : 'bg-amber-500'
@@ -504,7 +393,7 @@ export const Dashboard: React.FC = () => {
 
         {/* Anomaly Warning Section */}
         {alert && (
-          <div 
+          <div
             className="px-1 cursor-pointer"
             onClick={handleAlertClick}
           >
@@ -542,7 +431,7 @@ export const Dashboard: React.FC = () => {
                   <div className="flex items-center gap-3">
                     <span className={cn(
                       "w-5 h-5 rounded flex items-center justify-center text-[10px] font-bold",
-                      i === 0 ? "bg-amber-100 text-amber-600" : 
+                      i === 0 ? "bg-amber-100 text-amber-600" :
                       i === 1 ? "bg-slate-100 text-slate-600" :
                       i === 2 ? "bg-orange-100 text-orange-600" : "bg-slate-100 text-slate-500"
                     )}>{i === 0 ? '👑' : i + 1}</span>
@@ -567,8 +456,8 @@ export const Dashboard: React.FC = () => {
                 </div>
               ))}
             </div>
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               className="w-full mt-4 h-10 border-orange-100 text-orange-600 text-xs font-bold rounded-xl bg-orange-50/30"
               onClick={handleViewAllStores}
             >
@@ -613,8 +502,8 @@ export const Dashboard: React.FC = () => {
             <span className="text-[10px] text-slate-500 font-bold bg-slate-100 px-2 py-0.5 rounded-full">{recentReviews.length} 条评论</span>
           </div>
           {recentReviews.map((review) => (
-            <Card 
-              key={review.id} 
+            <Card
+              key={review.id}
               className="p-4 border-slate-100 shadow-sm active:bg-slate-50 transition-colors bg-white relative cursor-pointer hover:shadow-md transition-all"
               onClick={() => handleReviewClick(review.id)}
             >
@@ -636,7 +525,7 @@ export const Dashboard: React.FC = () => {
                         review.sentiment === 'negative' ? "bg-rose-100 text-rose-700" :
                         "bg-amber-100 text-amber-700"
                       )}>
-                        {review.sentiment === 'positive' ? '好评' : 
+                        {review.sentiment === 'positive' ? '好评' :
                          review.sentiment === 'negative' ? '差评' : '中评'}
                       </Badge>
                     </div>
@@ -647,12 +536,12 @@ export const Dashboard: React.FC = () => {
                       </Badge>
                       <div className="flex items-center gap-0.5">
                         {[1, 2, 3, 4, 5].map(star => (
-                          <Star 
-                            key={star} 
+                          <Star
+                            key={star}
                             className={cn(
                               "w-3 h-3",
                               star <= review.rating ? "text-amber-400 fill-amber-400" : "text-slate-200"
-                            )} 
+                            )}
                           />
                         ))}
                       </div>
@@ -665,9 +554,9 @@ export const Dashboard: React.FC = () => {
                     </div>
                   </div>
                 </div>
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
+                <Button
+                  variant="ghost"
+                  size="icon"
                   className="w-8 h-8 rounded-full flex-shrink-0"
                   onClick={(e) => {
                     e.stopPropagation();
@@ -680,9 +569,7 @@ export const Dashboard: React.FC = () => {
             </Card>
           ))}
         </div>
-        </React.Fragment>
-        )}
-        </div>
+      </div>
     </MobileLayout>
   );
 };

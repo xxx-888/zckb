@@ -14,6 +14,7 @@ from sqlalchemy import and_, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BusinessException, NotFoundException
+from app.core.security import decrypt_api_key
 from app.models.ai_config import (
     AIModelConfig,
     AIPromptTemplate,
@@ -506,7 +507,7 @@ class AIService:
         Returns:
             str: AI回复内容
         """
-        api_key = model_config.api_key_encrypted  # 实际应解密
+        api_key = decrypt_api_key(model_config.api_key_encrypted)
         endpoint = model_config.endpoint_url or "https://api.openai.com/v1/chat/completions"
 
         headers = {
@@ -545,7 +546,7 @@ class AIService:
         Returns:
             str: AI回复内容
         """
-        api_key = model_config.api_key_encrypted  # 实际应解密
+        api_key = decrypt_api_key(model_config.api_key_encrypted)
         endpoint = model_config.endpoint_url or "https://open.bigmodel.cn/api/paas/v4/chat/completions"
 
         headers = {
@@ -584,7 +585,7 @@ class AIService:
         Returns:
             str: AI回复内容
         """
-        api_key = model_config.api_key_encrypted  # 实际应解密
+        api_key = decrypt_api_key(model_config.api_key_encrypted)
         endpoint = model_config.endpoint_url or "https://api.deepseek.com/v1/chat/completions"
 
         headers = {

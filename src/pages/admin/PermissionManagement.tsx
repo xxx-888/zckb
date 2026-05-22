@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, Search, Plus, Users, UserPlus, XCircle, CheckCircle, RefreshCw, AlertCircle, Store, Settings } from 'lucide-react';
+import {
+  Shield, Search, Plus, Users, UserPlus, XCircle, CheckCircle, RefreshCw,
+  AlertCircle, Store, Settings, Pencil, Trash2, UserCheck, UserX, Clock, Calendar
+} from 'lucide-react';
 import { Card } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
@@ -16,15 +19,24 @@ export const PermissionManagement: React.FC = () => {
   const [admins, setAdmins] = useState<AdminUser[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [allStores, setAllStores] = useState<StoreType[]>([]);
+
+  // 对话框状态
   const [showAdd, setShowAdd] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
+  const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deletingUser, setDeletingUser] = useState<AdminUser | null>(null);
   const [showStoreAssign, setShowStoreAssign] = useState(false);
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
   const [selectedStoreIds, setSelectedStoreIds] = useState<string[]>([]);
-  const [newItem, setNewItem] = useState({ name: '', username: '', email: '', phone: '', password: '', role: 'OPERATOR', permissions: '', description: '' });
+
+  // 表单状态
+  const [formData, setFormData] = useState({ name: '', username: '', email: '', phone: '', password: '', role: 'OPERATOR', permissions: '', description: '' });
   const [searchQuery, setSearchQuery] = useState('');
 
   const { success, error: toastError } = useToast();
 
+  // ==================== 数据获取 ====================
   const fetchData = async () => {
     setLoading(true);
     setError(null);
@@ -36,17 +48,18 @@ export const PermissionManagement: React.FC = () => {
       ]);
       if (aRes.status === 'fulfilled') {
         const data = aRes.value;
-        const list = (Array.isArray(data) ? data : []) as AdminUser[];
-        // 兼容后端 snake_case 字段名
-        setAdmins(list.map(a => ({ ...a, assignedStores: a.assignedStores || (a as any).assigned_stores || [] })));
+        // 兼容分页格式 { items: [] } 或纯数组
+        const list = Array.isArray(data) ? data : (Array.isArray((data as any)?.items) ? (data as any).items : []);
+        setAdmins(list.map((a: any) => ({ ...a, assignedStores: a.assignedStores || a.assigned_stores || [] })));
       }
       if (rRes.status === 'fulfilled') {
-        const rolesData = rRes.value;
-        setRoles(Array.isArray(rolesData) ? rolesData : []);
+        const data = rRes.value;
+        setRoles(Array.isArray(data) ? data : (Array.isArray((data as any)?.items) ? (data as any).items : []));
       }
       if (sRes.status === 'fulfilled') {
-        const storesData = sRes.value;
-        setAllStores(Array.isArray((storesData as any)?.items) ? (storesData as any).items : Array.isArray(storesData) ? storesData : []);
+        const data = sRes.value;
+        const storesArr = Array.isArray((data as any)?.items) ? (data as any).items : Array.isArray(data) ? data : [];
+        setAllStores(storesArr);
       }
     } catch (err) {
       console.error('[Permission] 数据加载异常:', err);
@@ -56,32 +69,85 @@ export const PermissionManagement: React.FC = () => {
 
   useEffect(() => { fetchData(); }, []);
 
+  // ==================== 搜索过滤 ====================
   const filteredUsers = admins.filter(a =>
     (a.username || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
     (a.phone || '').includes(searchQuery) ||
     (a.email || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  // ==================== 用户 CRUD ====================
+  const resetForm = () => {
+    setFormData({ name: '', username: '', email: '', phone: '', password: '', role: 'OPERATOR', permissions: '', description: '' });
+  };
+
   const handleAddAdmin = async () => {
-    if (!newItem.username || !newItem.password) { toastError('参数错误', '请填写用户名和密码'); return; }
+    if (!formData.username || !formData.password) { toastError('参数错误', '请填写用户名和密码'); return; }
     try {
-      await adminApi.createAdminUser({ username: newItem.username, email: newItem.email || undefined, phone: newItem.phone || undefined, password: newItem.password, role: newItem.role });
+      await adminApi.createAdminUser({
+        username: formData.username,
+        email: formData.email || undefined,
+        phone: formData.phone || undefined,
+        password: formData.password,
+        role: formData.role,
+      });
       success('添加成功', '管理员已创建');
       setShowAdd(false);
-      setNewItem({ name: '', username: '', email: '', phone: '', password: '', role: 'OPERATOR', permissions: '', description: '' });
+      resetForm();
       fetchData();
     } catch (err: any) { toastError('添加失败', err.message); }
   };
 
-  const handleAddRole = async () => {
-    if (!newItem.name) { toastError('参数错误', '请填写角色名称'); return; }
+  const openEditUser = (user: AdminUser) => {
+    setEditingUser(user);
+    setFormData({
+      name: '',
+      username: user.username || '',
+      email: user.email || '',
+      phone: user.phone || '',
+      password: '', // 编辑时不修改密码
+      role: user.role || 'OPERATOR',
+      permissions: '',
+      description: '',
+    });
+    setShowEdit(true);
+  };
+
+  const handleEditAdmin = async () => {
+    if (!editingUser) return;
     try {
-      await adminApi.createRole({ name: newItem.name, permissions: newItem.permissions.split(',').map(s => s.trim()).filter(Boolean), description: newItem.description || undefined });
-      success('添加成功', '角色已创建');
-      setShowAdd(false);
-      setNewItem({ name: '', username: '', email: '', phone: '', password: '', role: 'OPERATOR', permissions: '', description: '' });
+      const updateData: Partial<AdminUser> = {
+        email: formData.email || undefined,
+        phone: formData.phone || undefined,
+        role: formData.role,
+      };
+      // 如果填写了密码则更新密码
+      if (formData.password) {
+        (updateData as any).password = formData.password;
+      }
+      await adminApi.updateAdminUser(editingUser.id, updateData);
+      success('更新成功', '用户信息已更新');
+      setShowEdit(false);
+      setEditingUser(null);
+      resetForm();
       fetchData();
-    } catch (err: any) { toastError('添加失败', err.message); }
+    } catch (err: any) { toastError('更新失败', err.message); }
+  };
+
+  const openDeleteConfirm = (user: AdminUser) => {
+    setDeletingUser(user);
+    setShowDeleteConfirm(true);
+  };
+
+  const handleDeleteAdmin = async () => {
+    if (!deletingUser) return;
+    try {
+      await adminApi.deleteAdminUser(deletingUser.id);
+      success('删除成功', '用户已删除');
+      setShowDeleteConfirm(false);
+      setDeletingUser(null);
+      fetchData();
+    } catch (err: any) { toastError('删除失败', err.message); }
   };
 
   const handleDisableAdmin = async (id: string) => {
@@ -89,11 +155,33 @@ export const PermissionManagement: React.FC = () => {
     catch (err: any) { toastError('操作失败', err.message); }
   };
 
+  const handleEnableAdmin = async (id: string) => {
+    try { await adminApi.enableAdminUser(id); success('已启用', '管理员已启用'); fetchData(); }
+    catch (err: any) { toastError('操作失败', err.message); }
+  };
+
+  // ==================== 角色 CRUD ====================
+  const handleAddRole = async () => {
+    if (!formData.name) { toastError('参数错误', '请填写角色名称'); return; }
+    try {
+      await adminApi.createRole({
+        name: formData.name,
+        permissions: formData.permissions.split(',').map(s => s.trim()).filter(Boolean),
+        description: formData.description || undefined,
+      });
+      success('添加成功', '角色已创建');
+      setShowAdd(false);
+      resetForm();
+      fetchData();
+    } catch (err: any) { toastError('添加失败', err.message); }
+  };
+
   const handleDeleteRole = async (id: string) => {
     try { await adminApi.deleteRole(id); success('已删除', '角色已移除'); fetchData(); }
     catch (err: any) { toastError('删除失败', err.message); }
   };
 
+  // ==================== 门店分配 ====================
   const openStoreAssign = (user: AdminUser) => {
     setSelectedUser(user);
     setSelectedStoreIds(user.assignedStores || []);
@@ -116,6 +204,7 @@ export const PermissionManagement: React.FC = () => {
     );
   };
 
+  // ==================== 渲染 ====================
   if (loading) return <AdminLayout><div className="flex items-center justify-center h-64"><RefreshCw className="w-6 h-6 text-slate-400 animate-spin" /></div></AdminLayout>;
   if (error) return <AdminLayout><div className="flex flex-col items-center justify-center h-64 gap-4"><AlertCircle className="w-10 h-10 text-rose-400" /><p className="text-slate-500">{error}</p><Button variant="outline" onClick={fetchData}>重试</Button></div></AdminLayout>;
 
@@ -124,10 +213,10 @@ export const PermissionManagement: React.FC = () => {
       <div className="space-y-6 pb-8">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold text-slate-900">用户与权限管理</h1>
-          <Button onClick={() => setShowAdd(true)}><Plus className="w-4 h-4 mr-1" />{tab === 'users' ? '添加用户' : '添加角色'}</Button>
+          <Button onClick={() => { resetForm(); setShowAdd(true); }}><Plus className="w-4 h-4 mr-1" />{tab === 'users' ? '添加用户' : '添加角色'}</Button>
         </div>
 
-        {/* Tab Switch */}
+        {/* Tab 切换 */}
         <div className="flex gap-2 bg-slate-50 rounded-xl p-1 w-fit">
           <button onClick={() => setTab('users')} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${tab === 'users' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>
             <Users className="w-4 h-4" />用户管理
@@ -137,19 +226,19 @@ export const PermissionManagement: React.FC = () => {
           </button>
         </div>
 
-        {/* Search */}
+        {/* 搜索 */}
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <input className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm outline-none" placeholder={tab === 'users' ? '搜索用户名、手机号、邮箱...' : '搜索角色名称...'} value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
         </div>
 
-        {/* Users Tab */}
+        {/* ==================== 用户列表 ==================== */}
         {tab === 'users' && (
           <div className="space-y-3">
             {filteredUsers.length === 0 ? (
               <div className="text-center py-16 text-slate-400"><Users className="w-12 h-12 mx-auto mb-3 opacity-30" /><p>暂无用户，点击"添加用户"</p></div>
             ) : filteredUsers.map(a => (
-              <Card key={a.id} className="p-5 border-slate-100 shadow-sm">
+              <Card key={a.id} className="p-5 border-slate-100 shadow-sm hover:shadow-md transition-shadow">
                 <div className="flex items-center justify-between">
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-2">
@@ -162,13 +251,29 @@ export const PermissionManagement: React.FC = () => {
                         </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-3 mt-2">
+                    <div className="flex items-center gap-3 mt-2 flex-wrap">
                       <Badge className="bg-indigo-50 text-indigo-700">{a.role}</Badge>
-                      {a.is_active ? <Badge className="bg-emerald-50 text-emerald-700">启用</Badge> : <Badge className="bg-slate-100 text-slate-500">禁用</Badge>}
+                      {a.is_active ? (
+                        <Badge className="bg-emerald-50 text-emerald-700">启用</Badge>
+                      ) : (
+                        <Badge className="bg-slate-100 text-slate-500">禁用</Badge>
+                      )}
                       {a.assignedStores && a.assignedStores.length > 0 && (
                         <span className="text-xs text-slate-500 flex items-center gap-1">
                           <Store className="w-3 h-3" />
                           管理 {a.assignedStores.length} 家门店
+                        </span>
+                      )}
+                      {a.last_login_at && (
+                        <span className="text-xs text-slate-400 flex items-center gap-1">
+                          <Clock className="w-3 h-3" />
+                          最近登录：{new Date(a.last_login_at).toLocaleString('zh-CN')}
+                        </span>
+                      )}
+                      {a.created_at && (
+                        <span className="text-xs text-slate-400 flex items-center gap-1">
+                          <Calendar className="w-3 h-3" />
+                          创建于：{new Date(a.created_at).toLocaleDateString('zh-CN')}
                         </span>
                       )}
                     </div>
@@ -177,11 +282,21 @@ export const PermissionManagement: React.FC = () => {
                     <Button size="sm" variant="outline" onClick={() => openStoreAssign(a)}>
                       <Store className="w-3 h-3 mr-1" />门店设置
                     </Button>
-                    {a.is_active && (
-                      <Button size="sm" variant="ghost" className="text-rose-500" onClick={() => handleDisableAdmin(a.id)}>
-                        <XCircle className="w-4 h-4" />
+                    <Button size="sm" variant="ghost" onClick={() => openEditUser(a)}>
+                      <Pencil className="w-3 h-3" />
+                    </Button>
+                    {a.is_active ? (
+                      <Button size="sm" variant="ghost" className="text-amber-500" onClick={() => handleDisableAdmin(a.id)}>
+                        <UserX className="w-4 h-4" />
+                      </Button>
+                    ) : (
+                      <Button size="sm" variant="ghost" className="text-emerald-500" onClick={() => handleEnableAdmin(a.id)}>
+                        <UserCheck className="w-4 h-4" />
                       </Button>
                     )}
+                    <Button size="sm" variant="ghost" className="text-rose-500" onClick={() => openDeleteConfirm(a)}>
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
                   </div>
                 </div>
               </Card>
@@ -189,7 +304,7 @@ export const PermissionManagement: React.FC = () => {
           </div>
         )}
 
-        {/* Roles Tab */}
+        {/* ==================== 角色列表 ==================== */}
         {tab === 'roles' && (
           <Card className="border-slate-100 shadow-sm overflow-hidden">
             <table className="w-full text-sm">
@@ -213,38 +328,87 @@ export const PermissionManagement: React.FC = () => {
         )}
       </div>
 
-      {/* Add Dialog */}
+      {/* ==================== 添加用户/角色 对话框 ==================== */}
       {showAdd && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <Card className="w-96 p-6 space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => { setShowAdd(false); resetForm(); }}>
+          <Card className="w-96 p-6 space-y-4" onClick={e => e.stopPropagation()}>
             <h3 className="font-bold text-slate-900">{tab === 'users' ? '添加用户' : '添加角色'}</h3>
             {tab === 'users' ? (
               <>
-                <input className="w-full p-2.5 border border-slate-200 rounded-lg text-sm outline-none" placeholder="用户名 *" value={newItem.username} onChange={e => setNewItem(p => ({ ...p, username: e.target.value }))} />
-                <input className="w-full p-2.5 border border-slate-200 rounded-lg text-sm outline-none" placeholder="密码 *" type="password" value={newItem.password} onChange={e => setNewItem(p => ({ ...p, password: e.target.value }))} />
-                <input className="w-full p-2.5 border border-slate-200 rounded-lg text-sm outline-none" placeholder="邮箱" value={newItem.email} onChange={e => setNewItem(p => ({ ...p, email: e.target.value }))} />
-                <input className="w-full p-2.5 border border-slate-200 rounded-lg text-sm outline-none" placeholder="手机号" value={newItem.phone} onChange={e => setNewItem(p => ({ ...p, phone: e.target.value }))} />
-                <select className="w-full p-2.5 border border-slate-200 rounded-lg text-sm" value={newItem.role} onChange={e => setNewItem(p => ({ ...p, role: e.target.value }))}>
-                  <option value="HQ">HQ 总部</option><option value="OPERATOR">OPERATOR 运营</option><option value="STORE">STORE 门店</option>
+                <input className="w-full p-2.5 border border-slate-200 rounded-lg text-sm outline-none" placeholder="用户名 *" value={formData.username} onChange={e => setFormData(p => ({ ...p, username: e.target.value }))} />
+                <input className="w-full p-2.5 border border-slate-200 rounded-lg text-sm outline-none" placeholder="密码 *" type="password" value={formData.password} onChange={e => setFormData(p => ({ ...p, password: e.target.value }))} />
+                <input className="w-full p-2.5 border border-slate-200 rounded-lg text-sm outline-none" placeholder="邮箱" value={formData.email} onChange={e => setFormData(p => ({ ...p, email: e.target.value }))} />
+                <input className="w-full p-2.5 border border-slate-200 rounded-lg text-sm outline-none" placeholder="手机号" value={formData.phone} onChange={e => setFormData(p => ({ ...p, phone: e.target.value }))} />
+                <select className="w-full p-2.5 border border-slate-200 rounded-lg text-sm" value={formData.role} onChange={e => setFormData(p => ({ ...p, role: e.target.value }))}>
+                  <option value="HQ">HQ 总部</option>
+                  <option value="OPERATOR">OPERATOR 运营</option>
+                  <option value="STORE">STORE 门店</option>
                 </select>
-                <div className="flex justify-end gap-3"><Button variant="ghost" onClick={() => setShowAdd(false)}>取消</Button><Button className="bg-indigo-500 text-white" onClick={handleAddAdmin}>添加</Button></div>
+                <div className="flex justify-end gap-3">
+                  <Button variant="ghost" onClick={() => { setShowAdd(false); resetForm(); }}>取消</Button>
+                  <Button className="bg-indigo-500 text-white" onClick={handleAddAdmin}>添加</Button>
+                </div>
               </>
             ) : (
               <>
-                <input className="w-full p-2.5 border border-slate-200 rounded-lg text-sm outline-none" placeholder="角色名称 *" value={newItem.name} onChange={e => setNewItem(p => ({ ...p, name: e.target.value }))} />
-                <input className="w-full p-2.5 border border-slate-200 rounded-lg text-sm outline-none" placeholder="权限 (逗号分隔)" value={newItem.permissions} onChange={e => setNewItem(p => ({ ...p, permissions: e.target.value }))} />
-                <input className="w-full p-2.5 border border-slate-200 rounded-lg text-sm outline-none" placeholder="描述" value={newItem.description} onChange={e => setNewItem(p => ({ ...p, description: e.target.value }))} />
-                <div className="flex justify-end gap-3"><Button variant="ghost" onClick={() => setShowAdd(false)}>取消</Button><Button className="bg-indigo-500 text-white" onClick={handleAddRole}>添加</Button></div>
+                <input className="w-full p-2.5 border border-slate-200 rounded-lg text-sm outline-none" placeholder="角色名称 *" value={formData.name} onChange={e => setFormData(p => ({ ...p, name: e.target.value }))} />
+                <input className="w-full p-2.5 border border-slate-200 rounded-lg text-sm outline-none" placeholder="权限 (逗号分隔)" value={formData.permissions} onChange={e => setFormData(p => ({ ...p, permissions: e.target.value }))} />
+                <input className="w-full p-2.5 border border-slate-200 rounded-lg text-sm outline-none" placeholder="描述" value={formData.description} onChange={e => setFormData(p => ({ ...p, description: e.target.value }))} />
+                <div className="flex justify-end gap-3">
+                  <Button variant="ghost" onClick={() => { setShowAdd(false); resetForm(); }}>取消</Button>
+                  <Button className="bg-indigo-500 text-white" onClick={handleAddRole}>添加</Button>
+                </div>
               </>
             )}
           </Card>
         </div>
       )}
 
-      {/* Store Assignment Dialog */}
+      {/* ==================== 编辑用户 对话框 ==================== */}
+      {showEdit && editingUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => { setShowEdit(false); setEditingUser(null); resetForm(); }}>
+          <Card className="w-96 p-6 space-y-4" onClick={e => e.stopPropagation()}>
+            <h3 className="font-bold text-slate-900">编辑用户 - {editingUser.username}</h3>
+            <input className="w-full p-2.5 border border-slate-200 rounded-lg text-sm outline-none bg-slate-50" placeholder="用户名" value={formData.username} disabled />
+            <input className="w-full p-2.5 border border-slate-200 rounded-lg text-sm outline-none" placeholder="新密码（留空则不修改）" type="password" value={formData.password} onChange={e => setFormData(p => ({ ...p, password: e.target.value }))} />
+            <input className="w-full p-2.5 border border-slate-200 rounded-lg text-sm outline-none" placeholder="邮箱" value={formData.email} onChange={e => setFormData(p => ({ ...p, email: e.target.value }))} />
+            <input className="w-full p-2.5 border border-slate-200 rounded-lg text-sm outline-none" placeholder="手机号" value={formData.phone} onChange={e => setFormData(p => ({ ...p, phone: e.target.value }))} />
+            <select className="w-full p-2.5 border border-slate-200 rounded-lg text-sm" value={formData.role} onChange={e => setFormData(p => ({ ...p, role: e.target.value }))}>
+              <option value="HQ">HQ 总部</option>
+              <option value="OPERATOR">OPERATOR 运营</option>
+              <option value="STORE">STORE 门店</option>
+            </select>
+            <div className="flex justify-end gap-3">
+              <Button variant="ghost" onClick={() => { setShowEdit(false); setEditingUser(null); resetForm(); }}>取消</Button>
+              <Button className="bg-indigo-500 text-white" onClick={handleEditAdmin}>保存</Button>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* ==================== 删除确认 对话框 ==================== */}
+      {showDeleteConfirm && deletingUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => { setShowDeleteConfirm(false); setDeletingUser(null); }}>
+          <Card className="w-96 p-6 space-y-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-rose-50 flex items-center justify-center"><Trash2 className="w-5 h-5 text-rose-500" /></div>
+              <div>
+                <h3 className="font-bold text-slate-900">确认删除</h3>
+                <p className="text-sm text-slate-500">确定要删除用户「{deletingUser.username}」吗？此操作不可恢复。</p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3">
+              <Button variant="ghost" onClick={() => { setShowDeleteConfirm(false); setDeletingUser(null); }}>取消</Button>
+              <Button className="bg-rose-500 text-white" onClick={handleDeleteAdmin}>确认删除</Button>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* ==================== 门店分配 对话框 ==================== */}
       {showStoreAssign && selectedUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <Card className="w-[500px] max-h-[600px] p-6 space-y-4 overflow-hidden flex flex-col">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowStoreAssign(false)}>
+          <Card className="w-[500px] max-h-[600px] p-6 space-y-4 overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
             <h3 className="font-bold text-slate-900">门店权限设置 - {selectedUser.username}</h3>
             <p className="text-sm text-slate-500">选择该用户可以管理的门店</p>
             <div className="flex-1 overflow-y-auto space-y-2 pr-2">

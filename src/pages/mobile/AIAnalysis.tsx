@@ -23,7 +23,7 @@ import { Card } from '../../components/ui/card';
 import { Badge } from '../../components/ui/badge';
 import { Skeleton } from '../../components/ui/skeleton';
 import { Button } from '../../components/ui/button';
-import { MobileLayout } from '../../components/MobileLayout';
+import { MobileLayout, useStore } from '../../components/MobileLayout';
 import { cn } from '../../lib/utils';
 import { useToast } from '../../hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
@@ -53,6 +53,7 @@ export const AIAnalysis: React.FC = () => {
 
   const { success } = useToast();
   const navigate = useNavigate();
+  const { selectedStore } = useStore();
 
   const loadData = async () => {
     try {
@@ -110,6 +111,23 @@ export const AIAnalysis: React.FC = () => {
           <div className="text-center">
             <p className="text-sm text-rose-500 mb-4">{error}</p>
             <button onClick={loadData} className="text-sm text-orange-600 font-bold">重试</button>
+          </div>
+        </div>
+      </MobileLayout>
+    );
+  }
+
+  // ===== 无店铺状态 =====
+  if (!loading && !selectedStore) {
+    return (
+      <MobileLayout title="AI 智能分析">
+        <div className="flex-1 flex items-center justify-center p-4">
+          <div className="text-center">
+            <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4">
+              <Brain className="w-8 h-8 text-slate-300" />
+            </div>
+            <p className="text-base font-semibold text-slate-400 mb-2">暂无数据</p>
+            <p className="text-sm text-slate-400">请通过顶部导航切换店铺</p>
           </div>
         </div>
       </MobileLayout>

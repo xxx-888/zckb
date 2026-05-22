@@ -22,8 +22,8 @@ export const StoreManagement: React.FC = () => {
   const [editingStore, setEditingStore] = useState<StoreType | null>(null);
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [selectedStoreForUsers, setSelectedStoreForUsers] = useState<StoreType | null>(null);
-  const [newStore, setNewStore] = useState({ name: '', type: 'restaurant', address: '', phone: '', owner_name: '' });
-  const [editData, setEditData] = useState({ name: '', type: 'restaurant', address: '', phone: '', owner_name: '' });
+  const [newStore, setNewStore] = useState({ name: '', type: 'restaurant', address: '', phone: '', owner_id: '' });
+  const [editData, setEditData] = useState({ name: '', type: 'restaurant', address: '', phone: '', owner_id: '', status: 'pending' });
 
   const { success, error: toastError } = useToast();
 
@@ -36,7 +36,11 @@ export const StoreManagement: React.FC = () => {
         adminApi.getAdminUsers().catch(err => { console.warn('[StoreMgmt] 用户获取失败:', err); return []; }),
       ]);
       if (st.status === 'fulfilled') setStores((st.value as any)?.items || st.value || []);
-      if (us.status === 'fulfilled') setAllUsers(Array.isArray(us.value) ? us.value.map(u => ({ ...u, assignedStores: u.assignedStores || (u as any).assigned_stores || [] })) : []);
+      if (us.status === 'fulfilled') {
+        const data = us.value;
+        const users = Array.isArray(data) ? data : (Array.isArray((data as any)?.items) ? (data as any).items : []);
+        setAllUsers(users.map((u: any) => ({ ...u, assignedStores: u.assignedStores || u.assigned_stores || [] })));
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : '获取数据失败');
     } finally { setLoading(false); }
@@ -80,10 +84,12 @@ export const StoreManagement: React.FC = () => {
   const handleAdd = async () => {
     if (!newStore.name) { toastError('添加失败', '请填写门店名称'); return; }
     try {
-      await storesApi.createStore(newStore as any);
+      const data: any = { ...newStore };
+      if (data.owner_id === '') delete data.owner_id;
+      await storesApi.createStore(data);
       success('添加成功', `门店 "${newStore.name}" 已创建`);
       setShowAdd(false);
-      setNewStore({ name: '', type: 'restaurant', address: '', phone: '', owner_name: '' });
+      setNewStore({ name: '', type: 'restaurant', address: '', phone: '', owner_id: '' });
       loadData();
     } catch (err: any) { toastError('添加失败', err.message); }
   };
@@ -91,7 +97,10 @@ export const StoreManagement: React.FC = () => {
   const handleEdit = async () => {
     if (!editingStore) return;
     try {
-      await storesApi.updateStore(editingStore.id, editData as any);
+      const data: any = { ...editData };
+      if (data.owner_id === '') delete data.owner_id;
+      if (data.status === '') delete data.status;
+      await storesApi.updateStore(editingStore.id, data);
       success('更新成功', '门店信息已更新');
       setShowEdit(false);
       loadData();
@@ -105,7 +114,7 @@ export const StoreManagement: React.FC = () => {
 
   const openEdit = (s: StoreType) => {
     setEditingStore(s);
-    setEditData({ name: s.name, type: s.type || 'restaurant', address: s.address || '', phone: s.phone || '', owner_name: s.owner_name || '' });
+    setEditData({ name: s.name, type: s.type || 'restaurant', address: s.address || '', phone: s.phone || '', owner_id: s.owner_id || '', status: s.status || 'pending' });
     setShowEdit(true);
   };
 
@@ -166,6 +175,12 @@ export const StoreManagement: React.FC = () => {
                         {storeUsers.map(u => u.username).join(', ')}
                       </p>
                     )}
+                    {s.owner_id && (
+                      <p className="flex items-center gap-1 text-slate-500">
+                        <UserPlus className="w-3 h-3" />
+                        负责人：{allUsers.find(u => u.id === s.owner_id)?.username || s.owner_id}
+                      </p>
+                    )}
                   </div>
                   <div className="flex items-center gap-2 pt-1">
                     <Button size="sm" variant="outline" onClick={() => openUserManager(s)}>
@@ -191,7 +206,10 @@ export const StoreManagement: React.FC = () => {
               </select>
               <input className="w-full p-2.5 border border-slate-200 rounded-lg text-sm outline-none" placeholder="地址" value={newStore.address} onChange={e => setNewStore(p => ({ ...p, address: e.target.value }))} />
               <input className="w-full p-2.5 border border-slate-200 rounded-lg text-sm outline-none" placeholder="联系电话" value={newStore.phone} onChange={e => setNewStore(p => ({ ...p, phone: e.target.value }))} />
-              <input className="w-full p-2.5 border border-slate-200 rounded-lg text-sm outline-none" placeholder="负责人" value={newStore.owner_name} onChange={e => setNewStore(p => ({ ...p, owner_name: e.target.value }))} />
+              <select className="w-full p-2.5 border border-slate-200 rounded-lg text-sm" value={newStore.owner_id} onChange={e => setNewStore(p => ({ ...p, owner_id: e.target.value }))}>
+                <option value="">请选择负责人</option>
+                {allUsers.map(u => <option key={u.id} value={u.id}>{u.username}（{u.phone || '无手机'}）</option>)}
+              </select>
               <div className="flex justify-end gap-3"><Button variant="ghost" onClick={() => setShowAdd(false)}>取消</Button><Button className="bg-indigo-500 text-white" onClick={handleAdd}>添加</Button></div>
             </Card>
           </div>
@@ -203,12 +221,20 @@ export const StoreManagement: React.FC = () => {
             <Card className="w-96 p-6 space-y-4">
               <h3 className="font-bold text-slate-900">编辑门店</h3>
               <input className="w-full p-2.5 border border-slate-200 rounded-lg text-sm outline-none" value={editData.name} onChange={e => setEditData(p => ({ ...p, name: e.target.value }))} />
-              <select className="w-full p-2.5 border border-slate-200 rounded-lg text-sm" value={editData.type} onChange={e => setEditData(p => ({ ...p, type: e.target.value }))}>
-                <option value="restaurant">餐饮</option><option value="hotel">酒店</option><option value="beverage">饮品</option>
-              </select>
+              <div className="flex gap-3">
+                <select className="flex-1 p-2.5 border border-slate-200 rounded-lg text-sm" value={editData.type} onChange={e => setEditData(p => ({ ...p, type: e.target.value }))}>
+                  <option value="restaurant">餐饮</option><option value="hotel">酒店</option><option value="beverage">饮品</option>
+                </select>
+                <select className="flex-1 p-2.5 border border-slate-200 rounded-lg text-sm" value={editData.status} onChange={e => setEditData(p => ({ ...p, status: e.target.value }))}>
+                  <option value="pending">待审核</option><option value="active">运行中</option><option value="inactive">已停用</option>
+                </select>
+              </div>
               <input className="w-full p-2.5 border border-slate-200 rounded-lg text-sm outline-none" value={editData.address} onChange={e => setEditData(p => ({ ...p, address: e.target.value }))} />
               <input className="w-full p-2.5 border border-slate-200 rounded-lg text-sm outline-none" value={editData.phone} onChange={e => setEditData(p => ({ ...p, phone: e.target.value }))} />
-              <input className="w-full p-2.5 border border-slate-200 rounded-lg text-sm outline-none" value={editData.owner_name} onChange={e => setEditData(p => ({ ...p, owner_name: e.target.value }))} />
+              <select className="w-full p-2.5 border border-slate-200 rounded-lg text-sm" value={editData.owner_id} onChange={e => setEditData(p => ({ ...p, owner_id: e.target.value }))}>
+                <option value="">请选择负责人</option>
+                {allUsers.map(u => <option key={u.id} value={u.id}>{u.username}（{u.phone || '无手机'}）</option>)}
+              </select>
               <div className="flex justify-end gap-3"><Button variant="ghost" onClick={() => setShowEdit(false)}>取消</Button><Button className="bg-indigo-500 text-white" onClick={handleEdit}>保存</Button></div>
             </Card>
           </div>

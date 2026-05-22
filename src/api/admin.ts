@@ -68,10 +68,22 @@ export const adminApi = {
     return response.data;
   },
 
-  /** 分配门店给用户 */
+  /** 启用用户 */
+  enableAdminUser: async (id: string): Promise<void> => {
+    const response = await api.post(`/v1/admin/permissions/admins/${id}/enable`);
+    return response.data;
+  },
+
+  /** 删除用户（硬删除）*/
+  deleteAdminUser: async (id: string): Promise<void> => {
+    const response = await api.delete(`/v1/admin/permissions/admins/${id}`);
+    return response.data;
+  },
+
+  /** 分配门店给用户 - 调用专用接口 */
   assignStores: async (userId: string, storeIds: string[]): Promise<any> => {
-    const response = await api.put<any, any>(`/v1/admin/permissions/admins/${userId}`, {
-      assigned_stores: storeIds,
+    const response = await api.post<any, any>(`/v1/admin/permissions/admins/${userId}/stores`, {
+      store_ids: storeIds,
     });
     return response.data || response;
   },
@@ -124,9 +136,15 @@ export const adminApi = {
     return response.data;
   },
 
-  testAIModel: async (configId: string): Promise<any> => {
-    const response = await api.post(`/v1/ai/models/${configId}/test`);
-    return response.data;
+  testAIModel: async (configId: string, testMessage?: string, apiKey?: string): Promise<any> => {
+    const payload: any = {};
+    if (testMessage) payload.test_message = testMessage;
+    if (apiKey) payload.api_key = apiKey;
+    const response = await api.post(`/v1/ai/models/${configId}/test`, payload, {
+      timeout: 60000, // 模型调用可能较慢，60秒超时
+    });
+    // 拦截器已解一层 response.data，直接返回
+    return response;
   },
 
   getAIPrompts: async (): Promise<any[]> => {
@@ -172,5 +190,17 @@ export const adminApi = {
   getAIConfig: async (): Promise<any> => {
     const response = await api.get<any>('/v1/ai/config');
     return response.data || response;
+  },
+
+  // ============ AI 指令/规则测试 ============
+
+  testAIPrompt: async (params: any): Promise<any> => {
+    const response = await api.post('/v1/ai/test-prompt', params, { timeout: 60000 });
+    return response;
+  },
+
+  testAIRule: async (params: any): Promise<any> => {
+    const response = await api.post('/v1/ai/test-rule', params, { timeout: 60000 });
+    return response;
   },
 };

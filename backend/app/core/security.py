@@ -5,8 +5,12 @@
 
 from datetime import datetime, timedelta, timezone
 
+import base64
+import hashlib
+
 import jwt
 import bcrypt
+from cryptography.fernet import Fernet
 
 from app.core.config import settings
 
@@ -44,6 +48,41 @@ def get_password_hash(password: str) -> str:
     salt = bcrypt.gensalt()
     hashed = bcrypt.hashpw(password_bytes, salt)
     return hashed.decode('utf-8')
+
+
+# ---- Fernet 对称加密（用于 API Key 等需要解密的敏感字段） ----
+
+def _derive_fernet_key(secret: str) -> bytes:
+    """从任意 secret 字符串派生 32 字节的 Fernet key"""
+    return base64.urlsafe_b64encode(hashlib.sha256(secret.encode()).digest())
+
+_fernet = Fernet(_derive_fernet_key(settings.JWT_SECRET_KEY))
+
+
+def encrypt_api_key(plain_key: str) -> str:
+    """
+    使用 Fernet 对称加密 API Key
+
+    Args:
+        plain_key: 明文 API Key
+
+    Returns:
+        str: 加密后的字符串（base64）
+    """
+    return _fernet.encrypt(plain_key.encode('utf-8')).decode('utf-8')
+
+
+def decrypt_api_key(encrypted_key: str) -> str:
+    """
+    解密 API Key
+
+    Args:
+        encrypted_key: 加密后的字符串
+
+    Returns:
+        str: 明文 API Key
+    """
+    return _fernet.decrypt(encrypted_key.encode('utf-8')).decode('utf-8')
 
 
 def create_access_token(

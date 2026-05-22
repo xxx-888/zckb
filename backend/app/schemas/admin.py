@@ -21,6 +21,7 @@ class AdminUserResponse(BaseModel):
     status: str
     last_login_at: Optional[datetime] = None
     created_at: datetime
+    assigned_stores: list[str] = []
 
     model_config = {"from_attributes": True}
 

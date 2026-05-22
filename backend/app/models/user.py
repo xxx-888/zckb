@@ -56,6 +56,9 @@ class User(BaseModel):
     )
 
     # -- 关系 --
+    owned_stores: Mapped[list[Store]] = relationship(
+        "Store", back_populates="owner", lazy="selectin"
+    )
     store_associations: Mapped[list[UserStore]] = relationship(
         "UserStore", back_populates="user", lazy="selectin"
     )

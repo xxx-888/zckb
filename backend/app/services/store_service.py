@@ -127,6 +127,7 @@ async def create_store(
 ) -> Store:
     """
     创建门店
+    如果指定了 owner_id，自动在 user_stores 表创建关联记录
 
     Args:
         db: 数据库会话
@@ -135,9 +136,22 @@ async def create_store(
     Returns:
         Store: 创建的门店对象
     """
-    store = Store(**store_data)
+    owner_id = store_data.get("owner_id")
+    store = Store(**{k: v for k, v in store_data.items() if k != "owner_id"})
     db.add(store)
     await db.flush()
+
+    # 同步 owner_id 到 user_stores 表
+    if owner_id:
+        existing = await db.execute(
+            select(UserStore).where(
+                UserStore.user_id == owner_id,
+                UserStore.store_id == store.id,
+            )
+        )
+        if not existing.scalar_one_or_none():
+            db.add(UserStore(user_id=owner_id, store_id=store.id))
+
     await db.refresh(store)
     return store
 
@@ -149,6 +163,7 @@ async def update_store(
 ) -> Store:
     """
     更新门店信息
+    如果 owner_id 发生变化，同步更新 user_stores 表
 
     Args:
         db: 数据库会话
@@ -163,9 +178,33 @@ async def update_store(
     """
     store = await get_store_by_id(db, store_id)
 
+    new_owner_id = store_data.get("owner_id")
+    old_owner_id = store.owner_id
+
     for key, value in store_data.items():
         if value is not None and hasattr(store, key):
             setattr(store, key, value)
+
+    # 同步 owner_id 变更到 user_stores 表
+    if "owner_id" in store_data and new_owner_id != old_owner_id:
+        # 删除旧的关联（如果存在）
+        if old_owner_id:
+            await db.execute(
+                UserStore.__table__.delete().where(
+                    UserStore.user_id == old_owner_id,
+                    UserStore.store_id == store_id,
+                )
+            )
+        # 创建新的关联
+        if new_owner_id:
+            existing = await db.execute(
+                select(UserStore).where(
+                    UserStore.user_id == new_owner_id,
+                    UserStore.store_id == store_id,
+                )
+            )
+            if not existing.scalar_one_or_none():
+                db.add(UserStore(user_id=new_owner_id, store_id=store_id))
 
     await db.flush()
     await db.refresh(store)

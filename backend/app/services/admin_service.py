@@ -10,6 +10,7 @@ from typing import Optional
 from uuid import UUID
 
 from sqlalchemy import func, select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BusinessException, NotFoundException
@@ -17,7 +18,7 @@ from app.core.security import get_password_hash
 from app.models.review import ReplyAudit, Review
 from app.models.spider import SpiderPlatform
 from app.models.store import Store
-from app.models.user import User
+from app.models.user import User, UserStore
 from app.schemas.admin import (
     AdminUserCreateRequest,
     AdminUserUpdateRequest,
@@ -240,6 +241,7 @@ async def get_admin_users(
     offset = (page - 1) * page_size
     stmt = (
         select(User)
+        .options(selectinload(User.store_associations))
         .order_by(User.created_at.desc())
         .offset(offset)
         .limit(page_size)
@@ -557,3 +559,53 @@ async def get_permissions_structure(db: AsyncSession) -> list[dict]:
             ],
         },
     ]
+
+async def enable_admin_user(
+    db: AsyncSession,
+    user_id: UUID,
+) -> "User":
+    """
+    启用管理员用户
+    """
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise NotFoundException("用户不存在")
+    user.status = "active"
+    await db.flush()
+    await db.refresh(user)
+    return user
+
+
+async def delete_admin_user(
+    db: AsyncSession,
+    user_id: UUID,
+) -> None:
+    """
+    删除管理员用户（硬删除）
+    """
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise NotFoundException("用户不存在")
+    await db.delete(user)
+    await db.flush()
+
+
+async def assign_stores(
+    db: AsyncSession,
+    user_id: UUID,
+    store_ids: list[UUID],
+) -> None:
+    """
+    分配门店给用户（更新 user_stores 表）
+    """
+    # 删除现有关联
+    await db.execute(
+        UserStore.__table__.delete().where(UserStore.user_id == user_id)
+    )
+    # 创建新关联
+    for store_id in store_ids:
+        db.add(UserStore(user_id=user_id, store_id=store_id))
+    await db.flush()
+

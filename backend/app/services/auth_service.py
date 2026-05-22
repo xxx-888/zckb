@@ -76,11 +76,17 @@ async def create_user(
     Raises:
         BusinessException: 手机号已注册
     """
-    # 检查手机号是否已注册（开发环境暂时注释掉）
-    # result = await db.execute(select(User).where(User.phone == user_data.phone))
-    # existing_user = result.scalar_one_or_none()
-    # if existing_user:
-    #     raise BusinessException("该手机号已注册")
+    # 检查手机号是否已注册
+    result = await db.execute(select(User).where(User.phone == user_data.phone))
+    existing_user = result.scalar_one_or_none()
+    if existing_user:
+        raise BusinessException("该手机号已注册，请直接登录")
+
+    # 检查用户名是否已存在
+    if user_data.username:
+        result = await db.execute(select(User).where(User.username == user_data.username))
+        if result.scalar_one_or_none():
+            raise BusinessException("该用户名已被使用，请换一个")
 
     # 创建用户 - 默认角色为 STORE
     user = User(
@@ -88,8 +94,8 @@ async def create_user(
         username=user_data.username,
         email=user_data.email,
         hashed_password=get_password_hash(user_data.password),
-        role="STORE",  # 默认角色
-        last_login_at=datetime.utcnow(),  # SQLite requires a value, not None
+        role="STORE",
+        last_login_at=datetime.utcnow(),
     )
     db.add(user)
     await db.flush()

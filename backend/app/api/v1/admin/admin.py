@@ -102,15 +102,12 @@ async def get_admin_users(
     获取管理员用户列表
     """
     users, total = await admin_service.get_admin_users(db, page, page_size)
-    return paginated(
-        items=[
-            AdminUserResponse.model_validate(user).model_dump(mode="json")
-            for user in users
-        ],
-        total=total,
-        page=page,
-        page_size=page_size,
-    )
+    items = []
+    for user in users:
+        d = AdminUserResponse.model_validate(user).model_dump(mode="json")
+        d["assigned_stores"] = [str(s.store_id) for s in user.store_associations]
+        items.append(d)
+    return paginated(items=items, total=total, page=page, page_size=page_size)
 
 
 @router.post("/permissions/admins", summary="新增管理员")
@@ -219,3 +216,48 @@ async def get_permissions_structure(
     """
     structure = await admin_service.get_permissions_structure(db)
     return success(data={"modules": structure})
+
+@router.post("/permissions/admins/{user_id}/enable", summary="启用管理员")
+async def enable_admin_user(
+    user_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> dict:
+    """
+    启用管理员用户
+    """
+    user = await admin_service.enable_admin_user(db, user_id)
+    return success(
+        data=AdminUserResponse.model_validate(user).model_dump(mode="json"),
+        message="管理员已启用",
+    )
+
+
+@router.delete("/permissions/admins/{user_id}", summary="删除管理员")
+async def delete_admin_user(
+    user_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> dict:
+    """
+    删除管理员用户（硬删除）
+    """
+    await admin_service.delete_admin_user(db, user_id)
+    return success(message="管理员已删除")
+
+
+@router.post("/permissions/admins/{user_id}/stores", summary="分配门店给用户")
+async def assign_stores(
+    user_id: UUID,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> dict:
+    """
+    分配门店给用户（更新 user_stores 表）
+    - body: {"store_ids": ["uuid1", "uuid2", ...]}
+    """
+    store_ids = body.get("store_ids", [])
+    store_uuids = [UUID(sid) for sid in store_ids]
+    await admin_service.assign_stores(db, user_id, store_uuids)
+    return success(message="门店分配成功")

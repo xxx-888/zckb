@@ -42,11 +42,9 @@ export const Register: React.FC = () => {
     setCodeLoading(true);
     
     try {
-      // 调用后端发送验证码API（模拟，后台会打印日志）
       await authApi.sendRegisterCode(formData.phone);
       success('验证码已发送', `验证码已发送到 ${formData.phone}`);
       
-      // 开始倒计时
       setCountdown(60);
       const timer = setInterval(() => {
         setCountdown(prev => {
@@ -58,7 +56,6 @@ export const Register: React.FC = () => {
         });
       }, 1000);
     } catch (err: any) {
-      // 优先使用后端返回的错误信息
       const errorMessage = err.backendMessage || err.message || '验证码发送失败';
       console.error('Send code error:', { message: errorMessage, response: err.response?.data });
       error('发送失败', errorMessage);

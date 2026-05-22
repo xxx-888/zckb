@@ -142,11 +142,18 @@ async def send_register_code(
 ) -> dict:
     """
     注册发送验证码
-    - 用于新用户注册，不检查手机号是否已注册
+    - 检查手机号是否已注册，已注册则提示直接登录
     - 生产环境对接短信服务
     - 当前为模拟实现，生成随机验证码，后台打印日志
     """
     import random
+    
+    # 检查手机号是否已注册
+    from sqlalchemy import select
+    result = await db.execute(select(User).where(User.phone == request.phone))
+    if result.scalar_one_or_none():
+        from app.core.exceptions import BusinessException
+        raise BusinessException("该手机号已注册，请直接登录")
     
     # 生成随机6位验证码
     code = "".join([str(random.randint(0, 9)) for _ in range(6)])

@@ -17,11 +17,12 @@ import {
   MessageCircle
 } from 'lucide-react';
 import { Card } from '../../components/ui/card';
+import { Skeleton } from '../../components/ui/skeleton';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { Input } from '../../components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '../../components/ui/tabs';
-import { MobileLayout } from '../../components/MobileLayout';
+import { MobileLayout, useStore } from '../../components/MobileLayout';
 import { cn } from '../../lib/utils';
 import { useToast } from '../../hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
@@ -31,6 +32,7 @@ import type { Review } from '../../api/reviews';
 export const ReviewStream: React.FC = () => {
   const { success, error: toastError } = useToast();
   const navigate = useNavigate();
+  const { selectedStore } = useStore();
   const [activeTab, setActiveTab] = useState<'all' | 'positive' | 'negative'>('all');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [searchKeyword, setSearchKeyword] = useState('');
@@ -43,8 +45,7 @@ export const ReviewStream: React.FC = () => {
       setLoading(true);
       setFetchError(null);
       const response = await fetchReviews();
-      // 处理分页响应格式
-      const items = response.items || response.data || response;
+      const items = response.items || [];
       setReviews(Array.isArray(items) ? items : []);
     } catch (err) {
       setFetchError(err instanceof Error ? err.message : '获取数据失败');
@@ -96,6 +97,53 @@ export const ReviewStream: React.FC = () => {
     e.stopPropagation();
     success('更多操作', '举报、隐藏、置顶等功能开发中');
   };
+
+  // ===== 加载状态 =====
+  if (loading) {
+    return (
+      <MobileLayout title="评论瀑布流">
+        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500 p-4">
+          <Skeleton lines={1} className="h-8 w-48 mb-4" />
+          <Skeleton card className="mt-4" />
+          <Skeleton lines={3} className="mt-4 space-y-3" />
+        </div>
+      </MobileLayout>
+    );
+  }
+
+  // ===== 无店铺状态 =====
+  if (!selectedStore && !loading) {
+    return (
+      <MobileLayout title="评论瀑布流">
+        <div className="flex-1 flex items-center justify-center p-4">
+          <div className="text-center">
+            <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4">
+              <MessageSquare className="w-8 h-8 text-slate-300" />
+            </div>
+            <p className="text-base font-semibold text-slate-400 mb-2">暂无数据</p>
+            <p className="text-sm text-slate-400">请通过顶部导航切换店铺</p>
+          </div>
+        </div>
+      </MobileLayout>
+    );
+  }
+
+  // ===== 错误状态 =====
+  if (fetchError) {
+    return (
+      <MobileLayout title="评论瀑布流">
+        <div className="p-4">
+          <Card className="p-6 text-center">
+            <AlertCircle className="w-12 h-12 text-rose-500 mx-auto mb-4" />
+            <p className="text-sm text-slate-600 mb-4">{fetchError}</p>
+            <Button onClick={loadReviews} className="bg-orange-500 hover:bg-orange-600 text-white">
+              重试
+            </Button>
+          </Card>
+        </div>
+      </MobileLayout>
+    );
+  }
 
   return (
     <MobileLayout title="评论瀑布流">

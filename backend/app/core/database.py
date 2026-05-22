@@ -21,6 +21,11 @@ from app.core.config import settings
 
 def json_serializer(obj):
     """JSON序列化器，支持datetime和UUID"""
+    return json.dumps(obj, default=_json_default)
+
+
+def _json_default(obj):
+    """json.dumps 的 default 回调，处理非标准类型"""
     if isinstance(obj, datetime):
         return obj.isoformat()
     if isinstance(obj, UUID):

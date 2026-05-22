@@ -132,4 +132,24 @@ export const storesApi = {
     const response = await api.get<any>('/v1/stores/stats');
     return response.data || response;
   },
+
+  // ============ 店铺绑定（当前用户） ============
+
+  // 获取当前用户绑定的店铺
+  getMyStores: async (): Promise<Store[]> => {
+    const response = await api.get<any>('/v1/user/stores');
+    return response.data || response || [];
+  },
+
+  // 当前用户绑定店铺（单个）
+  bindStore: async (storeId: string): Promise<any> => {
+    const response = await api.post<any, any>(`/v1/stores/${storeId}/bind`);
+    return response.data || response;
+  },
+
+  // 当前用户解绑店铺
+  unbindStore: async (storeId: string): Promise<any> => {
+    const response = await api.delete(`/v1/stores/${storeId}/bind`);
+    return response.data || response;
+  },
 };

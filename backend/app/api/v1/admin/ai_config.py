@@ -5,7 +5,7 @@ AI配置路由模块（后台管理）
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -117,15 +117,18 @@ async def delete_model_config(
 @router.post("/models/{config_id}/test", summary="测试模型连接")
 async def test_model_config(
     config_id: UUID,
+    test_message: str | None = Body(default=None, embed=True),
+    api_key: str | None = Body(default=None, embed=True),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ) -> dict:
     """
-    测试模型连接
-    - 验证API密钥和连接状态
-    - 返回延迟测试结果
+    真实调用厂商API测试模型连接
+    - test_message: 自定义测试内容
+    - api_key: 手动输入 API Key（旧版加密不兼容时可使用）
+    - 返回模型真实回复、延迟和 token 用量
     """
-    result = await ai_config_service.test_model_config(db, config_id)
+    result = await ai_config_service.test_model_config(db, config_id, test_message, api_key)
     return success(data=result)
 
 
@@ -262,3 +265,44 @@ async def get_evaluation_data(
     """
     data = await ai_config_service.get_evaluation_data(db, period)
     return success(data=AIEvaluationResponse(**data).model_dump(mode="json"))
+
+
+@router.post("/test-prompt", summary="测试指令/模板")
+async def test_prompt(
+    request: dict = Body(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> dict:
+    """
+    测试深度指令或规则引擎流程
+    - model_id: 选用的模型ID（必填）
+    - prompt_id: 使用的指令模板ID（可选，深度指令测试用）
+    - rule_id: 使用的规则ID（可选，规则引擎测试用）
+    - system_prompt: 自定义系统提示词（可选，覆盖模板的）
+    - user_message: 用户输入文本（必填）
+    - variables: 模板变量替换的键值对（可选）
+    - api_key: 手动输入的 API Key（可选）
+    - temperature: 温度（可选，默认0.7）
+    - max_tokens: 最大 token（可选，默认1024）
+    """
+    result = await ai_config_service.test_prompt(db, request)
+    return success(data=result)
+
+
+@router.post("/test-rule", summary="测试规则引擎")
+async def test_rule(
+    request: dict = Body(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> dict:
+    """
+    测试规则引擎完整流程
+    - model_id: 选用的模型ID（必填）
+    - rule_id: 规则ID（必填）
+    - prompt_id: 匹配的指令模板ID（可选）
+    - test_input: 测试输入内容（必填）
+    - test_rating: 测试评分（可选）
+    - api_key: 手动输入的 API Key（可选）
+    """
+    result = await ai_config_service.test_rule(db, request)
+    return success(data=result)

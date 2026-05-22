@@ -62,8 +62,16 @@ class Store(BaseModel):
         index=True,
         comment="区域ID",
     )
+    owner_id: Mapped[Optional[UUID]] = mapped_column(
+        GUID(),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        comment="负责人ID（关联用户表）",
+    )
 
     # -- 关系 --
+    owner: Mapped[Optional[User]] = relationship("User", back_populates="owned_stores")
     region: Mapped[Optional[Region]] = relationship(
         "Region", back_populates="stores"
     )

@@ -32,6 +32,7 @@ class StoreResponse(BaseModel):
     type: str
     address: Optional[str] = None
     owner_name: Optional[str] = None
+    owner_id: Optional[UUID] = None
     phone: Optional[str] = None
     status: str
     health_score: Optional[float] = None
@@ -51,6 +52,7 @@ class StoreCreateRequest(BaseModel):
     type: str = Field(..., description="门店类型: restaurant/hotel/beverage")
     address: Optional[str] = Field(None, description="门店地址", max_length=500)
     owner_name: Optional[str] = Field(None, description="店主姓名", max_length=100)
+    owner_id: Optional[UUID] = Field(None, description="负责人ID（关联用户表）")
     phone: Optional[str] = Field(None, description="联系电话", max_length=20)
 
 
@@ -61,6 +63,7 @@ class StoreUpdateRequest(BaseModel):
     type: Optional[str] = Field(None, description="门店类型: restaurant/hotel/beverage")
     address: Optional[str] = Field(None, description="门店地址", max_length=500)
     owner_name: Optional[str] = Field(None, description="店主姓名", max_length=100)
+    owner_id: Optional[UUID] = Field(None, description="负责人ID（关联用户表）")
     phone: Optional[str] = Field(None, description="联系电话", max_length=20)
     status: Optional[str] = Field(None, description="门店状态: active/pending/inactive")
 
