@@ -76,9 +76,10 @@ export const SubscriptionManagement: React.FC = () => {
     try {
       setLoading(true);
       const data = await subscriptionApi.getAllPlans();
-      setPlans(data);
+      setPlans(Array.isArray(data) ? data : []);
     } catch (err: any) {
       error('加载失败', err.message || '无法获取套餐列表');
+      setPlans([]);
     } finally {
       setLoading(false);
     }

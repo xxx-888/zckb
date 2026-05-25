@@ -28,6 +28,7 @@ import { useToast } from '../../hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { fetchReviews } from '../../api/reviews';
 import type { Review } from '../../api/reviews';
+import { useSubscription, SubscriptionPrompt } from '../../hooks/use-subscription-check';
 
 export const ReviewStream: React.FC = () => {
   const { success, error: toastError } = useToast();
@@ -39,6 +40,36 @@ export const ReviewStream: React.FC = () => {
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
+
+  // ===== 订阅状态检测 =====
+  const {
+    subscription,
+    loading: subscriptionLoading,
+    error: subscriptionError,
+    hasValidSubscription,
+  } = useSubscription();
+
+  // ===== 订阅状态检查 =====
+  if (subscriptionLoading) {
+    return (
+      <MobileLayout title="评论瀑布流">
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <div className="w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-sm text-slate-400">正在检查订阅状态...</p>
+          </div>
+        </div>
+      </MobileLayout>
+    );
+  }
+
+  if (!hasValidSubscription) {
+    return (
+      <MobileLayout title="评论瀑布流">
+        <SubscriptionPrompt featureName="评论" />
+      </MobileLayout>
+    );
+  }
 
   const loadReviews = async () => {
     try {

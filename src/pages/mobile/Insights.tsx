@@ -28,6 +28,7 @@ import { cn } from '../../lib/utils';
 import { useToast } from '../../hooks/use-toast';
 import { fetchTopDish, fetchThreeGoodThreeBad } from '../../api/insights';
 import type { Dish } from '../../api/insights';
+import { useSubscription, SubscriptionPrompt } from '../../hooks/use-subscription-check';
 
 export const Insights: React.FC = () => {
   const [reportType, setReportType] = useState<'week' | 'month'>('week');
@@ -40,6 +41,14 @@ export const Insights: React.FC = () => {
   const { success } = useToast();
   const navigate = useNavigate();
   const { selectedStore } = useStore();
+
+  // ===== 订阅状态检测 =====
+  const {
+    subscription,
+    loading: subscriptionLoading,
+    error: subscriptionError,
+    hasValidSubscription,
+  } = useSubscription();
 
   const loadData = async () => {
     try {
@@ -81,6 +90,31 @@ export const Insights: React.FC = () => {
     success('导出报告', '正在导出完整洞察报告为 PDF...');
   };
 
+  // ===== 条件渲染 =====
+  // 1. 订阅加载中
+  if (subscriptionLoading) {
+    return (
+      <MobileLayout title="经营洞察">
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <div className="w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-sm text-slate-400">正在检查订阅状态...</p>
+          </div>
+        </div>
+      </MobileLayout>
+    );
+  }
+
+  // 2. 无有效订阅
+  if (!hasValidSubscription) {
+    return (
+      <MobileLayout title="经营洞察">
+        <SubscriptionPrompt featureName="经营洞察" />
+      </MobileLayout>
+    );
+  }
+
+  // 3. 数据加载中
   if (loading) {
     return (
       <MobileLayout title="经营洞察">
@@ -97,6 +131,7 @@ export const Insights: React.FC = () => {
     );
   }
 
+  // 4. 加载错误
   if (error) {
     return (
       <MobileLayout title="经营洞察">
@@ -110,8 +145,8 @@ export const Insights: React.FC = () => {
     );
   }
 
-  // ===== 无店铺状态 =====
-  if (!loading && !selectedStore) {
+  // 5. 无店铺
+  if (!selectedStore) {
     return (
       <MobileLayout title="经营洞察">
         <div className="flex-1 flex items-center justify-center p-4">
@@ -127,6 +162,7 @@ export const Insights: React.FC = () => {
     );
   }
 
+  // 6. 正常内容
   return (
     <MobileLayout title="经营洞察">
       <div className="space-y-6 pb-20 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -153,7 +189,7 @@ export const Insights: React.FC = () => {
         {/* "Three Goods and Three Bads" Report */}
         <div className="space-y-3">
           <h3 className="font-bold text-slate-800 text-sm px-1 flex justify-between items-center">
-            “三好三差”智能月报
+            "三好三差”智能月报
             <div className="flex bg-slate-100 p-0.5 rounded-lg">
               <button 
                 onClick={() => setReportType('week')}
@@ -307,7 +343,7 @@ export const Insights: React.FC = () => {
               <p className="text-xs font-bold text-slate-700">商圈竞品对比</p>
             </div>
             <p className="text-[11px] text-slate-500 leading-relaxed">
-              您的竞品 A 近期“上菜慢”的差评增多，建议您本店主推“30分钟未上齐免单”服务。
+              您的竞品 A 近期"上菜慢”的差评增多，建议您本店主推"30分钟未上齐免单”服务。
             </p>
             <div className="pt-2">
                <div className="flex justify-between text-[10px] mb-1">
@@ -324,4 +360,3 @@ export const Insights: React.FC = () => {
     </MobileLayout>
   );
 };
-

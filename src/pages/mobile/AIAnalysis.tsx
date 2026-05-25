@@ -37,6 +37,7 @@ import {
   fetchAppealSuggestions
 } from '../../api/ai-analysis';
 import type { Topic, TagCluster, SentimentSummary, RiskLevels, ReplyRecord, ReplyStats, AppealSuggestion } from '../../api/ai-analysis';
+import { useSubscription, SubscriptionPrompt } from '../../hooks/use-subscription-check';
 
 export const AIAnalysis: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'analysis' | 'history' | 'appeal'>('analysis');
@@ -54,6 +55,36 @@ export const AIAnalysis: React.FC = () => {
   const { success } = useToast();
   const navigate = useNavigate();
   const { selectedStore } = useStore();
+
+  // ===== 订阅状态检测 =====
+  const {
+    subscription,
+    loading: subscriptionLoading,
+    error: subscriptionError,
+    hasValidSubscription,
+  } = useSubscription();
+
+  // ===== 订阅状态检查 =====
+  if (subscriptionLoading) {
+    return (
+      <MobileLayout title="AI 智能分析">
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <div className="w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-sm text-slate-400">正在检查订阅状态...</p>
+          </div>
+        </div>
+      </MobileLayout>
+    );
+  }
+
+  if (!hasValidSubscription) {
+    return (
+      <MobileLayout title="AI 智能分析">
+        <SubscriptionPrompt featureName="AI 分析" />
+      </MobileLayout>
+    );
+  }
 
   const loadData = async () => {
     try {

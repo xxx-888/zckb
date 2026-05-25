@@ -43,6 +43,7 @@ import {
   type AlertData
 } from '../../api/dashboard';
 import { authApi } from '../../api/auth';
+import { useSubscription, SubscriptionPrompt } from '../../hooks/use-subscription-check';
 
 export const Dashboard: React.FC = () => {
   const { success } = useToast();
@@ -71,6 +72,14 @@ export const Dashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const lastPeriodRef = React.useRef<string | null>(null);
+
+  // ===== 订阅状态检测 =====
+  const {
+    subscription,
+    loading: subscriptionLoading,
+    error: subscriptionError,
+    hasValidSubscription,
+  } = useSubscription();
 
   // ===== 时间筛选选项 =====
   const timeOptions = [
@@ -232,6 +241,22 @@ export const Dashboard: React.FC = () => {
         </div>
       </MobileLayout>
     );
+  }
+
+  // ===== 订阅状态检测 =====
+  if (subscriptionLoading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-sm text-slate-500">正在检查订阅状态...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!hasValidSubscription) {
+    return <SubscriptionPrompt featureName="首页" />;
   }
 
   return (

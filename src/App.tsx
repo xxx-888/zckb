@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { ToastProvider, useToast } from './hooks/use-toast';
 import Toaster from './components/ui/toaster';
+import { SubscriptionProvider } from './hooks/use-subscription-check';
 
 // 管理员页面
 import { AdminLogin } from './pages/admin/AdminLogin';
@@ -64,39 +65,40 @@ function AppContent() {
 
   return (
     <>
-      <Routes>
-        {/* 默认重定向 */}
-        <Route path="/" element={<Navigate to="/mobile" replace />} />
+      <SubscriptionProvider>
+        <Routes>
+          {/* 默认重定向 */}
+          <Route path="/" element={<Navigate to="/mobile" replace />} />
         
-        {/* ==================== 移动端路由 ==================== */}
-        <Route path="/mobile" element={<Dashboard />} />
-        <Route path="/mobile/login" element={<Login />} />
-        <Route path="/mobile/register" element={<Register />} />
-        <Route path="/mobile/forgot-password" element={<ForgotPassword />} />
-        <Route path="/mobile/store-list" element={<StoreList />} />
-        <Route path="/mobile/store-detail/:id" element={<StoreDetail />} />
-        <Route path="/mobile/dashboard" element={<Dashboard />} />
-        <Route path="/mobile/ai-analysis" element={<AIAnalysis />} />
-        <Route path="/mobile/insights" element={<Insights />} />
-        <Route path="/mobile/negative-reply" element={<NegativeReply />} />
-        <Route path="/mobile/positive-activation" element={<PositiveActivation />} />
-        <Route path="/mobile/review-stream" element={<ReviewStream />} />
-        <Route path="/mobile/review-detail/:id" element={<ReviewDetail />} />
-        <Route path="/mobile/platform-detail/:platform" element={<PlatformDetail />} />
-        <Route path="/mobile/annual-report" element={<MobileAnnualReport />} />
-        <Route path="/mobile/competitor-analysis" element={<MobileCompetitorAnalysis />} />
-        <Route path="/mobile/settings" element={<Settings />} />
-        <Route path="/mobile/store-settings" element={<StoreSettings />} />
-        <Route path="/mobile/reply-template" element={<ReplyTemplate />} />
-        <Route path="/mobile/platform-connection" element={<PlatformConnection />} />
-        <Route path="/mobile/notification-settings" element={<NotificationSettings />} />
-        <Route path="/mobile/auto-reply-settings" element={<AutoReplySettings />} />
-        <Route path="/mobile/help-center" element={<HelpCenter />} />
-        <Route path="/mobile/subscription" element={<Subscription />} />
-        <Route path="/mobile/dish-elimination" element={<DishElimination />} />
-        <Route path="/mobile/traceability-detail/:reportId" element={<TraceabilityDetail />} />
+          {/* ==================== 移动端路由 ==================== */}
+          <Route path="/mobile" element={<Dashboard />} />
+          <Route path="/mobile/login" element={<Login />} />
+          <Route path="/mobile/register" element={<Register />} />
+          <Route path="/mobile/forgot-password" element={<ForgotPassword />} />
+          <Route path="/mobile/store-list" element={<StoreList />} />
+          <Route path="/mobile/store-detail/:id" element={<StoreDetail />} />
+          <Route path="/mobile/dashboard" element={<Dashboard />} />
+          <Route path="/mobile/ai-analysis" element={<AIAnalysis />} />
+          <Route path="/mobile/insights" element={<Insights />} />
+          <Route path="/mobile/negative-reply" element={<NegativeReply />} />
+          <Route path="/mobile/positive-activation" element={<PositiveActivation />} />
+          <Route path="/mobile/review-stream" element={<ReviewStream />} />
+          <Route path="/mobile/review-detail/:id" element={<ReviewDetail />} />
+          <Route path="/mobile/platform-detail/:platform" element={<PlatformDetail />} />
+          <Route path="/mobile/annual-report" element={<MobileAnnualReport />} />
+          <Route path="/mobile/competitor-analysis" element={<MobileCompetitorAnalysis />} />
+          <Route path="/mobile/settings" element={<Settings />} />
+          <Route path="/mobile/store-settings" element={<StoreSettings />} />
+          <Route path="/mobile/reply-template" element={<ReplyTemplate />} />
+          <Route path="/mobile/platform-connection" element={<PlatformConnection />} />
+          <Route path="/mobile/notification-settings" element={<NotificationSettings />} />
+          <Route path="/mobile/auto-reply-settings" element={<AutoReplySettings />} />
+          <Route path="/mobile/help-center" element={<HelpCenter />} />
+          <Route path="/mobile/subscription" element={<Subscription />} />
+          <Route path="/mobile/dish-elimination" element={<DishElimination />} />
+          <Route path="/mobile/traceability-detail/:reportId" element={<TraceabilityDetail />} />
         
-        {/* ==================== 管理员路由（仅限HQ） ==================== */}
+          {/* ==================== 管理员路由（仅限HQ） ==================== */}
         <Route path="/admin" element={<AdminLogin />} />
         <Route path="/admin/dashboard" element={<AdminGuard><AdminDashboard /></AdminGuard>} />
         
@@ -130,6 +132,7 @@ function AppContent() {
         {/* 404 */}
         <Route path="*" element={<div>404 - 页面不存在</div>} />
       </Routes>
+      </SubscriptionProvider>
       <Toaster toasts={toasts} removeToast={removeToast} />
     </>
   );
