@@ -1,10 +1,44 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Check, Star, Crown, Zap, CheckCircle2, Loader2, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Check, Star, Crown, Zap, CheckCircle2, Loader2, Store, MessageSquare, Infinity, Flame } from 'lucide-react';
 import { Card } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { useToast } from '../../hooks/use-toast';
 import { subscriptionApi, SubscriptionPlan, UserSubscription } from '../../api/subscription';
+
+const PlanIcon = ({ plan, className }: { plan: SubscriptionPlan; className?: string }) => {
+  if (plan.max_stores <= 1) return <Star className={`${className} text-slate-500`} />;
+  if (plan.max_stores <= 5) return <Zap className={`${className} text-indigo-600`} />;
+  return <Crown className={`${className} text-amber-600`} />;
+};
+
+const PlanBadge = ({ plan }: { plan: SubscriptionPlan }) => {
+  if (plan.max_stores > 1 && plan.max_stores <= 5) {
+    return (
+      <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-indigo-600 text-white text-xs font-bold px-4 py-1 rounded-full shadow-lg">
+        最受欢迎
+      </div>
+    );
+  }
+  if (plan.price_monthly === 0) {
+    return (
+      <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-emerald-500 text-white text-xs font-bold px-4 py-1 rounded-full shadow-lg">
+        免费试用
+      </div>
+    );
+  }
+  return null;
+};
+
+const SpecItem = ({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) => (
+  <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl">
+    <div className="text-indigo-600">{icon}</div>
+    <div className="flex-1">
+      <p className="text-xs text-slate-500">{label}</p>
+      <p className="text-sm font-bold text-slate-900">{value}</p>
+    </div>
+  </div>
+);
 
 export const Subscription: React.FC = () => {
   const navigate = useNavigate();
@@ -44,6 +78,7 @@ export const Subscription: React.FC = () => {
 
   const handleUpgrade = (plan: SubscriptionPlan) => {
     setSelectedPlan(plan);
+    setBillingCycle('yearly');
     setShowUpgradeModal(true);
   };
 
@@ -52,7 +87,6 @@ export const Subscription: React.FC = () => {
     
     try {
       setActionLoading(true);
-      // 1. 创建支付订单
       const payment = await subscriptionApi.createPayment({
         plan_id: selectedPlan.id,
         payment_method: paymentMethod,
@@ -60,27 +94,17 @@ export const Subscription: React.FC = () => {
       });
       setPaymentRecord(payment);
       
-      // 2. 模拟支付成功（自动激活订阅）
       await subscriptionApi.simulatePayment(payment.id);
       
       setShowUpgradeModal(false);
       setShowPaymentModal(false);
-      success('支付成功', `已成功订阅${selectedPlan.name}`);
-      loadData(); // 重新加载数据
+      success('支付成功', `已成功订阅 ${selectedPlan.name}`);
+      loadData();
     } catch (err: any) {
       error('支付失败', err.message || '支付过程中出现错误');
     } finally {
       setActionLoading(false);
     }
-  };
-
-  const handleSelectPaymentMethod = (method: 'wechat' | 'alipay') => {
-    setPaymentMethod(method);
-  };
-
-  const handleShowPayment = () => {
-    setShowUpgradeModal(false);
-    setShowPaymentModal(true);
   };
 
   const handleCancel = async () => {
@@ -93,7 +117,7 @@ export const Subscription: React.FC = () => {
       const updated = await subscriptionApi.cancelSubscription();
       setCurrentSubscription(updated);
       success('取消成功', '订阅已取消');
-      loadData(); // 重新加载数据
+      loadData();
     } catch (err: any) {
       error('取消失败', err.message || '取消订阅时出现错误');
     } finally {
@@ -101,11 +125,15 @@ export const Subscription: React.FC = () => {
     }
   };
 
-  // 获取当前计划数据
   const currentPlanData = plans.find(p => 
     currentSubscription && p.id === currentSubscription.plan.id
   );
-  
+
+  const getSavingsPercent = (plan: SubscriptionPlan) => {
+    if (!plan.price_monthly || !plan.price_yearly) return 0;
+    return Math.round((1 - plan.price_yearly / (plan.price_monthly * 12)) * 100);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
@@ -117,7 +145,7 @@ export const Subscription: React.FC = () => {
   return (
     <div className="min-h-screen bg-slate-50 font-sans">
       {/* Header */}
-      <div className="bg-white px-6 py-4 flex items-center gap-4 shadow-sm">
+      <div className="bg-white px-6 py-4 flex items-center gap-4 shadow-sm sticky top-0 z-10">
         <button 
           onClick={() => navigate('/mobile/settings')}
           className="text-slate-600 hover:bg-slate-100 p-2 rounded-xl transition-colors"
@@ -129,101 +157,181 @@ export const Subscription: React.FC = () => {
       
       <div className="p-6 space-y-6">
         {/* Current Plan */}
-        <Card className="p-6 border-slate-100 shadow-sm bg-white">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <p className="text-slate-400 text-xs font-bold uppercase tracking-wider">当前版本</p>
-              <h2 className="text-2xl font-black mt-1 text-slate-900">
-                {currentPlanData?.name || '未订阅'}
-              </h2>
+        {currentSubscription && (
+          <Card className="p-6 border-slate-100 shadow-sm bg-white overflow-hidden relative">
+            {/* Status indicator */}
+            <div className={`absolute top-0 left-0 w-full h-1 ${
+              currentSubscription.status === 'active' ? 'bg-emerald-500' :
+              currentSubscription.status === 'trial' ? 'bg-indigo-500' :
+              currentSubscription.status === 'expired' ? 'bg-amber-500' :
+              'bg-slate-300'
+            }`} />
+            
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <p className="text-slate-400 text-xs font-bold uppercase tracking-wider">当前版本</p>
+                <h2 className="text-2xl font-black mt-1 text-slate-900">
+                  {currentPlanData?.name || '未知版本'}
+                </h2>
+              </div>
+              <div className="w-14 h-14 rounded-2xl bg-orange-50 flex items-center justify-center">
+                {currentPlanData && <PlanIcon plan={currentPlanData} className="w-7 h-7" />}
+              </div>
             </div>
-            <div className="w-14 h-14 rounded-2xl bg-orange-50 flex items-center justify-center">
-              {currentPlanData && (
-                <>
-                  {currentPlanData.max_stores <= 1 && <Star className="w-7 h-7 text-orange-500" />}
-                  {currentPlanData.max_stores > 1 && currentPlanData.max_stores <= 5 && <Zap className="w-7 h-7 text-indigo-600" />}
-                  {currentPlanData.max_stores > 5 && <Crown className="w-7 h-7 text-amber-600" />}
-                </>
-              )}
+
+            {/* Status info */}
+            <div className="flex items-center gap-2 text-slate-500 text-sm mb-4">
+              <CheckCircle2 className={`w-4 h-4 ${
+                currentSubscription.status === 'active' ? 'text-emerald-500' :
+                currentSubscription.status === 'trial' ? 'text-indigo-500' :
+                'text-slate-400'
+              }`} />
+              <span>
+                {currentSubscription.status === 'trial' && `试用中，到期时间：${currentSubscription.end_date}`}
+                {currentSubscription.status === 'active' && `有效期至 ${currentSubscription.end_date}`}
+                {currentSubscription.status === 'expired' && '已过期，请续费'}
+                {currentSubscription.status === 'cancelled' && `已取消，有效期至 ${currentSubscription.end_date}`}
+              </span>
             </div>
-          </div>
-          <div className="flex items-center gap-2 text-slate-500 text-sm">
-            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-            <span>
-              {!currentSubscription && '未订阅'}
-              {currentSubscription?.status === 'trial' && `试用中，到期时间：${currentSubscription.end_date}`}
-              {currentSubscription?.status === 'active' && `有效期至 ${currentSubscription.end_date}`}
-              {currentSubscription?.status === 'expired' && '已过期'}
-              {currentSubscription?.status === 'cancelled' && `已取消，有效期至 ${currentSubscription.end_date}`}
-            </span>
-          </div>
-          {currentSubscription && currentSubscription.status !== 'cancelled' && (
-            <Button 
-              onClick={handleCancel}
-              disabled={actionLoading}
-              variant="outline"
-              className="w-full mt-4 border-rose-100 text-rose-600 hover:bg-rose-50 disabled:opacity-50"
-            >
-              {actionLoading ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  取消中...
-                </>
-              ) : (
-                '取消订阅'
-              )}
-            </Button>
-          )}
-        </Card>
-        
+
+            {/* Current plan specs */}
+            {currentPlanData && (
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                <div className="bg-slate-50 rounded-xl p-3">
+                  <p className="text-xs text-slate-500">最大门店数</p>
+                  <p className="text-lg font-black text-slate-900">
+                    {currentPlanData.max_stores >= 999 ? '∞' : currentPlanData.max_stores}
+                  </p>
+                </div>
+                <div className="bg-slate-50 rounded-xl p-3">
+                  <p className="text-xs text-slate-500">月评论额度</p>
+                  <p className="text-lg font-black text-slate-900">
+                    {currentPlanData.max_reviews_per_month ? currentPlanData.max_reviews_per_month.toLocaleString() : '∞'}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {currentSubscription.status !== 'cancelled' && currentSubscription.status !== 'expired' && (
+              <Button 
+                onClick={handleCancel}
+                disabled={actionLoading}
+                variant="outline"
+                className="w-full border-rose-100 text-rose-600 hover:bg-rose-50 disabled:opacity-50"
+              >
+                {actionLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    取消中...
+                  </>
+                ) : (
+                  '取消订阅'
+                )}
+              </Button>
+            )}
+          </Card>
+        )}
+
         {/* Plans */}
         <div className="space-y-4">
           <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">选择版本</h4>
           
           {plans.map((plan) => {
             const isCurrent = currentPlanData && plan.id === currentPlanData.id;
+            const savingsPercent = getSavingsPercent(plan);
             
             return (
               <div 
                 key={plan.id}
-                className={`bg-white rounded-2xl p-6 shadow-sm relative ${
-                  plan.max_stores > 1 && plan.max_stores <= 5 ? 'ring-2 ring-indigo-600' : ''
+                className={`bg-white rounded-2xl p-6 shadow-sm relative border-2 transition-all ${
+                  isCurrent ? 'border-emerald-500' :
+                  plan.max_stores > 1 && plan.max_stores <= 5 ? 'border-indigo-200 hover:border-indigo-400' :
+                  'border-slate-100 hover:border-slate-300'
                 }`}
               >
-                {plan.max_stores > 1 && plan.max_stores <= 5 && (
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-indigo-600 text-white text-xs font-bold px-4 py-1 rounded-full">
-                    最受欢迎
-                  </div>
-                )}
+                <PlanBadge plan={plan} />
                 
+                {/* Header */}
                 <div className="flex items-start justify-between mb-4">
                   <div>
-                    <h3 className="text-lg font-black text-slate-900">{plan.name}</h3>
-                    <div className="flex items-baseline gap-1 mt-2">
-                      <span className="text-3xl font-black text-slate-900">
-                        {plan.price_monthly === 0 ? '免费' : `¥${billingCycle === 'monthly' ? plan.price_monthly : plan.price_yearly}`}
-                      </span>
-                      {plan.price_monthly > 0 && (
-                        <span className="text-sm text-slate-400">/{billingCycle === 'monthly' ? '月' : '年'}</span>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-xl font-black text-slate-900">{plan.name}</h3>
+                      {isCurrent && (
+                        <span className="bg-emerald-100 text-emerald-700 text-xs font-bold px-2 py-0.5 rounded-full">
+                          当前版本
+                        </span>
                       )}
                     </div>
                   </div>
-                  <div className={`bg-${plan.max_stores <= 1 ? 'slate' : plan.max_stores <= 5 ? 'indigo' : 'amber'}-50 p-3 rounded-2xl`}>
-                    {plan.max_stores <= 1 && <Star className={`w-6 h-6 text-slate-600`} />}
-                    {plan.max_stores > 1 && plan.max_stores <= 5 && <Zap className={`w-6 h-6 text-indigo-600`} />}
-                    {plan.max_stores > 5 && <Crown className={`w-6 h-6 text-amber-600`} />}
+                  <div className="bg-slate-50 p-3 rounded-2xl">
+                    <PlanIcon plan={plan} className="w-6 h-6" />
+                  </div>
+                </div>
+
+                {/* Pricing - show both monthly and yearly */}
+                <div className="mb-4">
+                  {plan.price_monthly === 0 ? (
+                    <div className="text-3xl font-black text-emerald-600">免费</div>
+                  ) : (
+                    <div className="space-y-1">
+                      {/* Yearly price (primary) */}
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-3xl font-black text-slate-900">
+                          ¥{plan.price_yearly}
+                        </span>
+                        <span className="text-sm text-slate-400">/年</span>
+                        {savingsPercent > 0 && (
+                          <span className="ml-1 bg-emerald-100 text-emerald-700 text-xs font-bold px-1.5 py-0.5 rounded">
+                            省{savingsPercent}%
+                          </span>
+                        )}
+                      </div>
+                      {/* Monthly equivalent */}
+                      <div className="text-sm text-slate-500">
+                        月付 ¥{plan.price_monthly}/月
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Key Specs */}
+                <div className="grid grid-cols-2 gap-2 mb-4">
+                  <div className="flex items-center gap-2 bg-slate-50 rounded-lg p-2">
+                    <Store className="w-4 h-4 text-indigo-600 flex-shrink-0" />
+                    <div>
+                      <p className="text-xs text-slate-500">门店数</p>
+                      <p className="text-sm font-bold text-slate-900">
+                        {plan.max_stores >= 999 ? '无限' : `最多 ${plan.max_stores} 家`}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 bg-slate-50 rounded-lg p-2">
+                    <MessageSquare className="w-4 h-4 text-indigo-600 flex-shrink-0" />
+                    <div>
+                      <p className="text-xs text-slate-500">月评论额</p>
+                      <p className="text-sm font-bold text-slate-900">
+                        {plan.max_reviews_per_month ? plan.max_reviews_per_month.toLocaleString() : '无限'}
+                      </p>
+                    </div>
                   </div>
                 </div>
                 
-                <div className="space-y-3 mb-6">
-                  {plan.features && Array.isArray(plan.features) && plan.features.map((feature: any, idx: number) => (
-                    <div key={idx} className="flex items-center gap-3">
-                      <Check className={`w-4 h-4 text-${plan.max_stores <= 1 ? 'slate' : plan.max_stores <= 5 ? 'indigo' : 'amber'}-600 flex-shrink-0`} />
-                      <span className="text-sm text-slate-700">{typeof feature === 'string' ? feature : feature.name || ''}</span>
+                {/* Features */}
+                {plan.features && Array.isArray(plan.features) && plan.features.length > 0 && (
+                  <div className="mb-4">
+                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">功能特性</p>
+                    <div className="space-y-1.5">
+                      {plan.features.map((feature: any, idx: number) => (
+                        <div key={idx} className="flex items-center gap-2">
+                          <Check className="w-3.5 h-3.5 text-indigo-600 flex-shrink-0" />
+                          <span className="text-xs text-slate-700">{typeof feature === 'string' ? feature : feature.name || ''}</span>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  </div>
+                )}
                 
+                {/* Action Button */}
                 {isCurrent ? (
                   <Button 
                     disabled
@@ -236,13 +344,13 @@ export const Subscription: React.FC = () => {
                   <Button 
                     onClick={() => handleUpgrade(plan)}
                     disabled={actionLoading}
-                    className={`w-full rounded-2xl py-6 text-lg font-bold shadow-xl disabled:opacity-50 ${
+                    className={`w-full rounded-2xl py-6 text-lg font-bold shadow-lg disabled:opacity-50 ${
                       plan.max_stores > 1 && plan.max_stores <= 5
                         ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-100'
                         : 'bg-slate-900 hover:bg-slate-800 text-white'
                     }`}
                   >
-                    升级到{plan.name}
+                    升级到 {plan.name}
                   </Button>
                 )}
               </div>
@@ -277,83 +385,112 @@ export const Subscription: React.FC = () => {
       {showUpgradeModal && selectedPlan && (
         <div className="fixed inset-0 bg-black/50 flex items-end justify-center z-50" onClick={() => setShowUpgradeModal(false)}>
           <div 
-            className="bg-white rounded-t-3xl w-full max-w-lg p-6 space-y-4 animate-in slide-in-from-bottom duration-300"
+            className="bg-white rounded-t-3xl w-full max-w-lg p-6 space-y-5 animate-in slide-in-from-bottom duration-300 max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-slate-900">确认升级</h2>
+            <div className="flex items-center justify-between mb-1">
+              <h2 className="text-lg font-bold text-slate-900">确认订阅</h2>
               <button 
                 onClick={() => setShowUpgradeModal(false)}
-                className="text-slate-400 hover:text-slate-600"
+                className="text-slate-400 hover:text-slate-600 w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100"
               >
                 ✕
               </button>
             </div>
             
+            {/* Plan Summary */}
             <div className="bg-slate-50 rounded-2xl p-4">
-              <h3 className="font-bold text-slate-900">
-                {selectedPlan.name}
-              </h3>
-              <p className="text-2xl font-black text-slate-900 mt-2">
-                ¥{billingCycle === 'monthly' ? selectedPlan.price_monthly : selectedPlan.price_yearly}
-                <span className="text-sm font-normal text-slate-400">/{billingCycle === 'monthly' ? '月' : '年'}</span>
-              </p>
+              <div className="flex items-center gap-3 mb-3">
+                <div className="bg-white w-10 h-10 rounded-xl flex items-center justify-center">
+                  <PlanIcon plan={selectedPlan} className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900">{selectedPlan.name}</h3>
+                  <p className="text-xs text-slate-500">
+                    最多 {selectedPlan.max_stores >= 999 ? '无限' : selectedPlan.max_stores} 家门店
+                    · 月额度 {selectedPlan.max_reviews_per_month ? selectedPlan.max_reviews_per_month.toLocaleString() : '无限'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Selected price preview */}
+              <div className="bg-white rounded-xl p-3">
+                <div className="flex items-baseline gap-1">
+                  <span className="text-2xl font-black text-slate-900">
+                    ¥{billingCycle === 'monthly' ? selectedPlan.price_monthly : selectedPlan.price_yearly}
+                  </span>
+                  <span className="text-sm text-slate-400">/{billingCycle === 'monthly' ? '月' : '年'}</span>
+                </div>
+                {billingCycle === 'yearly' && selectedPlan.price_monthly > 0 && (
+                  <p className="text-xs text-emerald-600 mt-1">
+                    相比月付省 {Math.round((1 - selectedPlan.price_yearly / (selectedPlan.price_monthly * 12)) * 100)}%
+                  </p>
+                )}
+              </div>
             </div>
             
-            {/* 计费周期选择 */}
+            {/* Billing Cycle Selection */}
             <div className="space-y-2">
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">计费周期：</p>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">计费周期</p>
               <div className="grid grid-cols-2 gap-3">
                 <button
                   onClick={() => setBillingCycle('monthly')}
-                  className={`p-4 rounded-xl border-2 transition-colors ${
+                  className={`p-4 rounded-xl border-2 transition-all text-left ${
                     billingCycle === 'monthly'
                       ? 'border-indigo-500 bg-indigo-50'
                       : 'border-slate-200 hover:border-slate-300'
                   }`}
                 >
-                  <div className="text-center">
-                    <div className="text-lg font-black text-slate-900">¥{selectedPlan.price_monthly || 0}</div>
-                    <div className="text-xs text-slate-500">/月</div>
-                  </div>
+                  <div className="text-lg font-black text-slate-900">¥{selectedPlan.price_monthly || 0}</div>
+                  <div className="text-xs text-slate-500">/月 · 灵活试用</div>
+                  {billingCycle === 'monthly' && (
+                    <div className="mt-2 text-xs font-bold text-indigo-600">✓ 已选择</div>
+                  )}
                 </button>
                 <button
                   onClick={() => setBillingCycle('yearly')}
-                  className={`p-4 rounded-xl border-2 transition-colors relative ${
+                  className={`p-4 rounded-xl border-2 transition-all text-left relative ${
                     billingCycle === 'yearly'
                       ? 'border-indigo-500 bg-indigo-50'
                       : 'border-slate-200 hover:border-slate-300'
                   }`}
                 >
                   {selectedPlan.price_yearly > 0 && selectedPlan.price_monthly > 0 && (
-                    <div className="absolute -top-2 -right-2 bg-emerald-500 text-white text-xs px-2 py-0.5 rounded-full">
+                    <div className="absolute -top-2 -right-2 bg-emerald-500 text-white text-xs px-2 py-0.5 rounded-full font-bold">
                       省{Math.round((1 - selectedPlan.price_yearly / (selectedPlan.price_monthly * 12)) * 100)}%
                     </div>
                   )}
-                  <div className="text-center">
-                    <div className="text-lg font-black text-slate-900">¥{selectedPlan.price_yearly || 0}</div>
-                    <div className="text-xs text-slate-500">/年</div>
-                  </div>
+                  <div className="text-lg font-black text-slate-900">¥{selectedPlan.price_yearly || 0}</div>
+                  <div className="text-xs text-slate-500">/年 · 更划算</div>
+                  {billingCycle === 'yearly' && (
+                    <div className="mt-2 text-xs font-bold text-indigo-600">✓ 已选择</div>
+                  )}
                 </button>
               </div>
             </div>
             
-            <div className="space-y-2">
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">包含功能：</p>
-              {selectedPlan.features && Array.isArray(selectedPlan.features) && selectedPlan.features.map((feature: any, idx: number) => (
-                <div key={idx} className="flex items-center gap-3">
-                  <Check className="w-4 h-4 text-indigo-600 flex-shrink-0" />
-                  <span className="text-sm text-slate-700">{typeof feature === 'string' ? feature : feature.name || ''}</span>
+            {/* Features in modal */}
+            {selectedPlan.features && Array.isArray(selectedPlan.features) && (
+              <div className="space-y-2">
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">包含功能</p>
+                <div className="grid grid-cols-1 gap-1.5">
+                  {selectedPlan.features.map((feature: any, idx: number) => (
+                    <div key={idx} className="flex items-center gap-2">
+                      <Check className="w-4 h-4 text-indigo-600 flex-shrink-0" />
+                      <span className="text-sm text-slate-700">{typeof feature === 'string' ? feature : feature.name || ''}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-            
-            <div className="space-y-2 mt-4">
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">选择支付方式：</p>
+              </div>
+            )}
+
+            {/* Payment Method */}
+            <div className="space-y-2">
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">支付方式</p>
               <div className="grid grid-cols-2 gap-3">
                 <button
-                  onClick={() => handleSelectPaymentMethod('wechat')}
-                  className={`p-4 rounded-xl border-2 transition-colors ${
+                  onClick={() => setPaymentMethod('wechat')}
+                  className={`p-4 rounded-xl border-2 transition-all ${
                     paymentMethod === 'wechat'
                       ? 'border-emerald-500 bg-emerald-50'
                       : 'border-slate-200 hover:border-slate-300'
@@ -365,8 +502,8 @@ export const Subscription: React.FC = () => {
                   </div>
                 </button>
                 <button
-                  onClick={() => handleSelectPaymentMethod('alipay')}
-                  className={`p-4 rounded-xl border-2 transition-colors ${
+                  onClick={() => setPaymentMethod('alipay')}
+                  className={`p-4 rounded-xl border-2 transition-all ${
                     paymentMethod === 'alipay'
                       ? 'border-emerald-500 bg-emerald-50'
                       : 'border-slate-200 hover:border-slate-300'
@@ -383,7 +520,7 @@ export const Subscription: React.FC = () => {
             <Button 
               onClick={handleConfirmUpgrade}
               disabled={actionLoading}
-              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl py-7 text-lg font-bold shadow-xl shadow-indigo-100 mt-4 disabled:opacity-50"
+              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl py-7 text-lg font-bold shadow-lg shadow-indigo-100 mt-2 disabled:opacity-50"
             >
               {actionLoading ? (
                 <>
@@ -424,6 +561,10 @@ export const Subscription: React.FC = () => {
               <div className="flex justify-between text-sm">
                 <span className="text-slate-500">金额</span>
                 <span className="text-slate-900 font-bold">¥{paymentRecord.amount}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-500">计费周期</span>
+                <span className="text-slate-900">{paymentRecord.billing_cycle === 'monthly' ? '月付' : '年付'}</span>
               </div>
             </div>
             
