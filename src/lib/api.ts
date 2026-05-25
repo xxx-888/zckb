@@ -95,6 +95,10 @@ class ApiClient {
   async delete<T = any>(url: string, config?: AxiosRequestConfig): Promise<T> {
     return this.client.delete(url, config);
   }
+
+  async patch<T = any, R = any>(url: string, data?: T, config?: AxiosRequestConfig): Promise<R> {
+    return this.client.patch(url, data, config);
+  }
 }
 
 export const api = new ApiClient();
