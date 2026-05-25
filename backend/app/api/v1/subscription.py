@@ -128,11 +128,13 @@ async def create_payment(
 ) -> dict:
     """
     创建支付订单
+    - 先创建/获取订阅记录（trial状态）
     - 创建支付记录（状态：pending）
     - 返回支付ID和金额
     """
-    from app.models.subscription import SubscriptionPlan
+    from app.models.subscription import SubscriptionPlan, UserSubscription
     from uuid import UUID
+    from datetime import date, timedelta
     
     # 查询套餐
     result = await db.execute(
@@ -143,9 +145,34 @@ async def create_payment(
         from app.core.exceptions import NotFoundException
         raise NotFoundException("订阅套餐不存在")
     
-    # 创建支付记录
+    # 先创建或获取用户的订阅记录（trial 状态）
+    result = await db.execute(
+        select(UserSubscription).where(
+            UserSubscription.user_id == str(current_user.id),
+            UserSubscription.plan_id == str(data.plan_id),
+            UserSubscription.status.in_(["trial", "active", "expired"]),
+        )
+    )
+    subscription = result.scalar_one_or_none()
+    
+    if not subscription:
+        # 创建新的订阅记录（trial 状态）
+        today = date.today()
+        subscription = UserSubscription(
+            user_id=str(current_user.id),
+            plan_id=str(data.plan_id),
+            status="trial",
+            start_date=today,
+            end_date=today + timedelta(days=30),
+            auto_renew=True,
+        )
+        db.add(subscription)
+        await db.flush()
+        await db.refresh(subscription)
+    
+    # 创建支付记录，传入正确的 subscription.id
     payment = await subscription_service.create_payment(
-        db, current_user.id, data.plan_id, plan.price_yearly, data.payment_method
+        db, current_user.id, subscription.id, plan.price_yearly, data.payment_method
     )
     
     return success(
