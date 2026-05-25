@@ -49,14 +49,8 @@ const WeChatPayButton = ({ selected, onClick }: { selected: boolean; onClick: ()
         : 'border-slate-200 hover:border-emerald-300 bg-white'
     }`}
   >
-    {/* 微信绿色图标区 */}
-    <div className="w-11 h-11 rounded-xl bg-[#07C160] flex items-center justify-center flex-shrink-0">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-        <path d="M8.5 7C8.5 5.0147 10.0147 3.5 12 3.5H20C21.9853 3.5 23.5 5.0147 23.5 7V17C23.5 18.9853 21.9853 20.5 20 20.5H14L9 23.5V20.5H12C10.0147 20.5 8.5 18.9853 8.5 17V7Z" fill="white"/>
-        <circle cx="13" cy="11" r="1.2" fill="#07C160"/>
-        <circle cx="18" cy="11" r="1.2" fill="#07C160"/>
-      </svg>
-    </div>
+    {/* 微信支付图标 */}
+    <img src="/icons/wechat.png" alt="微信支付" className="w-11 h-11 rounded-xl object-cover flex-shrink-0" />
     <div className="flex-1 min-w-0">
       <div className="text-sm font-bold text-slate-900">微信支付</div>
       <div className="text-xs text-slate-400">推荐使用</div>
@@ -76,10 +70,8 @@ const AlipayButton = ({ selected, onClick }: { selected: boolean; onClick: () =>
         : 'border-slate-200 hover:border-blue-300 bg-white'
     }`}
   >
-    {/* 支付宝蓝色图标区 */}
-    <div className="w-11 h-11 rounded-xl bg-[#1677FF] flex items-center justify-center flex-shrink-0">
-      <span className="text-white text-lg font-black leading-none">支</span>
-    </div>
+    {/* 支付宝图标 */}
+    <img src="/icons/alipay.jpg" alt="支付宝" className="w-11 h-11 rounded-xl object-cover flex-shrink-0" />
     <div className="flex-1 min-w-0">
       <div className="text-sm font-bold text-slate-900">支付宝</div>
       <div className="text-xs text-slate-400">便捷支付</div>
