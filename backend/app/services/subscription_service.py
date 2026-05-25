@@ -33,6 +33,7 @@ async def get_plans(db: AsyncSession) -> list[SubscriptionPlan]:
 async def get_current_subscription(
     db: AsyncSession,
     user_id: UUID,
+    plan_id: UUID | None = None,
 ) -> UserSubscription | None:
     """
     获取用户当前有效订阅
@@ -40,17 +41,24 @@ async def get_current_subscription(
     Args:
         db: 数据库会话
         user_id: 用户ID
+        plan_id: 套餐ID（可选，指定时只查该套餐的订阅）
 
     Returns:
         UserSubscription | None: 当前有效订阅，无则返回 None
     """
+    conditions = [
+        UserSubscription.user_id == user_id,
+        UserSubscription.status.in_(["trial", "active"]),
+    ]
+    if plan_id:
+        conditions.append(UserSubscription.plan_id == plan_id)
+    
     result = await db.execute(
         select(UserSubscription)
         .options(selectinload(UserSubscription.plan))
-        .where(
-            UserSubscription.user_id == user_id,
-            UserSubscription.status.in_(["trial", "active"]),
-        )
+        .where(*conditions)
+        .order_by(UserSubscription.created_at.desc())
+        .limit(1)
     )
     return result.scalar_one_or_none()
 
