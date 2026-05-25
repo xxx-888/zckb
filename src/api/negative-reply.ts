@@ -37,9 +37,10 @@ export interface NegativeReplyHistory {
 }
 
 export const negativeReplyApi = {
-  getTasks: async (status?: string, page: number = 1, pageSize: number = 20): Promise<any> => {
+  getTasks: async (status?: string, page: number = 1, pageSize: number = 20, storeId?: string): Promise<any> => {
     let url = `/v1/negative-reply/tasks?page=${page}&page_size=${pageSize}`;
     if (status) url += `&status=${status}`;
+    if (storeId) url += `&store_id=${storeId}`;
     const response = await api.get<any>(url);
     return response.data || response;
   },
@@ -66,8 +67,8 @@ export const negativeReplyApi = {
 };
 
 // 兼容旧函数名的别名
-export const fetchNegativeReplyTasks = async (): Promise<NegativeReplyTask[]> => {
-  const response = await negativeReplyApi.getTasks('pending');
+export const fetchNegativeReplyTasks = async (storeId?: string): Promise<NegativeReplyTask[]> => {
+  const response = await negativeReplyApi.getTasks('pending', 1, 20, storeId);
   const items = response.items || response;
   // 转换数据格式以匹配前端期望
   return items.map((item: any) => ({

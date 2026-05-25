@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import StreamingResponse
 
 from app.core.database import get_db
-from app.core.deps import get_current_active_user
+from app.core.deps import get_current_active_user, require_roles
 from app.core.response import paginated, success
 from app.models.user import User
 from app.schemas.admin import (
@@ -38,7 +38,7 @@ router = APIRouter(prefix="/admin", tags=["后台管理"])
 async def get_dashboard_stats(
     period: str = Query("30d", description="统计周期: 7d/30d/90d/all"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_roles("HQ", "SUPER_ADMIN")),
 ) -> dict:
     """
     获取仪表盘系统统计数据
@@ -56,7 +56,7 @@ async def get_dashboard_stats(
 @router.get("/system/health", summary="系统健康状态")
 async def get_system_health(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_roles("HQ", "SUPER_ADMIN")),
 ) -> dict:
     """
     获取系统健康状态
@@ -72,7 +72,7 @@ async def get_system_health(
 async def export_report(
     request: ExportReportRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_roles("HQ", "SUPER_ADMIN")),
 ):
     """
     导出系统报告
@@ -96,7 +96,7 @@ async def get_admin_users(
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_roles("HQ", "SUPER_ADMIN")),
 ) -> dict:
     """
     获取管理员用户列表
@@ -114,7 +114,7 @@ async def get_admin_users(
 async def create_admin_user(
     request: AdminUserCreateRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_roles("HQ", "SUPER_ADMIN")),
 ) -> dict:
     """
     创建新的管理员用户
@@ -131,7 +131,7 @@ async def update_admin_user(
     user_id: UUID,
     request: AdminUserUpdateRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_roles("HQ", "SUPER_ADMIN")),
 ) -> dict:
     """
     更新管理员用户信息
@@ -147,7 +147,7 @@ async def update_admin_user(
 async def disable_admin_user(
     user_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_roles("HQ", "SUPER_ADMIN")),
 ) -> dict:
     """
     禁用管理员用户
@@ -162,7 +162,7 @@ async def disable_admin_user(
 @router.get("/permissions/roles", summary="角色列表")
 async def get_roles(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_roles("HQ", "SUPER_ADMIN")),
 ) -> dict:
     """
     获取角色列表
@@ -181,7 +181,7 @@ async def get_roles(
 async def create_role(
     request: RoleCreateRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_roles("HQ", "SUPER_ADMIN")),
 ) -> dict:
     """
     创建新角色
@@ -195,7 +195,7 @@ async def update_role(
     role_id: UUID,
     request: RoleUpdateRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_roles("HQ", "SUPER_ADMIN")),
 ) -> dict:
     """
     更新角色信息
@@ -208,7 +208,7 @@ async def update_role(
 @router.get("/permissions/structure", summary="组织架构")
 async def get_permissions_structure(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_roles("HQ", "SUPER_ADMIN")),
 ) -> dict:
     """
     获取权限组织架构
@@ -221,7 +221,7 @@ async def get_permissions_structure(
 async def enable_admin_user(
     user_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_roles("HQ", "SUPER_ADMIN")),
 ) -> dict:
     """
     启用管理员用户
@@ -237,7 +237,7 @@ async def enable_admin_user(
 async def delete_admin_user(
     user_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_roles("HQ", "SUPER_ADMIN")),
 ) -> dict:
     """
     删除管理员用户（硬删除）
@@ -251,7 +251,7 @@ async def assign_stores(
     user_id: UUID,
     body: dict,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_roles("HQ", "SUPER_ADMIN")),
 ) -> dict:
     """
     分配门店给用户（更新 user_stores 表）

@@ -45,9 +45,10 @@ export const Insights: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
+      const storeId = selectedStore?.id;
       const [dishData, threeData] = await Promise.all([
-        fetchTopDish(),
-        fetchThreeGoodThreeBad(),
+        fetchTopDish(undefined, storeId),
+        fetchThreeGoodThreeBad(undefined, storeId),
       ]);
       setTopDish(dishData);
       setThreeGoodThreeBad(threeData);

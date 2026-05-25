@@ -42,9 +42,10 @@ export const PositiveActivation: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
+      const storeId = selectedStore?.id;
       const [reviewData, scriptData] = await Promise.all([
-        fetchHighQualityReviews(),
-        fetchBrandScripts(),
+        fetchHighQualityReviews(1, 20, storeId),
+        fetchBrandScripts(storeId),
       ]);
       setHighQualityReviews(reviewData);
       setBrandScripts(scriptData);

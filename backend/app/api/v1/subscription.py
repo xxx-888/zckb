@@ -5,6 +5,7 @@
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
 
 from app.core.database import get_db
 from app.core.deps import get_current_active_user
@@ -14,6 +15,8 @@ from app.schemas.subscription import (
     SubscriptionPlanResponse,
     UpgradeRequest,
     UserSubscriptionResponse,
+    PaymentRecordResponse,
+    CreatePaymentRequest,
 )
 from app.services import subscription_service
 
@@ -111,4 +114,86 @@ async def cancel_subscription(
             mode="json"
         ),
         message="订阅已取消",
+    )
+
+
+# ==================== 支付模拟 ====================
+
+
+@router.post("/payment/create", summary="创建支付订单")
+async def create_payment(
+    data: CreatePaymentRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """
+    创建支付订单
+    - 创建支付记录（状态：pending）
+    - 返回支付ID和金额
+    """
+    from app.models.subscription import SubscriptionPlan
+    from uuid import UUID
+    
+    # 查询套餐
+    result = await db.execute(
+        select(SubscriptionPlan).where(SubscriptionPlan.id == str(data.plan_id))
+    )
+    plan = result.scalar_one_or_none()
+    if not plan:
+        from app.core.exceptions import NotFoundException
+        raise NotFoundException("订阅套餐不存在")
+    
+    # 创建支付记录
+    payment = await subscription_service.create_payment(
+        db, current_user.id, data.plan_id, plan.price_yearly, data.payment_method
+    )
+    
+    return success(
+        data=PaymentRecordResponse.model_validate(payment).model_dump(mode="json"),
+        message="支付订单已创建",
+    )
+
+
+@router.get("/payment/{payment_id}", summary="查询支付状态")
+async def get_payment(
+    payment_id: str,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """
+    查询支付记录状态
+    """
+    payment = await subscription_service.get_payment(db, payment_id)
+    
+    # 检查权限
+    if str(payment.user_id) != str(current_user.id):
+        from app.core.exceptions import BusinessException
+        raise BusinessException("无权查看该支付记录")
+    
+    return success(
+        data=PaymentRecordResponse.model_validate(payment).model_dump(mode="json")
+    )
+
+
+@router.post("/payment/{payment_id}/simulate", summary="模拟支付成功")
+async def simulate_payment(
+    payment_id: str,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """
+    模拟支付成功
+    - 更新支付记录为成功
+    - 自动激活用户订阅（365天）
+    """
+    payment = await subscription_service.simulate_pay(db, payment_id)
+    
+    # 检查权限
+    if str(payment.user_id) != str(current_user.id):
+        from app.core.exceptions import BusinessException
+        raise BusinessException("无权操作该支付记录")
+    
+    return success(
+        data=PaymentRecordResponse.model_validate(payment).model_dump(mode="json"),
+        message="支付成功，订阅已激活",
     )

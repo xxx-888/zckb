@@ -2,6 +2,8 @@
  * 经营洞察 API 接口
  */
 
+import { api } from '@/lib/api';
+
 // 类型定义
 export interface Dish {
   id?: string;
@@ -73,25 +75,16 @@ const MOCK_COMPETITOR_OPPORTUNITIES: CompetitorOpportunity[] = [
 ];
 
 // ============ API 函数 ============
-const BASE_URL = '/api/v1';
-
-async function fetchAPI<T>(endpoint: string): Promise<T> {
-  try {
-    const res = await fetch(`${BASE_URL}${endpoint}`);
-    if (!res.ok) throw new Error(`API 请求失败: ${res.status}`);
-    const json = await res.json();
-    return json.data || json;
-  } catch (err) {
-    console.warn(`接口 ${endpoint} 调用失败，使用测试数据:`, err);
-    throw err;
-  }
-}
-
 /** 获取菜品口碑排行 GET /api/v1/insights/top-dishes */
-export async function fetchTopDish(period?: string): Promise<Dish[]> {
+export async function fetchTopDish(period?: string, storeId?: string): Promise<Dish[]> {
   try {
-    const data = await fetchAPI<any[]>('/insights/top-dishes' + (period ? `?period=${period}` : ''));
-    return data.map(d => ({
+    const params = new URLSearchParams();
+    if (period) params.append('period', period);
+    if (storeId) params.append('store_id', storeId);
+    const query = params.toString();
+    const res = await api.get<any[]>(`/v1/insights/top-dishes${query ? `?${query}` : ''}`);
+    const data = res.data || res;
+    return data.map((d: any) => ({
       id: d.id,
       name: d.name || d.dish_name || '',
       type: d.type || 'potential',
@@ -106,9 +99,14 @@ export async function fetchTopDish(period?: string): Promise<Dish[]> {
 }
 
 /** 获取三好三差报告 GET /api/v1/insights/three-good-three-bad */
-export async function fetchThreeGoodThreeBad(period?: string): Promise<ThreeGoodThreeBad> {
+export async function fetchThreeGoodThreeBad(period?: string, storeId?: string): Promise<ThreeGoodThreeBad> {
   try {
-    const data = await fetchAPI<any>('/insights/three-good-three-bad' + (period ? `?period=${period}` : ''));
+    const params = new URLSearchParams();
+    if (period) params.append('period', period);
+    if (storeId) params.append('store_id', storeId);
+    const query = params.toString();
+    const res = await api.get<any>(`/v1/insights/three-good-three-bad${query ? `?${query}` : ''}`);
+    const data = res.data || res;
     return {
       goods: data.goods || data.good_items || [],
       bads: data.bads || data.bad_items || [],
@@ -119,10 +117,14 @@ export async function fetchThreeGoodThreeBad(period?: string): Promise<ThreeGood
 }
 
 /** 获取末位淘汰建议 GET /api/v1/insights/dish-elimination */
-export async function fetchDishElimination(): Promise<DishElimination[]> {
+export async function fetchDishElimination(storeId?: string): Promise<DishElimination[]> {
   try {
-    const data = await fetchAPI<any[]>('/insights/dish-elimination');
-    return data.map(d => ({
+    const params = new URLSearchParams();
+    if (storeId) params.append('store_id', storeId);
+    const query = params.toString();
+    const res = await api.get<any[]>(`/v1/insights/dish-elimination${query ? `?${query}` : ''}`);
+    const data = res.data || res;
+    return data.map((d: any) => ({
       id: d.id,
       name: d.name || d.dish_name || '',
       score: d.score || d.avg_rating || 0,
@@ -136,10 +138,15 @@ export async function fetchDishElimination(): Promise<DishElimination[]> {
 }
 
 /** 获取服务案例库 GET /api/v1/insights/service-cases */
-export async function fetchServiceCases(caseType?: string): Promise<ServiceCase[]> {
+export async function fetchServiceCases(caseType?: string, storeId?: string): Promise<ServiceCase[]> {
   try {
-    const data = await fetchAPI<any[]>('/insights/service-cases' + (caseType ? `?case_type=${caseType}` : ''));
-    return data.map(c => ({
+    const params = new URLSearchParams();
+    if (caseType) params.append('case_type', caseType);
+    if (storeId) params.append('store_id', storeId);
+    const query = params.toString();
+    const res = await api.get<any[]>(`/v1/insights/service-cases${query ? `?${query}` : ''}`);
+    const data = res.data || res;
+    return data.map((c: any) => ({
       id: c.id,
       type: c.type || 'suggestion',
       content: c.content || '',
@@ -152,10 +159,14 @@ export async function fetchServiceCases(caseType?: string): Promise<ServiceCase[
 }
 
 /** 获取同行机会洞察 GET /api/v1/insights/competitor-opportunities */
-export async function fetchCompetitorOpportunities(): Promise<CompetitorOpportunity[]> {
+export async function fetchCompetitorOpportunities(storeId?: string): Promise<CompetitorOpportunity[]> {
   try {
-    const data = await fetchAPI<any[]>('/insights/competitor-opportunities');
-    return data.map(o => ({
+    const params = new URLSearchParams();
+    if (storeId) params.append('store_id', storeId);
+    const query = params.toString();
+    const res = await api.get<any[]>(`/v1/insights/competitor-opportunities${query ? `?${query}` : ''}`);
+    const data = res.data || res;
+    return data.map((o: any) => ({
       id: o.id,
       title: o.title || '',
       description: o.description || '',

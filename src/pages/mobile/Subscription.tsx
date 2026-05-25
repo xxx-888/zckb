@@ -1,92 +1,117 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Check, Star, Crown, Zap, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, Check, Star, Crown, Zap, CheckCircle2, Loader2, AlertTriangle } from 'lucide-react';
 import { Card } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { useToast } from '../../hooks/use-toast';
-
-interface Plan {
-  id: string;
-  name: string;
-  price: number;
-  period: string;
-  icon: React.ElementType;
-  color: string;
-  isPopular?: boolean;
-  features: string[];
-}
+import { subscriptionApi, SubscriptionPlan, UserSubscription } from '../../api/subscription';
 
 export const Subscription: React.FC = () => {
   const navigate = useNavigate();
-  const { success } = useToast();
-  const [currentPlan, setCurrentPlan] = useState('standard');
+  const { success, error } = useToast();
+  
+  const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
+  const [currentSubscription, setCurrentSubscription] = useState<UserSubscription | null>(null);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-  const [selectedPlan, setSelectedPlan] = useState('');
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<'wechat' | 'alipay'>('wechat');
+  const [paymentRecord, setPaymentRecord] = useState<any>(null);
 
-  const plans: Plan[] = [
-    {
-      id: 'basic',
-      name: '基础版',
-      price: 0,
-      period: '永久免费',
-      icon: Star,
-      color: 'slate',
-      features: [
-        '1个店铺管理',
-        '基础评价查看',
-        '手动回复',
-        '基础数据统计'
-      ]
-    },
-    {
-      id: 'standard',
-      name: '标准版',
-      price: 299,
-      period: '年',
-      icon: Zap,
-      color: 'indigo',
-      isPopular: true,
-      features: [
-        '5个店铺管理',
-        'AI智能分析',
-        '自动回复',
-        '竞品对标分析',
-        '小红书数据采集',
-        '数据导出'
-      ]
-    },
-    {
-      id: 'premium',
-      name: '旗舰版',
-      price: 999,
-      period: '年',
-      icon: Crown,
-      color: 'amber',
-      features: [
-        '无限店铺管理',
-        '高级AI分析',
-        '多平台同步',
-        '专属客服',
-        '定制化报告',
-        'API接口权限',
-        '团队协作'
-      ]
+  // 加载订阅计划和当前订阅
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      const [plansData, currentSub] = await Promise.all([
+        subscriptionApi.getPlans(),
+        subscriptionApi.getCurrentSubscription()
+      ]);
+      setPlans(plansData);
+      setCurrentSubscription(currentSub);
+    } catch (err: any) {
+      error('加载失败', err.message || '无法获取订阅信息');
+    } finally {
+      setLoading(false);
     }
-  ];
+  };
 
-  const handleUpgrade = (planId: string) => {
-    setSelectedPlan(planId);
+  const handleUpgrade = (plan: SubscriptionPlan) => {
+    setSelectedPlan(plan);
     setShowUpgradeModal(true);
   };
 
-  const handleConfirmUpgrade = () => {
-    setCurrentPlan(selectedPlan);
-    setShowUpgradeModal(false);
-    success('升级成功', `已成功升级到${plans.find(p => p.id === selectedPlan)?.name}`);
+  const handleConfirmUpgrade = async () => {
+    if (!selectedPlan) return;
+    
+    try {
+      setActionLoading(true);
+      // 1. 创建支付订单
+      const payment = await subscriptionApi.createPayment({
+        plan_id: selectedPlan.id,
+        payment_method: paymentMethod,
+      });
+      setPaymentRecord(payment);
+      
+      // 2. 模拟支付成功（自动激活订阅）
+      await subscriptionApi.simulatePayment(payment.id);
+      
+      setShowUpgradeModal(false);
+      setShowPaymentModal(false);
+      success('支付成功', `已成功订阅${selectedPlan.name}`);
+      loadData(); // 重新加载数据
+    } catch (err: any) {
+      error('支付失败', err.message || '支付过程中出现错误');
+    } finally {
+      setActionLoading(false);
+    }
   };
 
-  const currentPlanData = plans.find(p => p.id === currentPlan);
+  const handleSelectPaymentMethod = (method: 'wechat' | 'alipay') => {
+    setPaymentMethod(method);
+  };
 
+  const handleShowPayment = () => {
+    setShowUpgradeModal(false);
+    setShowPaymentModal(true);
+  };
+
+  const handleCancel = async () => {
+    if (!confirm('确定要取消订阅吗？取消后当前周期内仍可继续使用。')) {
+      return;
+    }
+    
+    try {
+      setActionLoading(true);
+      const updated = await subscriptionApi.cancelSubscription();
+      setCurrentSubscription(updated);
+      success('取消成功', '订阅已取消');
+      loadData(); // 重新加载数据
+    } catch (err: any) {
+      error('取消失败', err.message || '取消订阅时出现错误');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // 获取当前计划数据
+  const currentPlanData = plans.find(p => 
+    currentSubscription && p.id === currentSubscription.plan.id
+  );
+  
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
+      </div>
+    );
+  }
+  
   return (
     <div className="min-h-screen bg-slate-50 font-sans">
       {/* Header */}
@@ -99,7 +124,7 @@ export const Subscription: React.FC = () => {
         </button>
         <h1 className="text-lg font-bold text-slate-900">版本订阅</h1>
       </div>
-
+      
       <div className="p-6 space-y-6">
         {/* Current Plan */}
         <Card className="p-6 border-slate-100 shadow-sm bg-white">
@@ -107,69 +132,97 @@ export const Subscription: React.FC = () => {
             <div>
               <p className="text-slate-400 text-xs font-bold uppercase tracking-wider">当前版本</p>
               <h2 className="text-2xl font-black mt-1 text-slate-900">
-                {currentPlanData?.name}
+                {currentPlanData?.name || '未订阅'}
               </h2>
             </div>
             <div className="w-14 h-14 rounded-2xl bg-orange-50 flex items-center justify-center">
-              {currentPlanData && React.createElement(currentPlanData.icon, {
-                className: "w-7 h-7 text-orange-500"
-              })}
+              {currentPlanData && (
+                <>
+                  {currentPlanData.max_stores <= 1 && <Star className="w-7 h-7 text-orange-500" />}
+                  {currentPlanData.max_stores > 1 && currentPlanData.max_stores <= 5 && <Zap className="w-7 h-7 text-indigo-600" />}
+                  {currentPlanData.max_stores > 5 && <Crown className="w-7 h-7 text-amber-600" />}
+                </>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-2 text-slate-500 text-sm">
             <CheckCircle2 className="w-4 h-4 text-emerald-500" />
             <span>
-              {currentPlan === 'basic' ? '免费版永久有效' : '有效期至 2027-05-14'}
+              {!currentSubscription && '未订阅'}
+              {currentSubscription?.status === 'trial' && `试用中，到期时间：${currentSubscription.end_date}`}
+              {currentSubscription?.status === 'active' && `有效期至 ${currentSubscription.end_date}`}
+              {currentSubscription?.status === 'expired' && '已过期'}
+              {currentSubscription?.status === 'cancelled' && `已取消，有效期至 ${currentSubscription.end_date}`}
             </span>
           </div>
+          {currentSubscription && currentSubscription.status !== 'cancelled' && (
+            <Button 
+              onClick={handleCancel}
+              disabled={actionLoading}
+              variant="outline"
+              className="w-full mt-4 border-rose-100 text-rose-600 hover:bg-rose-50 disabled:opacity-50"
+            >
+              {actionLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  取消中...
+                </>
+              ) : (
+                '取消订阅'
+              )}
+            </Button>
+          )}
         </Card>
-
+        
         {/* Plans */}
         <div className="space-y-4">
           <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">选择版本</h4>
           
           {plans.map((plan) => {
-            const IconComponent = plan.icon;
+            const isCurrent = currentPlanData && plan.id === currentPlanData.id;
+            
             return (
               <div 
                 key={plan.id}
                 className={`bg-white rounded-2xl p-6 shadow-sm relative ${
-                  plan.isPopular ? 'ring-2 ring-indigo-600' : ''
+                  plan.max_stores > 1 && plan.max_stores <= 5 ? 'ring-2 ring-indigo-600' : ''
                 }`}
               >
-                {plan.isPopular && (
+                {plan.max_stores > 1 && plan.max_stores <= 5 && (
                   <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-indigo-600 text-white text-xs font-bold px-4 py-1 rounded-full">
                     最受欢迎
                   </div>
                 )}
-
+                
                 <div className="flex items-start justify-between mb-4">
                   <div>
                     <h3 className="text-lg font-black text-slate-900">{plan.name}</h3>
                     <div className="flex items-baseline gap-1 mt-2">
                       <span className="text-3xl font-black text-slate-900">
-                        {plan.price === 0 ? '免费' : `¥${plan.price}`}
+                        {plan.price_monthly === 0 ? '免费' : `¥${plan.price_yearly}`}
                       </span>
-                      {plan.price > 0 && (
-                        <span className="text-sm text-slate-400">/{plan.period}</span>
+                      {plan.price_monthly > 0 && (
+                        <span className="text-sm text-slate-400">/年</span>
                       )}
                     </div>
                   </div>
-                  <div className={`bg-${plan.color}-50 p-3 rounded-2xl`}>
-                    <IconComponent className={`w-6 h-6 text-${plan.color}-600`} />
+                  <div className={`bg-${plan.max_stores <= 1 ? 'slate' : plan.max_stores <= 5 ? 'indigo' : 'amber'}-50 p-3 rounded-2xl`}>
+                    {plan.max_stores <= 1 && <Star className={`w-6 h-6 text-slate-600`} />}
+                    {plan.max_stores > 1 && plan.max_stores <= 5 && <Zap className={`w-6 h-6 text-indigo-600`} />}
+                    {plan.max_stores > 5 && <Crown className={`w-6 h-6 text-amber-600`} />}
                   </div>
                 </div>
-
+                
                 <div className="space-y-3 mb-6">
-                  {plan.features.map((feature, idx) => (
+                  {plan.features && Array.isArray(plan.features) && plan.features.map((feature: any, idx: number) => (
                     <div key={idx} className="flex items-center gap-3">
-                      <Check className={`w-4 h-4 text-${plan.color}-600 flex-shrink-0`} />
-                      <span className="text-sm text-slate-700">{feature}</span>
+                      <Check className={`w-4 h-4 text-${plan.max_stores <= 1 ? 'slate' : plan.max_stores <= 5 ? 'indigo' : 'amber'}-600 flex-shrink-0`} />
+                      <span className="text-sm text-slate-700">{typeof feature === 'string' ? feature : feature.name || ''}</span>
                     </div>
                   ))}
                 </div>
-
-                {currentPlan === plan.id ? (
+                
+                {isCurrent ? (
                   <Button 
                     disabled
                     className="w-full bg-slate-100 text-slate-400 rounded-2xl py-6 font-bold cursor-not-allowed"
@@ -179,10 +232,11 @@ export const Subscription: React.FC = () => {
                   </Button>
                 ) : (
                   <Button 
-                    onClick={() => handleUpgrade(plan.id)}
-                    className={`w-full rounded-2xl py-6 text-lg font-bold ${
-                      plan.isPopular
-                        ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-xl shadow-indigo-100'
+                    onClick={() => handleUpgrade(plan)}
+                    disabled={actionLoading}
+                    className={`w-full rounded-2xl py-6 text-lg font-bold shadow-xl disabled:opacity-50 ${
+                      plan.max_stores > 1 && plan.max_stores <= 5
+                        ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-100'
                         : 'bg-slate-900 hover:bg-slate-800 text-white'
                     }`}
                   >
@@ -193,26 +247,32 @@ export const Subscription: React.FC = () => {
             );
           })}
         </div>
-
+        
         {/* Subscription History */}
-        <div className="space-y-3">
-          <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">订阅记录</h4>
-          <div className="bg-white rounded-2xl overflow-hidden shadow-sm">
-            <div className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-bold text-slate-900">标准版</p>
-                  <p className="text-xs text-slate-400 mt-1">2026-05-14 购买</p>
+        {currentSubscription && (
+          <div className="space-y-3">
+            <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">订阅记录</h4>
+            <div className="bg-white rounded-2xl overflow-hidden shadow-sm">
+              <div className="p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-bold text-slate-900">{currentPlanData?.name || '未知版本'}</p>
+                    <p className="text-xs text-slate-400 mt-1">
+                      {currentSubscription.status === 'trial' ? '试用' : '购买'} - {currentSubscription.start_date}
+                    </p>
+                  </div>
+                  <span className="text-sm font-bold text-green-600">
+                    {currentSubscription.status === 'trial' ? '试用' : `¥${currentPlanData?.price_yearly || 0}/年`}
+                  </span>
                 </div>
-                <span className="text-sm font-bold text-green-600">¥299/年</span>
               </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
-
+      
       {/* Upgrade Modal */}
-      {showUpgradeModal && (
+      {showUpgradeModal && selectedPlan && (
         <div className="fixed inset-0 bg-black/50 flex items-end justify-center z-50" onClick={() => setShowUpgradeModal(false)}>
           <div 
             className="bg-white rounded-t-3xl w-full max-w-lg p-6 space-y-4 animate-in slide-in-from-bottom duration-300"
@@ -227,32 +287,114 @@ export const Subscription: React.FC = () => {
                 ✕
               </button>
             </div>
-
+            
             <div className="bg-slate-50 rounded-2xl p-4">
               <h3 className="font-bold text-slate-900">
-                {plans.find(p => p.id === selectedPlan)?.name}
+                {selectedPlan.name}
               </h3>
               <p className="text-2xl font-black text-slate-900 mt-2">
-                ¥{plans.find(p => p.id === selectedPlan)?.price}
-                <span className="text-sm font-normal text-slate-400">/{plans.find(p => p.id === selectedPlan)?.period}</span>
+                ¥{selectedPlan.price_yearly}
+                <span className="text-sm font-normal text-slate-400">/年</span>
               </p>
             </div>
-
+            
             <div className="space-y-2">
               <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">包含功能：</p>
-              {plans.find(p => p.id === selectedPlan)?.features.map((feature, idx) => (
+              {selectedPlan.features && Array.isArray(selectedPlan.features) && selectedPlan.features.map((feature: any, idx: number) => (
                 <div key={idx} className="flex items-center gap-3">
                   <Check className="w-4 h-4 text-indigo-600 flex-shrink-0" />
-                  <span className="text-sm text-slate-700">{feature}</span>
+                  <span className="text-sm text-slate-700">{typeof feature === 'string' ? feature : feature.name || ''}</span>
                 </div>
               ))}
             </div>
-
+            
+            <div className="space-y-2 mt-4">
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">选择支付方式：</p>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => handleSelectPaymentMethod('wechat')}
+                  className={`p-4 rounded-xl border-2 transition-colors ${
+                    paymentMethod === 'wechat'
+                      ? 'border-emerald-500 bg-emerald-50'
+                      : 'border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  <div className="text-center">
+                    <div className="text-2xl mb-1">💚</div>
+                    <div className="text-sm font-bold text-slate-900">微信支付</div>
+                  </div>
+                </button>
+                <button
+                  onClick={() => handleSelectPaymentMethod('alipay')}
+                  className={`p-4 rounded-xl border-2 transition-colors ${
+                    paymentMethod === 'alipay'
+                      ? 'border-emerald-500 bg-emerald-50'
+                      : 'border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  <div className="text-center">
+                    <div className="text-2xl mb-1">💙</div>
+                    <div className="text-sm font-bold text-slate-900">支付宝</div>
+                  </div>
+                </button>
+              </div>
+            </div>
+            
             <Button 
               onClick={handleConfirmUpgrade}
-              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl py-7 text-lg font-bold shadow-xl shadow-indigo-100"
+              disabled={actionLoading}
+              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl py-7 text-lg font-bold shadow-xl shadow-indigo-100 mt-4 disabled:opacity-50"
             >
-              确认支付
+              {actionLoading ? (
+                <>
+                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                  处理中...
+                </>
+              ) : (
+                `确认支付 ¥${selectedPlan.price_yearly}`
+              )}
+            </Button>
+          </div>
+        </div>
+      )}
+      
+      {/* Payment Success Modal */}
+      {showPaymentModal && paymentRecord && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-3xl p-8 space-y-6 max-w-sm mx-4 animate-in fade-in duration-300">
+            <div className="text-center">
+              <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Check className="w-8 h-8 text-emerald-600" />
+              </div>
+              <h3 className="text-xl font-bold text-slate-900">支付成功！</h3>
+              <p className="text-sm text-slate-500 mt-2">
+                已成功订阅 <span className="font-bold text-indigo-600">{selectedPlan?.name}</span>
+              </p>
+            </div>
+            
+            <div className="bg-slate-50 rounded-2xl p-4 space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-500">订单号</span>
+                <span className="text-slate-900 font-mono">{paymentRecord.id?.slice(0, 8)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-500">支付方式</span>
+                <span className="text-slate-900">{paymentMethod === 'wechat' ? '微信支付' : '支付宝'}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-500">金额</span>
+                <span className="text-slate-900 font-bold">¥{paymentRecord.amount}</span>
+              </div>
+            </div>
+            
+            <Button 
+              onClick={() => {
+                setShowPaymentModal(false);
+                loadData();
+              }}
+              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl py-6 text-lg font-bold"
+            >
+              完成
             </Button>
           </div>
         </div>

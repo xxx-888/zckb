@@ -31,13 +31,17 @@ export interface BrandScript {
 }
 
 export const positiveActivationApi = {
-  getHighQualityReviews: async (page: number = 1, pageSize: number = 20): Promise<any> => {
-    const response = await api.get<any>(`/v1/positive-activation/high-quality-reviews?page=${page}&page_size=${pageSize}`);
+  getHighQualityReviews: async (page: number = 1, pageSize: number = 20, storeId?: string): Promise<any> => {
+    let url = `/v1/positive-activation/high-quality-reviews?page=${page}&page_size=${pageSize}`;
+    if (storeId) url += `&store_id=${storeId}`;
+    const response = await api.get<any>(url);
     return response.data || response;
   },
 
-  getBrandScripts: async (): Promise<BrandScript[]> => {
-    const response = await api.get<any>('/v1/positive-activation/brand-scripts');
+  getBrandScripts: async (storeId?: string): Promise<BrandScript[]> => {
+    let url = '/v1/positive-activation/brand-scripts';
+    if (storeId) url += `?store_id=${storeId}`;
+    const response = await api.get<any>(url);
     return response.data || response;
   },
 

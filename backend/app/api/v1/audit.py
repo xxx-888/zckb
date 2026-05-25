@@ -27,6 +27,22 @@ from app.services import audit_service
 router = APIRouter(prefix="/audit", tags=["回复审核"])
 
 
+@router.get("/stats", summary="审核统计")
+async def get_audit_stats(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> dict:
+    """
+    获取审核统计数据
+    - 待审核数量
+    - 已通过数量
+    - 已拒绝数量
+    - 平均处理时间
+    """
+    stats = await audit_service.get_audit_stats(db)
+    return success(data=stats)
+
+
 @router.get("/list", summary="待审核列表")
 async def get_audit_list(
     status: Optional[str] = Query(None, description="状态筛选: pending/approved/rejected/sent"),
@@ -127,19 +143,3 @@ async def regenerate_reply(
         data=AuditActionResponse.model_validate(audit).model_dump(mode="json"),
         message="回复已重新生成",
     )
-
-
-@router.get("/stats", summary="审核统计")
-async def get_audit_stats(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-) -> dict:
-    """
-    获取审核统计数据
-    - 待审核数量
-    - 已通过数量
-    - 已拒绝数量
-    - 平均处理时间
-    """
-    stats = await audit_service.get_audit_stats(db)
-    return success(data=stats)

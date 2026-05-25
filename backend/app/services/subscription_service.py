@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BusinessException, NotFoundException
-from app.models.subscription import SubscriptionPlan, UserSubscription
+from app.models.subscription import SubscriptionPlan, UserSubscription, PaymentRecord
 
 
 async def get_plans(db: AsyncSession) -> list[SubscriptionPlan]:
@@ -247,3 +247,292 @@ async def check_subscription_limit(
         return review_count < plan.max_reviews_per_month
 
     return True
+
+
+# ==================== 管理员套餐管理 ====================
+
+
+async def get_all_plans(
+    db: AsyncSession,
+    include_inactive: bool = True,
+) -> list[SubscriptionPlan]:
+    """
+    获取所有订阅套餐（管理员用）
+
+    Args:
+        db: 数据库会话
+        include_inactive: 是否包含未启用的套餐
+
+    Returns:
+        list[SubscriptionPlan]: 套餐列表
+    """
+    query = select(SubscriptionPlan)
+    if not include_inactive:
+        query = query.where(SubscriptionPlan.is_active == True)
+    query = query.order_by(SubscriptionPlan.price_yearly.asc())
+    result = await db.execute(query)
+    return list(result.scalars().all())
+
+
+async def create_plan(
+    db: AsyncSession,
+    data: "SubscriptionPlanCreateRequest",
+) -> SubscriptionPlan:
+    """
+    创建订阅套餐（管理员用）
+
+    Args:
+        db: 数据库会话
+        data: 创建请求数据
+
+    Returns:
+        SubscriptionPlan: 创建的套餐对象
+    """
+    from app.schemas.subscription import SubscriptionPlanCreateRequest
+    if isinstance(data, dict):
+        data = SubscriptionPlanCreateRequest(**data)
+
+    plan = SubscriptionPlan(
+        name=data.name,
+        price_monthly=data.price_monthly,
+        price_yearly=data.price_yearly,
+        features=data.features,
+        max_stores=data.max_stores,
+        max_reviews_per_month=data.max_reviews_per_month,
+        is_active=data.is_active,
+    )
+    db.add(plan)
+    await db.flush()
+    await db.refresh(plan)
+    return plan
+
+
+async def update_plan(
+    db: AsyncSession,
+    plan_id: UUID,
+    data: "SubscriptionPlanUpdateRequest",
+) -> SubscriptionPlan:
+    """
+    更新订阅套餐（管理员用）
+
+    Args:
+        db: 数据库会话
+        plan_id: 套餐ID
+        data: 更新请求数据
+
+    Returns:
+        SubscriptionPlan: 更新后的套餐对象
+
+    Raises:
+        NotFoundException: 套餐不存在
+    """
+    from app.schemas.subscription import SubscriptionPlanUpdateRequest
+    if isinstance(data, dict):
+        data = SubscriptionPlanUpdateRequest(**data)
+
+    result = await db.execute(
+        select(SubscriptionPlan).where(SubscriptionPlan.id == plan_id)
+    )
+    plan = result.scalar_one_or_none()
+    if not plan:
+        from app.core.exceptions import NotFoundException
+        raise NotFoundException("订阅套餐不存在")
+
+    update_data = data.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(plan, field, value)
+
+    await db.flush()
+    await db.refresh(plan)
+    return plan
+
+
+async def delete_plan(
+    db: AsyncSession,
+    plan_id: UUID,
+) -> None:
+    """
+    删除订阅套餐（管理员用）
+
+    Args:
+        db: 数据库会话
+        plan_id: 套餐ID
+
+    Raises:
+        NotFoundException: 套餐不存在
+        BusinessException: 套餐已被订阅，无法删除
+    """
+    result = await db.execute(
+        select(SubscriptionPlan).where(SubscriptionPlan.id == plan_id)
+    )
+    plan = result.scalar_one_or_none()
+    if not plan:
+        from app.core.exceptions import NotFoundException
+        raise NotFoundException("订阅套餐不存在")
+
+    # 检查是否有用户订阅了该套餐
+    from sqlalchemy import func
+    from app.models.subscription import UserSubscription
+    sub_result = await db.execute(
+        select(func.count(UserSubscription.id)).where(
+            UserSubscription.plan_id == plan_id,
+            UserSubscription.status.in_(["trial", "active"]),
+        )
+    )
+    if sub_result.scalar() > 0:
+        from app.core.exceptions import BusinessException
+        raise BusinessException("该套餐已有用户订阅，无法删除")
+
+    await db.delete(plan)
+    await db.flush()
+
+
+async def toggle_plan_status(
+    db: AsyncSession,
+    plan_id: UUID,
+) -> SubscriptionPlan:
+    """
+    切换套餐启用/禁用状态（管理员用）
+
+    Args:
+        db: 数据库会话
+        plan_id: 套餐ID
+
+    Returns:
+        SubscriptionPlan: 更新后的套餐对象
+    """
+    result = await db.execute(
+        select(SubscriptionPlan).where(SubscriptionPlan.id == plan_id)
+    )
+    plan = result.scalar_one_or_none()
+    if not plan:
+        from app.core.exceptions import NotFoundException
+        raise NotFoundException("订阅套餐不存在")
+
+    plan.is_active = not plan.is_active
+    await db.flush()
+    await db.refresh(plan)
+    return plan
+
+
+# ==================== 支付模拟 ====================
+
+
+async def create_payment(
+    db: AsyncSession,
+    user_id: UUID,
+    subscription_id: UUID,
+    amount: float,
+    payment_method: str,
+) -> PaymentRecord:
+    """
+    创建支付记录
+
+    Args:
+        db: 数据库会话
+        user_id: 用户ID
+        subscription_id: 订阅ID
+        amount: 支付金额
+        payment_method: 支付方式（wechat/alipay）
+
+    Returns:
+        PaymentRecord: 创建的支付记录
+    """
+    import uuid
+    from datetime import datetime
+    from app.models.subscription import PaymentRecord
+
+    payment = PaymentRecord(
+        id=str(uuid.uuid4()),
+        user_id=str(user_id),
+        subscription_id=str(subscription_id),
+        amount=amount,
+        payment_method=payment_method,
+        status="pending",
+    )
+    db.add(payment)
+    await db.flush()
+    await db.refresh(payment)
+    return payment
+
+
+async def simulate_pay(
+    db: AsyncSession,
+    payment_id: UUID,
+) -> PaymentRecord:
+    """
+    模拟支付成功
+
+    Args:
+        db: 数据库会话
+        payment_id: 支付记录ID
+
+    Returns:
+        PaymentRecord: 更新后的支付记录
+
+    Raises:
+        NotFoundException: 支付记录不存在
+    """
+    from app.models.subscription import PaymentRecord
+    from datetime import datetime
+    import uuid
+
+    result = await db.execute(
+        select(PaymentRecord).where(PaymentRecord.id == str(payment_id))
+    )
+    payment = result.scalar_one_or_none()
+    if not payment:
+        from app.core.exceptions import NotFoundException
+        raise NotFoundException("支付记录不存在")
+
+    payment.status = "success"
+    payment.transaction_id = f"SIM_{uuid.uuid4().hex[:16].upper()}"
+    payment.paid_at = datetime.now()
+
+    # 激活用户订阅
+    from app.models.subscription import UserSubscription
+    from datetime import date, timedelta
+    result = await db.execute(
+        select(UserSubscription).where(
+            UserSubscription.id == payment.subscription_id,
+        )
+    )
+    subscription = result.scalar_one_or_none()
+    if subscription:
+        subscription.status = "active"
+        if not subscription.start_date:
+            today = date.today()
+            subscription.start_date = today
+            subscription.end_date = today + timedelta(days=365)
+
+    await db.flush()
+    await db.refresh(payment)
+    return payment
+
+
+async def get_payment(
+    db: AsyncSession,
+    payment_id: UUID,
+) -> PaymentRecord:
+    """
+    查询支付记录
+
+    Args:
+        db: 数据库会话
+        payment_id: 支付记录ID
+
+    Returns:
+        PaymentRecord: 支付记录
+
+    Raises:
+        NotFoundException: 支付记录不存在
+    """
+    from app.models.subscription import PaymentRecord
+    result = await db.execute(
+        select(PaymentRecord).where(PaymentRecord.id == str(payment_id))
+    )
+    payment = result.scalar_one_or_none()
+    if not payment:
+        from app.core.exceptions import NotFoundException
+        raise NotFoundException("支付记录不存在")
+    return payment

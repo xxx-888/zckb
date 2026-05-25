@@ -480,7 +480,7 @@ class PlatformService:
             list[dict]: 平台列表
         """
         # 获取用户关联的门店ID
-        store_ids = [us.store_id for us in user.stores]
+        store_ids = [us.store_id for us in user.store_associations]
 
         if not store_ids:
             return []

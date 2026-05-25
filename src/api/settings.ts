@@ -80,13 +80,15 @@ export const settingsApi = {
   },
 
   // 自动回复配置
-  getAutoReplyConfig: async (): Promise<AutoReplyConfig> => {
-    const response = await api.get<any>('/v1/settings/auto-reply');
+  getAutoReplyConfig: async (storeId?: string): Promise<AutoReplyConfig> => {
+    const params = storeId ? `?store_id=${storeId}` : '';
+    const response = await api.get<any>(`/v1/settings/auto-reply${params}`);
     return response.data || response;
   },
 
-  updateAutoReplyConfig: async (data: Partial<AutoReplyConfig>): Promise<AutoReplyConfig> => {
-    const response = await api.put<any, any>('/v1/settings/auto-reply', data);
+  updateAutoReplyConfig: async (data: Partial<AutoReplyConfig>, storeId?: string): Promise<AutoReplyConfig> => {
+    const params = storeId ? `?store_id=${storeId}` : '';
+    const response = await api.put<any, any>(`/v1/settings/auto-reply${params}`, data);
     return response.data || response;
   },
 

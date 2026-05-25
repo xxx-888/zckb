@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, Query, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.deps import get_current_active_user
+from app.core.deps import get_current_active_user, require_roles
 from app.core.response import success
 from app.models.user import User
 from app.schemas.ai_config import (
@@ -30,7 +30,7 @@ router = APIRouter(prefix="/ai", tags=["AI配置管理"])
 @router.get("/config", summary="获取AI配置")
 async def get_ai_config(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_roles("HQ", "SUPER_ADMIN")),
 ) -> dict:
     """
     获取AI整体配置信息
@@ -53,7 +53,7 @@ async def get_ai_config(
 @router.get("/models", summary="获取模型配置列表")
 async def get_model_configs(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_roles("HQ", "SUPER_ADMIN")),
 ) -> dict:
     """
     获取AI模型配置列表
@@ -70,7 +70,7 @@ async def get_model_configs(
 async def create_model_config(
     request: AIModelConfigCreateRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_roles("HQ", "SUPER_ADMIN")),
 ) -> dict:
     """
     新增AI模型配置
@@ -88,7 +88,7 @@ async def update_model_config(
     config_id: UUID,
     request: dict,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_roles("HQ", "SUPER_ADMIN")),
 ) -> dict:
     """
     更新模型配置
@@ -105,7 +105,7 @@ async def update_model_config(
 async def delete_model_config(
     config_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_roles("HQ", "SUPER_ADMIN")),
 ) -> dict:
     """
     删除模型配置
@@ -120,7 +120,7 @@ async def test_model_config(
     test_message: str | None = Body(default=None, embed=True),
     api_key: str | None = Body(default=None, embed=True),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_roles("HQ", "SUPER_ADMIN")),
 ) -> dict:
     """
     真实调用厂商API测试模型连接
@@ -135,7 +135,7 @@ async def test_model_config(
 @router.get("/prompts", summary="获取提示词配置")
 async def get_prompt_configs(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_roles("HQ", "SUPER_ADMIN")),
 ) -> dict:
     """
     获取提示词模板配置
@@ -152,7 +152,7 @@ async def get_prompt_configs(
 async def create_prompt_config(
     request: AIPromptConfigCreateRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_roles("HQ", "SUPER_ADMIN")),
 ) -> dict:
     """
     新增提示词配置
@@ -171,7 +171,7 @@ async def update_prompt_config(
     config_id: UUID,
     request: dict,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_roles("HQ", "SUPER_ADMIN")),
 ) -> dict:
     """
     更新提示词配置
@@ -187,7 +187,7 @@ async def update_prompt_config(
 @router.get("/rules", summary="获取规则引擎")
 async def get_rule_engines(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_roles("HQ", "SUPER_ADMIN")),
 ) -> dict:
     """
     获取AI规则引擎配置
@@ -205,7 +205,7 @@ async def get_rule_engines(
 async def create_rule_engine(
     request: AIRuleEngineCreateRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_roles("HQ", "SUPER_ADMIN")),
 ) -> dict:
     """
     新增规则引擎
@@ -225,7 +225,7 @@ async def update_rule_engine(
     engine_id: UUID,
     request: dict,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_roles("HQ", "SUPER_ADMIN")),
 ) -> dict:
     """
     更新规则引擎配置
@@ -241,7 +241,7 @@ async def update_rule_engine(
 @router.get("/monitoring", summary="实时监控数据")
 async def get_monitoring_data(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_roles("HQ", "SUPER_ADMIN")),
 ) -> dict:
     """
     获取AI服务实时监控数据
@@ -256,7 +256,7 @@ async def get_monitoring_data(
 async def get_evaluation_data(
     period: str = Query("7d", description="评估周期"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_roles("HQ", "SUPER_ADMIN")),
 ) -> dict:
     """
     获取AI效能评估数据
@@ -271,7 +271,7 @@ async def get_evaluation_data(
 async def test_prompt(
     request: dict = Body(...),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_roles("HQ", "SUPER_ADMIN")),
 ) -> dict:
     """
     测试深度指令或规则引擎流程
@@ -293,7 +293,7 @@ async def test_prompt(
 async def test_rule(
     request: dict = Body(...),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_roles("HQ", "SUPER_ADMIN")),
 ) -> dict:
     """
     测试规则引擎完整流程

@@ -44,7 +44,11 @@ export const ReviewStream: React.FC = () => {
     try {
       setLoading(true);
       setFetchError(null);
-      const response = await fetchReviews();
+      const filters: any = {};
+      if (selectedStore?.id) {
+        filters.store_id = selectedStore.id;
+      }
+      const response = await fetchReviews(filters);
       const items = response.items || [];
       setReviews(Array.isArray(items) ? items : []);
     } catch (err) {

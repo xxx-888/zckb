@@ -20,7 +20,8 @@ import {
   Star,
   BarChart3,
   Brain,
-  Smartphone
+  Smartphone,
+  CreditCard,
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Avatar } from './ui/avatar';
@@ -47,6 +48,7 @@ const adminNavItems = [
   { icon: Settings2, label: 'AI配置', path: '/admin/ai-config' },
   { icon: FileCheck, label: '回复审核', path: '/admin/reply-audit' },
   { icon: Bell, label: '通知配置', path: '/admin/notification-config' },
+  { icon: CreditCard, label: '订阅管理', path: '/admin/subscription-management' },
 ];
 
 export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {

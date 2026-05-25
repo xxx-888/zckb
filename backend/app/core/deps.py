@@ -100,7 +100,10 @@ def require_roles(*roles: str) -> Callable:
     async def role_checker(
         current_user: User = Depends(get_current_active_user),
     ) -> User:
-        if current_user.role not in roles:
+        # 不区分大小写检查角色
+        user_role_upper = current_user.role.upper() if current_user.role else ''
+        allowed_roles_upper = [r.upper() for r in roles]
+        if user_role_upper not in allowed_roles_upper:
             raise ForbiddenException(
                 f"权限不足，需要以下角色之一: {', '.join(roles)}"
             )

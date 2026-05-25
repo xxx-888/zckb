@@ -1,33 +1,97 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Store, MapPin, Phone, Mail, Upload, Check } from 'lucide-react';
+import { ArrowLeft, Store, MapPin, Phone, Mail, Upload, Check, Loader2 } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { useToast } from '../../hooks/use-toast';
+import { storesApi } from '../../api/stores';
 
 export const StoreSettings: React.FC = () => {
   const navigate = useNavigate();
   const { success, error } = useToast();
   
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [storeId, setStoreId] = useState<string | null>(null);
+  
   const [formData, setFormData] = useState({
-    storeName: '香格里拉大酒店',
-    address: '北京市朝阳区建国门外大街1号',
-    phone: '010-88888888',
-    email: 'service@shangri-la.com',
-    description: '豪华五星级酒店，提供顶级服务体验'
+    storeName: '',
+    address: '',
+    phone: '',
+    email: '',
+    description: ''
   });
+
+  // 获取选中的门店ID并加载数据
+  useEffect(() => {
+    const storedStoreId = localStorage.getItem('zc_selected_store_id');
+    if (!storedStoreId) {
+      error('未选择门店', '请先在首页选择门店');
+      setLoading(false);
+      return;
+    }
+    
+    setStoreId(storedStoreId);
+    loadStoreInfo(storedStoreId);
+  }, []);
+
+  const loadStoreInfo = async (id: string) => {
+    try {
+      setLoading(true);
+      const store = await storesApi.getStoreById(id);
+      setFormData({
+        storeName: store.name || '',
+        address: store.address || '',
+        phone: store.phone || '',
+        email: store.email || '',
+        description: store.description || ''
+      });
+    } catch (err: any) {
+      error('加载失败', err.message || '无法获取门店信息');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!formData.storeName.trim()) {
       error('请输入店铺名称', '店铺名称不能为空');
       return;
     }
-    success('保存成功', '店铺信息已更新');
-    setTimeout(() => navigate('/mobile/settings'), 1000);
+    
+    if (!storeId) {
+      error('未选择门店', '请先在首页选择门店');
+      return;
+    }
+    
+    try {
+      setSaving(true);
+      await storesApi.updateStore(storeId, {
+        name: formData.storeName,
+        address: formData.address,
+        phone: formData.phone,
+        email: formData.email,
+        description: formData.description
+      });
+      success('保存成功', '店铺信息已更新');
+      setTimeout(() => navigate('/mobile/settings'), 1000);
+    } catch (err: any) {
+      error('保存失败', err.message || '更新门店信息时出现错误');
+    } finally {
+      setSaving(false);
+    }
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans">
@@ -121,10 +185,20 @@ export const StoreSettings: React.FC = () => {
         {/* Save Button */}
         <Button 
           onClick={handleSave}
-          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl py-7 text-lg font-bold shadow-xl shadow-indigo-100 mt-6"
+          disabled={saving}
+          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl py-7 text-lg font-bold shadow-xl shadow-indigo-100 mt-6 disabled:opacity-50"
         >
-          <Check className="w-5 h-5 mr-2" />
-          保存修改
+          {saving ? (
+            <>
+              <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+              保存中...
+            </>
+          ) : (
+            <>
+              <Check className="w-5 h-5 mr-2" />
+              保存修改
+            </>
+          )}
         </Button>
       </div>
     </div>

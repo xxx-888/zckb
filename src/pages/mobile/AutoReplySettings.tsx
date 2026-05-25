@@ -1,36 +1,100 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Shield, Bot, Zap, Clock, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, Shield, Bot, Zap, Clock, CheckCircle2, Loader2 } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { useToast } from '../../hooks/use-toast';
+import { settingsApi, AutoReplyConfig } from '../../api/settings';
 
 export const AutoReplySettings: React.FC = () => {
   const navigate = useNavigate();
-  const { success } = useToast();
+  const { success, error } = useToast();
   
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [storeId, setStoreId] = useState<string>('');
   const [settings, setSettings] = useState({
-    mode: 'smart', // 'manual', 'semi-auto', 'smart'
+    mode: 'smart' as 'smart' | 'manual' | 'semi_auto',
     autoReplyEnabled: true,
     workingHoursOnly: false,
-    maxRepliesPerDay: 50,
-    replyDelay: 5, // minutes
     enableAISuggestion: true,
     enableKeywordReply: true
   });
 
-  const handleModeChange = (mode: string) => {
-    setSettings(prev => ({ ...prev, mode }));
-    success('模式已切换', `已切换到${mode === 'manual' ? '手动模式' : mode === 'semi-auto' ? '半自动模式' : '智能模式'}`);
+  // 加载自动回复配置
+  useEffect(() => {
+    const savedStoreId = localStorage.getItem('zc_selected_store_id');
+    if (savedStoreId) {
+      setStoreId(savedStoreId);
+      loadConfig(savedStoreId);
+    } else {
+      setLoading(false);
+      error('加载失败', '请先选择门店');
+    }
+  }, []);
+
+  const loadConfig = async (storeId: string) => {
+    try {
+      setLoading(true);
+      const data = await settingsApi.getAutoReplyConfig(storeId);
+      setSettings({
+        mode: data.mode,
+        autoReplyEnabled: data.auto_reply_enabled,
+        workingHoursOnly: data.work_hours_only,
+        enableAISuggestion: data.ai_suggest_enabled,
+        enableKeywordReply: data.keyword_reply_enabled
+      });
+    } catch (err: any) {
+      error('加载失败', err.message || '无法获取自动回复配置');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleToggle = (key: 'autoReplyEnabled' | 'workingHoursOnly' | 'enableAISuggestion' | 'enableKeywordReply') => {
-    setSettings(prev => ({ ...prev, [key]: !prev[key] }));
+  const handleModeChange = async (mode: 'manual' | 'semi_auto' | 'smart') => {
+    try {
+      setSaving(true);
+      const updated = await settingsApi.updateAutoReplyConfig({ mode }, storeId);
+      setSettings(prev => ({ ...prev, mode: updated.mode }));
+      success('模式已切换', `已切换到${mode === 'manual' ? '手动模式' : mode === 'semi_auto' ? '半自动模式' : '智能模式'}`);
+    } catch (err: any) {
+      error('切换失败', err.message || '切换模式时出现错误');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleSave = () => {
-    success('保存成功', '自动回复策略已更新');
-    setTimeout(() => navigate('/mobile/settings'), 1000);
+  const handleToggle = async (key: 'autoReplyEnabled' | 'workingHoursOnly' | 'enableAISuggestion' | 'enableKeywordReply') => {
+    try {
+      setSaving(true);
+      
+      // 转换字段名：camelCase -> snake_case
+      const updateData: any = {};
+      if (key === 'autoReplyEnabled') updateData.auto_reply_enabled = !settings.autoReplyEnabled;
+      if (key === 'workingHoursOnly') updateData.work_hours_only = !settings.workingHoursOnly;
+      if (key === 'enableAISuggestion') updateData.ai_suggest_enabled = !settings.enableAISuggestion;
+      if (key === 'enableKeywordReply') updateData.keyword_reply_enabled = !settings.enableKeywordReply;
+      
+      const updated = await settingsApi.updateAutoReplyConfig(updateData, storeId);
+      
+      // 更新本地状态
+      if (key === 'autoReplyEnabled') setSettings(prev => ({ ...prev, autoReplyEnabled: updated.auto_reply_enabled }));
+      if (key === 'workingHoursOnly') setSettings(prev => ({ ...prev, workingHoursOnly: updated.work_hours_only }));
+      if (key === 'enableAISuggestion') setSettings(prev => ({ ...prev, enableAISuggestion: updated.ai_suggest_enabled }));
+      if (key === 'enableKeywordReply') setSettings(prev => ({ ...prev, enableKeywordReply: updated.keyword_reply_enabled }));
+    } catch (err: any) {
+      error('操作失败', err.message || '更新设置时出现错误');
+    } finally {
+      setSaving(false);
+    }
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans">
@@ -54,6 +118,7 @@ export const AutoReplySettings: React.FC = () => {
               {/* 手动模式 */}
               <button
                 onClick={() => handleModeChange('manual')}
+                disabled={saving}
                 className={`w-full flex items-center gap-4 p-4 transition-colors ${
                   settings.mode === 'manual' ? 'bg-indigo-50' : 'hover:bg-slate-50'
                 }`}
@@ -74,21 +139,22 @@ export const AutoReplySettings: React.FC = () => {
 
               {/* 半自动模式 */}
               <button
-                onClick={() => handleModeChange('semi-auto')}
+                onClick={() => handleModeChange('semi_auto')}
+                disabled={saving}
                 className={`w-full flex items-center gap-4 p-4 transition-colors ${
-                  settings.mode === 'semi-auto' ? 'bg-indigo-50' : 'hover:bg-slate-50'
+                  settings.mode === 'semi_auto' ? 'bg-indigo-50' : 'hover:bg-slate-50'
                 }`}
               >
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                  settings.mode === 'semi-auto' ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-400'
+                  settings.mode === 'semi_auto' ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-400'
                 }`}>
                   <Bot className="w-5 h-5" />
                 </div>
                 <div className="flex-1 text-left">
-                  <p className={`text-sm font-bold ${settings.mode === 'semi-auto' ? 'text-indigo-600' : 'text-slate-700'}`}>半自动模式</p>
+                  <p className={`text-sm font-bold ${settings.mode === 'semi_auto' ? 'text-indigo-600' : 'text-slate-700'}`}>半自动模式</p>
                   <p className="text-xs text-slate-400">AI生成回复，人工确认后发送</p>
                 </div>
-                {settings.mode === 'semi-auto' && (
+                {settings.mode === 'semi_auto' && (
                   <CheckCircle2 className="w-5 h-5 text-indigo-600" />
                 )}
               </button>
@@ -96,6 +162,7 @@ export const AutoReplySettings: React.FC = () => {
               {/* 智能模式 */}
               <button
                 onClick={() => handleModeChange('smart')}
+                disabled={saving}
                 className={`w-full flex items-center gap-4 p-4 transition-colors ${
                   settings.mode === 'smart' ? 'bg-indigo-50' : 'hover:bg-slate-50'
                 }`}
@@ -132,6 +199,7 @@ export const AutoReplySettings: React.FC = () => {
                 </div>
                 <button
                   onClick={() => handleToggle('autoReplyEnabled')}
+                  disabled={saving}
                   className={`w-12 h-6 rounded-full transition-colors relative ${
                     settings.autoReplyEnabled ? 'bg-indigo-600' : 'bg-slate-200'
                   }`}
@@ -155,6 +223,7 @@ export const AutoReplySettings: React.FC = () => {
                 </div>
                 <button
                   onClick={() => handleToggle('workingHoursOnly')}
+                  disabled={saving}
                   className={`w-12 h-6 rounded-full transition-colors relative ${
                     settings.workingHoursOnly ? 'bg-indigo-600' : 'bg-slate-200'
                   }`}
@@ -175,6 +244,7 @@ export const AutoReplySettings: React.FC = () => {
                 </div>
                 <button
                   onClick={() => handleToggle('enableAISuggestion')}
+                  disabled={saving}
                   className={`w-12 h-6 rounded-full transition-colors relative ${
                     settings.enableAISuggestion ? 'bg-indigo-600' : 'bg-slate-200'
                   }`}
@@ -195,6 +265,7 @@ export const AutoReplySettings: React.FC = () => {
                 </div>
                 <button
                   onClick={() => handleToggle('enableKeywordReply')}
+                  disabled={saving}
                   className={`w-12 h-6 rounded-full transition-colors relative ${
                     settings.enableKeywordReply ? 'bg-indigo-600' : 'bg-slate-200'
                   }`}
@@ -210,10 +281,24 @@ export const AutoReplySettings: React.FC = () => {
 
         {/* Save Button */}
         <Button 
-          onClick={handleSave}
-          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl py-7 text-lg font-bold shadow-xl shadow-indigo-100"
+          onClick={() => {
+            success('设置已更新', '自动回复策略已自动保存');
+            setTimeout(() => navigate('/mobile/settings'), 1000);
+          }}
+          disabled={saving}
+          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl py-7 text-lg font-bold shadow-xl shadow-indigo-100 disabled:opacity-50"
         >
-          保存设置
+          {saving ? (
+            <>
+              <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+              保存中...
+            </>
+          ) : (
+            <>
+              <CheckCircle2 className="w-5 h-5 mr-2" />
+              保存设置
+            </>
+          )}
         </Button>
       </div>
     </div>

@@ -22,6 +22,7 @@ import { PositiveActivation as AdminPositiveActivation } from './pages/admin/Pos
 import { Insights as AdminInsights } from './pages/admin/Insights';
 import { AIAnalysis as AdminAIAnalysis } from './pages/admin/AIAnalysis';
 import { MobileSettings as AdminMobileSettings } from './pages/admin/MobileSettings';
+import { SubscriptionManagement } from './pages/admin/SubscriptionManagement';
 
 // 管理员页面 - AI配置子页面
 import { Evaluation } from './pages/admin/AIConfig/Evaluation';
@@ -117,6 +118,7 @@ function AppContent() {
         <Route path="/admin/insights" element={<AdminGuard><AdminInsights /></AdminGuard>} />
         <Route path="/admin/ai-analysis" element={<AdminGuard><AdminAIAnalysis /></AdminGuard>} />
         <Route path="/admin/mobile-settings" element={<AdminGuard><AdminMobileSettings /></AdminGuard>} />
+        <Route path="/admin/subscription-management" element={<AdminGuard><SubscriptionManagement /></AdminGuard>} />
         
         {/* 管理员 - AI配置子页面 */}
         <Route path="/admin/ai-config/evaluation" element={<AdminGuard><Evaluation /></AdminGuard>} />

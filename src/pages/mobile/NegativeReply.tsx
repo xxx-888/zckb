@@ -36,7 +36,8 @@ export const NegativeReply: React.FC = () => {
     try {
       setLoading(true);
       setFetchError(null);
-      const data = await fetchNegativeReplyTasks();
+      const storeId = selectedStore?.id;
+      const data = await fetchNegativeReplyTasks(storeId);
       setTasks(data);
     } catch (err) {
       setFetchError(err instanceof Error ? err.message : '获取数据失败');

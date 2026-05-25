@@ -92,3 +92,8 @@ api_router.include_router(platforms_router)
 from app.api.v1.annual_report import router as annual_report_router
 
 api_router.include_router(annual_report_router)
+
+# admin/subscription - 订阅管理
+from app.api.v1.admin.subscription import router as admin_subscription_router
+
+api_router.include_router(admin_subscription_router)

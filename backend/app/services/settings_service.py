@@ -5,6 +5,7 @@
 
 from typing import Optional
 from uuid import UUID
+from datetime import time
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -181,7 +182,21 @@ async def get_auto_reply_config(
     config = result.scalar_one_or_none()
 
     if not config:
-        raise NotFoundException("自动回复配置不存在")
+        # 自动创建默认配置
+        config = AutoReplyConfig(
+            store_id=store_id,
+            mode='smart',
+            auto_reply_enabled=True,
+            work_hours_only=False,
+            work_start_time=time(9, 0),
+            work_end_time=time(21, 0),
+            keyword_reply_enabled=True,
+            keywords={},
+            ai_suggest_enabled=True,
+        )
+        db.add(config)
+        await db.flush()
+        await db.refresh(config)
 
     return config
 
@@ -211,7 +226,21 @@ async def update_auto_reply_config(
     config = result.scalar_one_or_none()
 
     if not config:
-        raise NotFoundException("自动回复配置不存在")
+        # 自动创建默认配置
+        config = AutoReplyConfig(
+            store_id=store_id,
+            mode='smart',
+            auto_reply_enabled=True,
+            work_hours_only=False,
+            work_start_time=time(9, 0),
+            work_end_time=time(21, 0),
+            keyword_reply_enabled=True,
+            keywords={},
+            ai_suggest_enabled=True,
+        )
+        db.add(config)
+        await db.flush()
+        await db.refresh(config)
 
     update_data = data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
@@ -251,7 +280,19 @@ async def get_notification_setting(
     setting = result.scalar_one_or_none()
 
     if not setting:
-        raise NotFoundException("通知设置不存在")
+        # 自动创建默认通知设置
+        setting = UserNotificationSetting(
+            user_id=user_id,
+            new_review_enabled=True,
+            negative_alert_enabled=True,
+            weekly_report_enabled=True,
+            email_enabled=True,
+            sms_enabled=False,
+            push_enabled=True,
+        )
+        db.add(setting)
+        await db.flush()
+        await db.refresh(setting)
 
     return setting
 
@@ -283,7 +324,19 @@ async def update_notification_setting(
     setting = result.scalar_one_or_none()
 
     if not setting:
-        raise NotFoundException("通知设置不存在")
+        # 自动创建默认通知设置
+        setting = UserNotificationSetting(
+            user_id=user_id,
+            new_review_enabled=True,
+            negative_alert_enabled=True,
+            weekly_report_enabled=True,
+            email_enabled=True,
+            sms_enabled=False,
+            push_enabled=True,
+        )
+        db.add(setting)
+        await db.flush()
+        await db.refresh(setting)
 
     update_data = data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
