@@ -12,22 +12,13 @@ const PlanIcon = ({ plan, className }: { plan: SubscriptionPlan; className?: str
   return <Crown className={`${className} text-amber-600`} />;
 };
 
-/* ---- 支付方式 SVG 图标 ---- */
+/* ---- 支付方式图标 ---- */
 const WeChatPayIcon = ({ size = 40 }: { size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <rect width="40" height="40" rx="8" fill="#07C160"/>
-    {/* 微信气泡 */}
-    <path d="M10.5 13C10.5 13 13 11C16.5 11 19 13C19 13 16.5 15 14.5 16.5C13.8 17 13.5 17.8 13.8 18.5L15.5 22.5L12.5 19C11.5 18.3 10.5 18 9.5 18C7.5 18 6 16.8 6 14C6 11.2 8.5 9 11.5 9C14.5 9 16.5 11 16.5 13C16.5 13 16.5 13 10.5 13Z" fill="white"/>
-    <path d="M21.5 18C21.5 18 24 20 27.5 20C31 20 33.5 18 33.5 18C33.5 18 31 16 29 15C28.3 14.7 28.5 14.2 28.7 13.8L27.5 11L29.5 13C30.5 13.7 31.5 14 32.5 14C34.5 14 36 15.2 36 18C36 20.8 33.5 23 30.5 23C27.5 23 24.5 21 21.5 18Z" fill="white" fillOpacity="0.55"/>
-  </svg>
+  <img src="/icons/wechat-pay.png" alt="微信支付" width={size} height={size} className="object-contain" />
 );
 
 const AlipayIcon = ({ size = 40 }: { size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <rect width="40" height="40" rx="8" fill="#1677FF"/>
-    {/* 支付宝 "支" 字简化图标 */}
-    <path d="M20 8C13.4 8 8 13.4 8 20C8 26.6 13.4 32 20 32C26.6 32 32 26.6 32 20C32 13.4 26.6 8 20 8ZM20 11C22.2 11 24.1 12.5 25 14.8L22.5 16C22 15.2 21.1 14.8 20 14.8C17.5 14.8 15.5 16.8 15.5 19.3C15.5 20.4 15.8 21.3 16.5 22L14.5 23.5C13.3 22.1 12.5 20.2 12.5 18.1C12.5 14.1 15.8 11 20 11ZM20 29C17.8 29 15.9 27.5 15 25.2L17.5 24C18 24.8 18.9 25.2 20 25.2C22.5 25.2 24.5 23.2 24.5 20.7C24.5 19.6 24.2 18.7 23.5 18L25.5 16.5C26.7 17.9 27.5 19.8 27.5 21.9C27.5 25.9 24.2 29 20 29Z" fill="white"/>
-  </svg>
+  <img src="/icons/alipay.png" alt="支付宝" width={size} height={size} className="object-contain" />
 );
 
 const PlanBadge = ({ plan }: { plan: SubscriptionPlan }) => {
@@ -47,6 +38,57 @@ const PlanBadge = ({ plan }: { plan: SubscriptionPlan }) => {
   }
   return null;
 };
+
+/* ---- 支付方式按钮（品牌风格） ---- */
+const WeChatPayButton = ({ selected, onClick }: { selected: boolean; onClick: () => void }) => (
+  <button
+    onClick={onClick}
+    className={`w-full flex items-center gap-3 p-4 rounded-2xl border-2 transition-all text-left ${
+      selected
+        ? 'border-emerald-500 bg-emerald-50 shadow-md shadow-emerald-100'
+        : 'border-slate-200 hover:border-emerald-300 bg-white'
+    }`}
+  >
+    {/* 微信绿色图标区 */}
+    <div className="w-11 h-11 rounded-xl bg-[#07C160] flex items-center justify-center flex-shrink-0">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+        <path d="M8.5 7C8.5 5.0147 10.0147 3.5 12 3.5H20C21.9853 3.5 23.5 5.0147 23.5 7V17C23.5 18.9853 21.9853 20.5 20 20.5H14L9 23.5V20.5H12C10.0147 20.5 8.5 18.9853 8.5 17V7Z" fill="white"/>
+        <circle cx="13" cy="11" r="1.2" fill="#07C160"/>
+        <circle cx="18" cy="11" r="1.2" fill="#07C160"/>
+      </svg>
+    </div>
+    <div className="flex-1 min-w-0">
+      <div className="text-sm font-bold text-slate-900">微信支付</div>
+      <div className="text-xs text-slate-400">推荐使用</div>
+    </div>
+    {selected && (
+      <div className="text-xs font-bold text-emerald-600 flex-shrink-0">✓ 已选择</div>
+    )}
+  </button>
+);
+
+const AlipayButton = ({ selected, onClick }: { selected: boolean; onClick: () => void }) => (
+  <button
+    onClick={onClick}
+    className={`w-full flex items-center gap-3 p-4 rounded-2xl border-2 transition-all text-left ${
+      selected
+        ? 'border-blue-500 bg-blue-50 shadow-md shadow-blue-100'
+        : 'border-slate-200 hover:border-blue-300 bg-white'
+    }`}
+  >
+    {/* 支付宝蓝色图标区 */}
+    <div className="w-11 h-11 rounded-xl bg-[#1677FF] flex items-center justify-center flex-shrink-0">
+      <span className="text-white text-lg font-black leading-none">支</span>
+    </div>
+    <div className="flex-1 min-w-0">
+      <div className="text-sm font-bold text-slate-900">支付宝</div>
+      <div className="text-xs text-slate-400">便捷支付</div>
+    </div>
+    {selected && (
+      <div className="text-xs font-bold text-blue-600 flex-shrink-0">✓ 已选择</div>
+    )}
+  </button>
+);
 
 const SpecItem = ({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) => (
   <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl">
@@ -506,44 +548,8 @@ export const Subscription: React.FC = () => {
             <div className="space-y-2">
               <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">支付方式</p>
               <div className="grid grid-cols-2 gap-3">
-                <button
-                  onClick={() => setPaymentMethod('wechat')}
-                  className={`p-4 rounded-xl border-2 transition-all ${
-                    paymentMethod === 'wechat'
-                      ? 'border-emerald-500 bg-emerald-50'
-                      : 'border-slate-200 hover:border-slate-300'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <WeChatPayIcon size={36} />
-                    <div className="text-left">
-                      <div className="text-sm font-bold text-slate-900">微信支付</div>
-                      <div className="text-xs text-slate-400">推荐使用</div>
-                    </div>
-                  </div>
-                  {paymentMethod === 'wechat' && (
-                    <div className="mt-2 text-xs font-bold text-emerald-600">✓ 已选择</div>
-                  )}
-                </button>
-                <button
-                  onClick={() => setPaymentMethod('alipay')}
-                  className={`p-4 rounded-xl border-2 transition-all ${
-                    paymentMethod === 'alipay'
-                      ? 'border-emerald-500 bg-emerald-50'
-                      : 'border-slate-200 hover:border-slate-300'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <AlipayIcon size={36} />
-                    <div className="text-left">
-                      <div className="text-sm font-bold text-slate-900">支付宝</div>
-                      <div className="text-xs text-slate-400">便捷支付</div>
-                    </div>
-                  </div>
-                  {paymentMethod === 'alipay' && (
-                    <div className="mt-2 text-xs font-bold text-emerald-600">✓ 已选择</div>
-                  )}
-                </button>
+                <WeChatPayButton selected={paymentMethod === 'wechat'} onClick={() => setPaymentMethod('wechat')} />
+                <AlipayButton selected={paymentMethod === 'alipay'} onClick={() => setPaymentMethod('alipay')} />
               </div>
             </div>
             
