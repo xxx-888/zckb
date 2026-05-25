@@ -145,30 +145,50 @@ async def create_payment(
         from app.core.exceptions import NotFoundException
         raise NotFoundException("订阅套餐不存在")
     
-    # 先创建或获取用户的订阅记录（trial 状态）
+    # 先查找有效状态的订阅记录
     result = await db.execute(
         select(UserSubscription).where(
             UserSubscription.user_id == str(current_user.id),
             UserSubscription.plan_id == str(data.plan_id),
-            UserSubscription.status.in_(["trial", "active", "expired", "cancelled"]),
-        )
+            UserSubscription.status.in_(["trial", "active"]),
+        ).order_by(UserSubscription.created_at.desc()).limit(1)
     )
     subscription = result.scalar_one_or_none()
     
     if not subscription:
-        # 创建新的订阅记录（trial 状态，end_date 由支付时根据 billing_cycle 设置）
-        today = date.today()
-        subscription = UserSubscription(
-            user_id=str(current_user.id),
-            plan_id=str(data.plan_id),
-            status="trial",
-            start_date=today,
-            end_date=None,  # 支付成功后再根据 billing_cycle 设置
-            auto_renew=True,
+        # 没有有效记录，检查是否有已取消/过期的记录可复用
+        result = await db.execute(
+            select(UserSubscription).where(
+                UserSubscription.user_id == str(current_user.id),
+                UserSubscription.plan_id == str(data.plan_id),
+                UserSubscription.status.in_(["expired", "cancelled"]),
+            ).order_by(UserSubscription.created_at.desc()).limit(1)
         )
-        db.add(subscription)
-        await db.flush()
-        await db.refresh(subscription)
+        old_subscription = result.scalar_one_or_none()
+        
+        if old_subscription:
+            # 复用的记录，重置状态
+            old_subscription.status = "trial"
+            old_subscription.start_date = date.today()
+            old_subscription.end_date = None  # 支付成功后再根据 billing_cycle 设置
+            old_subscription.auto_renew = True
+            await db.flush()
+            await db.refresh(old_subscription)
+            subscription = old_subscription
+        else:
+            # 创建新的订阅记录（trial 状态，end_date 由支付时根据 billing_cycle 设置）
+            today = date.today()
+            subscription = UserSubscription(
+                user_id=str(current_user.id),
+                plan_id=str(data.plan_id),
+                status="trial",
+                start_date=today,
+                end_date=None,  # 支付成功后再根据 billing_cycle 设置
+                auto_renew=True,
+            )
+            db.add(subscription)
+            await db.flush()
+            await db.refresh(subscription)
     
     # 创建支付记录，传入正确的 subscription.id 和 billing_cycle
     amount = plan.price_monthly if getattr(data, 'billing_cycle', 'yearly') == 'monthly' else plan.price_yearly
