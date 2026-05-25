@@ -203,4 +203,64 @@ export const adminApi = {
     const response = await api.post('/v1/ai/test-rule', params, { timeout: 60000 });
     return response;
   },
+
+  // ==================== 订阅记录管理 ====================
+  
+  /** 获取所有用户订阅记录（管理员）*/
+  getSubscriptionRecords: async (params: {
+    user_id?: string;
+    status?: string;
+    plan_id?: string;
+    page?: number;
+    page_size?: number;
+  }): Promise<any> => {
+    const queryParams = new URLSearchParams();
+    if (params.user_id) queryParams.append('user_id', params.user_id);
+    if (params.status) queryParams.append('status', params.status);
+    if (params.plan_id) queryParams.append('plan_id', params.plan_id);
+    if (params.page) queryParams.append('page', params.page.toString());
+    if (params.page_size) queryParams.append('page_size', params.page_size.toString());
+    
+    const response = await api.get<any>(`/v1/admin/subscription/records?${queryParams.toString()}`);
+    return response.data || response;
+  },
+
+  /** 获取所有支付记录（管理员）*/
+  getPaymentRecords: async (params: {
+    user_id?: string;
+    status?: string;
+    payment_method?: string;
+    start_date?: string;
+    end_date?: string;
+    page?: number;
+    page_size?: number;
+  }): Promise<any> => {
+    const queryParams = new URLSearchParams();
+    if (params.user_id) queryParams.append('user_id', params.user_id);
+    if (params.status) queryParams.append('status', params.status);
+    if (params.payment_method) queryParams.append('payment_method', params.payment_method);
+    if (params.start_date) queryParams.append('start_date', params.start_date);
+    if (params.end_date) queryParams.append('end_date', params.end_date);
+    if (params.page) queryParams.append('page', params.page.toString());
+    if (params.page_size) queryParams.append('page_size', params.page_size.toString());
+    
+    const response = await api.get<any>(`/v1/admin/subscription/payments?${queryParams.toString()}`);
+    return response.data || response;
+  },
+
+  /** 更新订阅状态（管理员）*/
+  updateSubscriptionStatus: async (subscriptionId: string, status: string): Promise<any> => {
+    const response = await api.patch<any>(`/v1/admin/subscription/records/${subscriptionId}/status?status=${status}`);
+    return response.data || response;
+  },
+
+  /** 更新支付状态（管理员）*/
+  updatePaymentStatus: async (paymentId: string, status: string, transactionId?: string): Promise<any> => {
+    const params = new URLSearchParams();
+    params.append('status', status);
+    if (transactionId) params.append('transaction_id', transactionId);
+    
+    const response = await api.patch<any>(`/v1/admin/subscription/payments/${paymentId}/status?${params.toString()}`);
+    return response.data || response;
+  },
 };

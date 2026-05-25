@@ -548,14 +548,14 @@ async def get_payment(
 ) -> PaymentRecord:
     """
     查询支付记录
-
+    
     Args:
         db: 数据库会话
         payment_id: 支付记录ID
-
+    
     Returns:
         PaymentRecord: 支付记录
-
+    
     Raises:
         NotFoundException: 支付记录不存在
     """
@@ -567,4 +567,283 @@ async def get_payment(
     if not payment:
         from app.core.exceptions import NotFoundException
         raise NotFoundException("支付记录不存在")
+    return payment
+
+
+# ==================== 管理员：订阅记录和支付记录管理 ====================
+
+
+async def get_all_subscription_records(
+    db: AsyncSession,
+    user_id: UUID | None = None,
+    status: str | None = None,
+    plan_id: UUID | None = None,
+    page: int = 1,
+    page_size: int = 20,
+) -> dict:
+    """
+    获取所有用户订阅记录（管理员用）
+    
+    Args:
+        db: 数据库会话
+        user_id: 按用户ID筛选
+        status: 按状态筛选
+        plan_id: 按套餐ID筛选
+        page: 页码
+        page_size: 每页数量
+        
+    Returns:
+        dict: { items: [...], total: N, page: N, page_size: N }
+    """
+    from app.models.subscription import UserSubscription, SubscriptionPlan
+    from app.models.user import User
+    from sqlalchemy import select, func
+    
+    # 构建查询
+    query = (
+        select(UserSubscription)
+        .options(
+            selectinload(UserSubscription.user),
+            selectinload(UserSubscription.plan),
+        )
+        .join(UserSubscription.user)
+        .join(UserSubscription.plan)
+    )
+    
+    # 添加筛选条件
+    if user_id:
+        query = query.where(UserSubscription.user_id == str(user_id))
+    if status:
+        query = query.where(UserSubscription.status == status)
+    if plan_id:
+        query = query.where(UserSubscription.plan_id == str(plan_id))
+    
+    # 查询总数
+    count_query = select(func.count(UserSubscription.id))
+    if user_id:
+        count_query = count_query.where(UserSubscription.user_id == str(user_id))
+    if status:
+        count_query = count_query.where(UserSubscription.status == status)
+    if plan_id:
+        count_query = count_query.where(UserSubscription.plan_id == str(plan_id))
+    
+    total_result = await db.execute(count_query)
+    total = total_result.scalar() or 0
+    
+    # 分页查询
+    offset = (page - 1) * page_size
+    query = query.order_by(UserSubscription.created_at.desc()).offset(offset).limit(page_size)
+    
+    result = await db.execute(query)
+    items = list(result.scalars().all())
+    
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+async def get_all_payment_records(
+    db: AsyncSession,
+    user_id: UUID | None = None,
+    status: str | None = None,
+    payment_method: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    page: int = 1,
+    page_size: int = 20,
+) -> dict:
+    """
+    获取所有支付记录（管理员用）
+    
+    Args:
+        db: 数据库会话
+        user_id: 按用户ID筛选
+        status: 按支付状态筛选
+        payment_method: 按支付方式筛选
+        start_date: 支付开始日期
+        end_date: 支付结束日期
+        page: 页码
+        page_size: 每页数量
+        
+    Returns:
+        dict: { items: [...], total: N, page: N, page_size: N }
+    """
+    from app.models.subscription import PaymentRecord, UserSubscription
+    from app.models.user import User
+    from sqlalchemy import select, func
+    from datetime import datetime
+    
+    # 构建查询
+    query = (
+        select(PaymentRecord)
+        .options(
+            selectinload(PaymentRecord.user),
+        )
+        .join(PaymentRecord.user)
+    )
+    
+    # 添加筛选条件
+    if user_id:
+        query = query.where(PaymentRecord.user_id == str(user_id))
+    if status:
+        query = query.where(PaymentRecord.status == status)
+    if payment_method:
+        query = query.where(PaymentRecord.payment_method == payment_method)
+    if start_date:
+        start_dt = datetime.fromisoformat(start_date)
+        query = query.where(PaymentRecord.paid_at >= start_dt)
+    if end_date:
+        end_dt = datetime.fromisoformat(end_date)
+        query = query.where(PaymentRecord.paid_at <= end_dt)
+    
+    # 查询总数
+    count_query = select(func.count(PaymentRecord.id))
+    if user_id:
+        count_query = count_query.where(PaymentRecord.user_id == str(user_id))
+    if status:
+        count_query = count_query.where(PaymentRecord.status == status)
+    if payment_method:
+        count_query = count_query.where(PaymentRecord.payment_method == payment_method)
+    if start_date:
+        start_dt = datetime.fromisoformat(start_date)
+        count_query = count_query.where(PaymentRecord.paid_at >= start_dt)
+    if end_date:
+        end_dt = datetime.fromisoformat(end_date)
+        count_query = count_query.where(PaymentRecord.paid_at <= end_dt)
+    
+    total_result = await db.execute(count_query)
+    total = total_result.scalar() or 0
+    
+    # 分页查询
+    offset = (page - 1) * page_size
+    query = query.order_by(PaymentRecord.created_at.desc()).offset(offset).limit(page_size)
+    
+    result = await db.execute(query)
+    items = list(result.scalars().all())
+    
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+async def update_subscription_status(
+    db: AsyncSession,
+    subscription_id: UUID,
+    status: str,
+) -> UserSubscription:
+    """
+    更新订阅状态（管理员用）
+    
+    Args:
+        db: 数据库会话
+        subscription_id: 订阅记录ID
+        status: 新状态（trial/active/expired/cancelled）
+        
+    Returns:
+        UserSubscription: 更新后的订阅记录
+        
+    Raises:
+        NotFoundException: 订阅记录不存在
+    """
+    from app.models.subscription import UserSubscription
+    from sqlalchemy import select
+    from datetime import date, timedelta
+    from app.core.exceptions import NotFoundException
+    
+    result = await db.execute(
+        select(UserSubscription).where(UserSubscription.id == str(subscription_id))
+    )
+    subscription = result.scalar_one_or_none()
+    if not subscription:
+        raise NotFoundException("订阅记录不存在")
+    
+    # 更新状态
+    subscription.status = status
+    
+    # 如果状态改为 active，自动设置开始和结束日期
+    if status == "active":
+        today = date.today()
+        subscription.start_date = today
+        # 查询支付记录获取计费周期
+        from app.models.subscription import PaymentRecord
+        payment_result = await db.execute(
+            select(PaymentRecord)
+            .where(PaymentRecord.subscription_id == str(subscription_id))
+            .order_by(PaymentRecord.created_at.desc())
+            .limit(1)
+        )
+        payment = payment_result.scalar_one_or_none()
+        if payment and payment.billing_cycle == "monthly":
+            subscription.end_date = today + timedelta(days=30)
+        else:
+            subscription.end_date = today + timedelta(days=365)
+    
+    await db.flush()
+    await db.refresh(subscription)
+    
+    # 重新查询以预加载关系
+    result = await db.execute(
+        select(UserSubscription)
+        .options(
+            selectinload(UserSubscription.user),
+            selectinload(UserSubscription.plan),
+        )
+        .where(UserSubscription.id == str(subscription_id))
+    )
+    return result.scalar_one()
+
+
+async def update_payment_status(
+    db: AsyncSession,
+    payment_id: UUID,
+    status: str,
+    transaction_id: str | None = None,
+) -> PaymentRecord:
+    """
+    更新支付状态（管理员用）
+    
+    Args:
+        db: 数据库会话
+        payment_id: 支付记录ID
+        status: 新状态（pending/success/failed/refunded）
+        transaction_id: 交易流水号（可选）
+        
+    Returns:
+        PaymentRecord: 更新后的支付记录
+        
+    Raises:
+        NotFoundException: 支付记录不存在
+    """
+    from app.models.subscription import PaymentRecord
+    from sqlalchemy import select
+    from datetime import datetime
+    from app.core.exceptions import NotFoundException
+    
+    result = await db.execute(
+        select(PaymentRecord).where(PaymentRecord.id == str(payment_id))
+    )
+    payment = result.scalar_one_or_none()
+    if not payment:
+        raise NotFoundException("支付记录不存在")
+    
+    # 更新状态
+    payment.status = status
+    
+    # 如果状态改为 success，自动设置支付时间
+    if status == "success" and not payment.paid_at:
+        payment.paid_at = datetime.now()
+    
+    # 如果提供了交易流水号，更新该字段
+    if transaction_id:
+        payment.transaction_id = transaction_id
+    
+    await db.flush()
+    await db.refresh(payment)
+    
     return payment
