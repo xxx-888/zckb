@@ -150,20 +150,20 @@ async def create_payment(
         select(UserSubscription).where(
             UserSubscription.user_id == str(current_user.id),
             UserSubscription.plan_id == str(data.plan_id),
-            UserSubscription.status.in_(["trial", "active", "expired"]),
+            UserSubscription.status.in_(["trial", "active", "expired", "cancelled"]),
         )
     )
     subscription = result.scalar_one_or_none()
     
     if not subscription:
-        # 创建新的订阅记录（trial 状态）
+        # 创建新的订阅记录（trial 状态，end_date 由支付时根据 billing_cycle 设置）
         today = date.today()
         subscription = UserSubscription(
             user_id=str(current_user.id),
             plan_id=str(data.plan_id),
             status="trial",
             start_date=today,
-            end_date=today + timedelta(days=30),
+            end_date=None,  # 支付成功后再根据 billing_cycle 设置
             auto_renew=True,
         )
         db.add(subscription)

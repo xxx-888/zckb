@@ -521,14 +521,13 @@ async def simulate_pay(
     subscription = result.scalar_one_or_none()
     if subscription:
         subscription.status = "active"
-        if not subscription.start_date:
-            today = date.today()
-            subscription.start_date = today
-            # 根据计费周期设置结束日期
-            if payment.billing_cycle == "monthly":
-                subscription.end_date = today + timedelta(days=30)
-            else:
-                subscription.end_date = today + timedelta(days=365)
+        today = date.today()
+        subscription.start_date = today
+        # 根据计费周期重新计算结束日期（无论之前是什么状态）
+        if payment.billing_cycle == "monthly":
+            subscription.end_date = today + timedelta(days=30)
+        else:
+            subscription.end_date = today + timedelta(days=365)
 
     await db.flush()
     await db.refresh(payment)
