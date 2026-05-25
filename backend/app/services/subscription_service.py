@@ -8,6 +8,7 @@ from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import BusinessException, NotFoundException
 from app.models.subscription import SubscriptionPlan, UserSubscription, PaymentRecord
@@ -44,7 +45,9 @@ async def get_current_subscription(
         UserSubscription | None: 当前有效订阅，无则返回 None
     """
     result = await db.execute(
-        select(UserSubscription).where(
+        select(UserSubscription)
+        .options(selectinload(UserSubscription.plan))
+        .where(
             UserSubscription.user_id == user_id,
             UserSubscription.status.in_(["trial", "active"]),
         )
