@@ -151,7 +151,7 @@ async def get_all_subscription_records(
         })
     
     return paginated(
-        data=items,
+        items=items,
         total=result["total"],
         page=result["page"],
         page_size=result["page_size"],
@@ -229,10 +229,10 @@ async def get_all_payment_records(
             "paid_at": payment.paid_at.isoformat() if payment.paid_at else None,
             "billing_cycle": payment.billing_cycle,
             "created_at": payment.created_at.isoformat() if payment.created_at else None,
-        }))
+        })
     
     return paginated(
-        data=items,
+        items=items,
         total=result["total"],
         page=result["page"],
         page_size=result["page_size"],
