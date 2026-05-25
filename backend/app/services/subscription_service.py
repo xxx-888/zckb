@@ -101,9 +101,14 @@ async def subscribe_plan(
     )
     db.add(subscription)
     await db.flush()
-    await db.refresh(subscription)
-
-    return subscription
+    
+    # 重新查询以预加载 plan 关系
+    result = await db.execute(
+        select(UserSubscription)
+        .options(selectinload(UserSubscription.plan))
+        .where(UserSubscription.id == subscription.id)
+    )
+    return result.scalar_one()
 
 
 async def upgrade_plan(
@@ -149,9 +154,14 @@ async def upgrade_plan(
     current.status = "active"
     current.end_date = date.today() + timedelta(days=365)
     await db.flush()
-    await db.refresh(current)
-
-    return current
+    
+    # 重新查询以预加载 plan 关系
+    result = await db.execute(
+        select(UserSubscription)
+        .options(selectinload(UserSubscription.plan))
+        .where(UserSubscription.id == current.id)
+    )
+    return result.scalar_one()
 
 
 async def cancel_subscription(
@@ -178,9 +188,14 @@ async def cancel_subscription(
     current.status = "cancelled"
     current.auto_renew = False
     await db.flush()
-    await db.refresh(current)
-
-    return current
+    
+    # 重新查询以预加载 plan 关系
+    result = await db.execute(
+        select(UserSubscription)
+        .options(selectinload(UserSubscription.plan))
+        .where(UserSubscription.id == current.id)
+    )
+    return result.scalar_one()
 
 
 async def check_subscription_limit(
