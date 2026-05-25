@@ -88,3 +88,4 @@ class CreatePaymentRequest(BaseModel):
 
     plan_id: UUID = Field(..., description="套餐ID")
     payment_method: str = Field(..., description="支付方式: wechat/alipay")
+    billing_cycle: str = Field("yearly", description="计费周期: monthly/yearly")

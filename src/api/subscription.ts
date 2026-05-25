@@ -95,7 +95,7 @@ export const subscriptionApi = {
   // ============ 支付模拟 ============
 
   // 创建支付订单
-  createPayment: async (data: { plan_id: string; payment_method: string }): Promise<PaymentRecord> => {
+  createPayment: async (data: { plan_id: string; payment_method: string; billing_cycle?: string }): Promise<PaymentRecord> => {
     const response = await api.post<any, any>('/v1/subscription/payment/create', data);
     return response.data || response;
   },

@@ -126,6 +126,9 @@ class PaymentRecord(BaseModel):
     paid_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True, comment="支付时间"
     )
+    billing_cycle: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="yearly", comment="计费周期: monthly/yearly"
+    )
 
     # -- 关系 --
     user: Mapped[User] = relationship("User")

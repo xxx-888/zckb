@@ -170,9 +170,10 @@ async def create_payment(
         await db.flush()
         await db.refresh(subscription)
     
-    # 创建支付记录，传入正确的 subscription.id
+    # 创建支付记录，传入正确的 subscription.id 和 billing_cycle
+    amount = plan.price_monthly if getattr(data, 'billing_cycle', 'yearly') == 'monthly' else plan.price_yearly
     payment = await subscription_service.create_payment(
-        db, current_user.id, subscription.id, plan.price_yearly, data.payment_method
+        db, current_user.id, subscription.id, amount, data.payment_method, data.billing_cycle
     )
     
     return success(

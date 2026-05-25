@@ -18,6 +18,7 @@ export const Subscription: React.FC = () => {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<'wechat' | 'alipay'>('wechat');
+  const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('yearly');
   const [paymentRecord, setPaymentRecord] = useState<any>(null);
 
   // 加载订阅计划和当前订阅
@@ -55,6 +56,7 @@ export const Subscription: React.FC = () => {
       const payment = await subscriptionApi.createPayment({
         plan_id: selectedPlan.id,
         payment_method: paymentMethod,
+        billing_cycle: billingCycle,
       });
       setPaymentRecord(payment);
       
@@ -199,10 +201,10 @@ export const Subscription: React.FC = () => {
                     <h3 className="text-lg font-black text-slate-900">{plan.name}</h3>
                     <div className="flex items-baseline gap-1 mt-2">
                       <span className="text-3xl font-black text-slate-900">
-                        {plan.price_monthly === 0 ? '免费' : `¥${plan.price_yearly}`}
+                        {plan.price_monthly === 0 ? '免费' : `¥${billingCycle === 'monthly' ? plan.price_monthly : plan.price_yearly}`}
                       </span>
                       {plan.price_monthly > 0 && (
-                        <span className="text-sm text-slate-400">/年</span>
+                        <span className="text-sm text-slate-400">/{billingCycle === 'monthly' ? '月' : '年'}</span>
                       )}
                     </div>
                   </div>
@@ -293,9 +295,47 @@ export const Subscription: React.FC = () => {
                 {selectedPlan.name}
               </h3>
               <p className="text-2xl font-black text-slate-900 mt-2">
-                ¥{selectedPlan.price_yearly}
-                <span className="text-sm font-normal text-slate-400">/年</span>
+                ¥{billingCycle === 'monthly' ? selectedPlan.price_monthly : selectedPlan.price_yearly}
+                <span className="text-sm font-normal text-slate-400">/{billingCycle === 'monthly' ? '月' : '年'}</span>
               </p>
+            </div>
+            
+            {/* 计费周期选择 */}
+            <div className="space-y-2">
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">计费周期：</p>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => setBillingCycle('monthly')}
+                  className={`p-4 rounded-xl border-2 transition-colors ${
+                    billingCycle === 'monthly'
+                      ? 'border-indigo-500 bg-indigo-50'
+                      : 'border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  <div className="text-center">
+                    <div className="text-lg font-black text-slate-900">¥{selectedPlan.price_monthly || 0}</div>
+                    <div className="text-xs text-slate-500">/月</div>
+                  </div>
+                </button>
+                <button
+                  onClick={() => setBillingCycle('yearly')}
+                  className={`p-4 rounded-xl border-2 transition-colors relative ${
+                    billingCycle === 'yearly'
+                      ? 'border-indigo-500 bg-indigo-50'
+                      : 'border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  {selectedPlan.price_yearly > 0 && selectedPlan.price_monthly > 0 && (
+                    <div className="absolute -top-2 -right-2 bg-emerald-500 text-white text-xs px-2 py-0.5 rounded-full">
+                      省{Math.round((1 - selectedPlan.price_yearly / (selectedPlan.price_monthly * 12)) * 100)}%
+                    </div>
+                  )}
+                  <div className="text-center">
+                    <div className="text-lg font-black text-slate-900">¥{selectedPlan.price_yearly || 0}</div>
+                    <div className="text-xs text-slate-500">/年</div>
+                  </div>
+                </button>
+              </div>
             </div>
             
             <div className="space-y-2">
@@ -351,7 +391,7 @@ export const Subscription: React.FC = () => {
                   处理中...
                 </>
               ) : (
-                `确认支付 ¥${selectedPlan.price_yearly}`
+                `确认支付 ¥${billingCycle === 'monthly' ? selectedPlan?.price_monthly : selectedPlan?.price_yearly}`
               )}
             </Button>
           </div>

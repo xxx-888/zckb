@@ -442,6 +442,7 @@ async def create_payment(
     subscription_id: UUID,
     amount: float,
     payment_method: str,
+    billing_cycle: str = "yearly",
 ) -> PaymentRecord:
     """
     创建支付记录
@@ -452,6 +453,7 @@ async def create_payment(
         subscription_id: 订阅ID
         amount: 支付金额
         payment_method: 支付方式（wechat/alipay）
+        billing_cycle: 计费周期（monthly/yearly）
 
     Returns:
         PaymentRecord: 创建的支付记录
@@ -466,6 +468,7 @@ async def create_payment(
         subscription_id=str(subscription_id),
         amount=amount,
         payment_method=payment_method,
+        billing_cycle=billing_cycle,
         status="pending",
     )
     db.add(payment)
@@ -521,7 +524,11 @@ async def simulate_pay(
         if not subscription.start_date:
             today = date.today()
             subscription.start_date = today
-            subscription.end_date = today + timedelta(days=365)
+            # 根据计费周期设置结束日期
+            if payment.billing_cycle == "monthly":
+                subscription.end_date = today + timedelta(days=30)
+            else:
+                subscription.end_date = today + timedelta(days=365)
 
     await db.flush()
     await db.refresh(payment)
