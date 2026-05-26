@@ -1,4 +1,4 @@
-"""用户相关模型：User、UserStore、Region。"""
+"""用户相关模型：User、UserStore。"""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .base import Base, BaseModel, GUID
 
 if TYPE_CHECKING:
+    from .region import Region
     from .settings import ReplyTemplate, UserNotificationSetting
     from .store import Store
     from .subscription import UserSubscription
@@ -38,10 +39,10 @@ class User(BaseModel):
         String(500), nullable=True, comment="头像URL"
     )
     role: Mapped[str] = mapped_column(
-        Enum("HQ", "OPERATOR", "STORE", name="user_role"),
+        Enum("HQ", "OPERATOR", "STORE", "SUPER_ADMIN", name="user_role"),
         nullable=False,
         default="STORE",
-        comment="角色: HQ-总部, OPERATOR-运营, STORE-门店",
+        comment="角色: HQ-总部, OPERATOR-运营, STORE-门店, SUPER_ADMIN-超级管理员",
     )
     status: Mapped[str] = mapped_column(
         Enum("active", "disabled", name="user_status"),
@@ -71,6 +72,14 @@ class User(BaseModel):
     notification_setting: Mapped[Optional[UserNotificationSetting]] = relationship(
         "UserNotificationSetting", back_populates="user", uselist=False, lazy="selectin"
     )
+    
+    # -- 多对多关系：用户关联的区域 --
+    regions: Mapped[list[Region]] = relationship(
+        "Region",
+        secondary="user_regions",
+        lazy="selectin",
+        back_populates="users",
+    )
 
 
 class UserStore(Base):
@@ -99,39 +108,3 @@ class UserStore(Base):
     # -- 关系 --
     user: Mapped[User] = relationship("User", back_populates="store_associations")
     store: Mapped[Store] = relationship("Store", back_populates="user_associations")
-
-
-class Region(BaseModel):
-    """区域层级表（省/市/区）。"""
-
-    __tablename__ = "regions"
-
-    name: Mapped[str] = mapped_column(
-        String(100), nullable=False, comment="区域名称"
-    )
-    parent_id: Mapped[Optional[UUID]] = mapped_column(
-        GUID(),
-        ForeignKey("regions.id", ondelete="SET NULL"),
-        nullable=True,
-        index=True,
-        comment="父级区域ID",
-    )
-    level: Mapped[str] = mapped_column(
-        Enum("province", "city", "district", name="region_level"),
-        nullable=False,
-        comment="层级: province-省, city-市, district-区",
-    )
-    code: Mapped[Optional[str]] = mapped_column(
-        String(20), nullable=True, index=True, comment="行政区划代码"
-    )
-
-    # -- 关系 --
-    parent: Mapped[Optional[Region]] = relationship(
-        "Region", remote_side="Region.id", lazy="selectin"
-    )
-    children: Mapped[list[Region]] = relationship(
-        "Region", back_populates="parent", lazy="selectin"
-    )
-    stores: Mapped[list[Store]] = relationship(
-        "Store", back_populates="region", lazy="selectin"
-    )

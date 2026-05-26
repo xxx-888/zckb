@@ -5,7 +5,7 @@
 
 # 调试：打印当前文件路径
 import inspect
-print(f"✅ Loading auth_service.py from: {inspect.getfile(inspect.currentframe())}")
+print(f"[OK] Loading auth_service.py from: {inspect.getfile(inspect.currentframe())}")
 
 from datetime import datetime
 

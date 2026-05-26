@@ -9,6 +9,7 @@ from uuid import UUID
 
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
 from app.core.exceptions import BusinessException, NotFoundException
 from app.models.review import ReplyAudit, Review
@@ -124,13 +125,15 @@ async def get_reviews(
 
     stmt = (
         select(Review)
+        .options(joinedload(Review.store))
         .where(where_clause)
         .order_by(Review.created_at.desc())
         .offset(offset)
         .limit(page_size)
     )
     result = await db.execute(stmt)
-    reviews = list(result.scalars().all())
+    # 使用 unique() 去除 JOIN 导致的重复行（必须在 scalars() 之后调用）
+    reviews = result.scalars().unique().all()
 
     return reviews, total
 
@@ -152,7 +155,7 @@ async def get_review_by_id(
     Raises:
         NotFoundException: 评论不存在
     """
-    result = await db.execute(select(Review).where(Review.id == review_id))
+    result = await db.execute(select(Review).options(joinedload(Review.store)).where(Review.id == review_id))
     review = result.scalar_one_or_none()
 
     if not review:

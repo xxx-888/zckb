@@ -97,3 +97,8 @@ api_router.include_router(annual_report_router)
 from app.api.v1.admin.subscription import router as admin_subscription_router
 
 api_router.include_router(admin_subscription_router)
+
+# admin/regions - 区域管理
+from app.api.v1.admin.region import router as admin_region_router
+
+api_router.include_router(admin_region_router)

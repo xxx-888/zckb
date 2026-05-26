@@ -148,6 +148,8 @@ export const MobileLayout: React.FC<MobileLayoutProps> = ({ children, title }) =
     setSelectedStore(store);
     localStorage.setItem('zc_selected_store_id', store.id);
     setIsStoreMenuOpen(false);
+    // 触发自定义事件，通知所有页面店铺已切换
+    window.dispatchEvent(new CustomEvent('zc-store-changed', { detail: store }));
   };
 
   const contextValue: StoreContextValue = {

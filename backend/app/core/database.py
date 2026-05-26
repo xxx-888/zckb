@@ -103,6 +103,8 @@ async def init_db() -> None:
     import app.models.report
     import app.models.settings as settings_models
     import app.models.verification_code  # 导入验证码模型
+    import app.models.region  # 导入区域模型
+    import app.models.user_region  # 导入用户-区域关联表
     
     async with async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

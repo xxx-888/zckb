@@ -82,24 +82,31 @@ def require_roles(*roles: str) -> Callable:
     """
     角色权限校验工厂函数
     返回一个依赖，用于校验当前用户是否拥有指定角色
-
+    SUPER_ADMIN 和 HQ 始终拥有所有权限
+    
     用法:
         @router.get("/admin-only")
         async def admin_route(
-            user: User = Depends(require_roles("admin", "super_admin"))
+            user: User = Depends(require_roles("HQ", "SUPER_ADMIN"))
         ):
             ...
-
+    
     Args:
         *roles: 允许访问的角色列表
-
+        
     Returns:
         Callable: FastAPI 依赖函数
     """
-
+    # 超级管理员角色列表
+    super_roles = ["SUPER_ADMIN", "HQ"]
+    
     async def role_checker(
         current_user: User = Depends(get_current_active_user),
     ) -> User:
+        # 超级管理员始终有所有权限
+        if current_user.role and current_user.role.upper() in [r.upper() for r in super_roles]:
+            return current_user
+        
         # 不区分大小写检查角色
         user_role_upper = current_user.role.upper() if current_user.role else ''
         allowed_roles_upper = [r.upper() for r in roles]
@@ -108,5 +115,5 @@ def require_roles(*roles: str) -> Callable:
                 f"权限不足，需要以下角色之一: {', '.join(roles)}"
             )
         return current_user
-
+    
     return role_checker

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 from uuid import UUID
@@ -11,15 +10,6 @@ from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, JSON, Strin
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import BaseModel, GUID
-
-# 数据库类型检测：SQLite 不支持 ARRAY 和 JSONB，使用 JSON 替代
-if "sqlite" in os.environ.get("DATABASE_URL", "").lower():
-    ArrayField = JSON
-    JsonField = JSON
-else:
-    from sqlalchemy.dialects.postgresql import ARRAY, JSONB
-    ArrayField = ARRAY
-    JsonField = JSONB
 
 if TYPE_CHECKING:
     from .ai_config import AIProcessingLog
@@ -61,7 +51,7 @@ class Review(BaseModel):
         Text, nullable=True, comment="评论内容"
     )
     images: Mapped[Optional[list[str]]] = mapped_column(
-        ArrayField(Text), nullable=True, comment="评论图片URL列表"
+        JSON, nullable=True, comment="评论图片URL列表"
     )
     sentiment: Mapped[Optional[str]] = mapped_column(
         Enum("positive", "negative", "neutral", name="review_sentiment"),
@@ -69,10 +59,10 @@ class Review(BaseModel):
         comment="情感分析: positive-正面, negative-负面, neutral-中性",
     )
     tags: Mapped[Optional[list[str]]] = mapped_column(
-        ArrayField(Text), nullable=True, comment="标签列表"
+        JSON, nullable=True, comment="标签列表"
     )
     raw_json: Mapped[Optional[dict]] = mapped_column(
-        JsonField, nullable=True, comment="原始爬虫数据(JSONB)"
+        JSON, nullable=True, comment="原始爬虫数据"
     )
     reply: Mapped[Optional[str]] = mapped_column(
         Text, nullable=True, comment="商家回复内容"
@@ -145,9 +135,9 @@ class ReplyAudit(BaseModel):
         comment="风险等级",
     )
     scores: Mapped[Optional[dict]] = mapped_column(
-        JsonField,
+        JSON,
         nullable=True,
-        comment="评分(JSONB): realism/empathy/concreteness/consistency",
+        comment="评分: realism/empathy/concreteness/consistency",
     )
     reject_reason: Mapped[Optional[str]] = mapped_column(
         Text, nullable=True, comment="拒绝原因"

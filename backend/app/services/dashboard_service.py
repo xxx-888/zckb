@@ -40,7 +40,7 @@ def _build_store_filter(user: User) -> Optional:
 
 def _get_period_days(period: str) -> int:
     """将周期字符串转换为天数"""
-    mapping = {"7d": 7, "30d": 30, "90d": 90}
+    mapping = {"1d": 1, "7d": 7, "30d": 30, "90d": 90}
     return mapping.get(period, 30)
 
 
@@ -78,8 +78,16 @@ async def get_core_stats(
     """
     days = _get_period_days(period)
     now = datetime.utcnow()
-    current_start = now - timedelta(days=days)
-    previous_start = now - timedelta(days=days * 2)
+
+    if period == "1d":
+        # 按自然天计算：current_start = 今天 UTC 00:00:00
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        current_start = today_start
+        previous_start = today_start - timedelta(days=1)
+        # 昨天的范围是 [previous_start, current_start)
+    else:
+        current_start = now - timedelta(days=days)
+        previous_start = now - timedelta(days=days * 2)
 
     # 构建基础条件
     base_conditions = [Review.status == "normal"]
@@ -292,6 +300,7 @@ async def get_recent_reviews(
 
     stmt = (
         select(Review)
+        .options(joinedload(Review.store))
         .where(where_clause)
         .order_by(Review.created_at.desc())
         .limit(limit)
@@ -362,6 +371,7 @@ async def get_store_rankings(
                 "reviews": row.review_count,
                 "trend": 0.0,  # TODO: 与上期对比计算趋势
                 "health": health,
+                "health_score": health_score,
             }
         )
 

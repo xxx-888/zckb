@@ -138,6 +138,39 @@ export const reviewsApi = {
     const response = await api.delete(`/v1/reviews/${id}`);
     return response.data;
   },
+
+  // 批量导入评论
+  importReviews: async (file: File, storeId: string): Promise<any> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post<any>(`/v1/reviews/import?store_id=${storeId}`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    // 拦截器已解包到 response.data（即响应体本身）
+    // 所以 response 已经是 { code, data, message }，直接返回即可
+    return response;
+  },
+
+  // 导出评论
+  exportReviews: async (filters?: ReviewFilter): Promise<Blob> => {
+    const params = new URLSearchParams();
+    if (filters) {
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== '') {
+          params.append(key, String(value));
+        }
+      });
+    }
+    
+    // 只有当有参数时才添加 ?
+    const queryString = params.toString();
+    const url = queryString ? `/v1/reviews/export?${queryString}` : '/v1/reviews/export';
+    
+    const response = await api.get(url, {
+      responseType: 'blob',
+    });
+    return response.data || response;
+  },
 };
 
 // 兼容旧函数名的别名

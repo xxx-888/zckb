@@ -31,8 +31,29 @@ async def get_high_quality_reviews(
         tuple[list, int]: (好评列表, 总数)
     """
     # 构建查询条件：高评分、有内容、正面情感
+    # 获取用户关联的店铺ID
+    from app.models.store import Store, UserStore
+    
+    # 查询用户拥有的店铺
+    owned_stores_result = await db.execute(
+        select(Store.id).where(Store.owner_id == user.id)
+    )
+    owned_store_ids = [row[0] for row in owned_stores_result.all()]
+    
+    # 查询用户关联的店铺（通过 user_stores 表）
+    associated_stores_result = await db.execute(
+        select(UserStore.store_id).where(UserStore.user_id == user.id)
+    )
+    associated_store_ids = [row[0] for row in associated_stores_result.all()]
+    
+    # 合并店铺ID
+    user_store_ids = list(set(owned_store_ids + associated_store_ids))
+    
+    if not user_store_ids:
+        return [], 0
+    
     conditions = [
-        Review.store_id.in_([s.id for s in user.stores]),
+        Review.store_id.in_(user_store_ids),
         Review.rating >= 4,
         Review.sentiment == "positive",
         Review.content.isnot(None),

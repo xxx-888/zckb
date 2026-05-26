@@ -4,7 +4,7 @@
 """
 
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 from uuid import UUID
 
 from sqlalchemy import func, or_, select
@@ -14,22 +14,47 @@ from app.core.exceptions import BusinessException, ForbiddenException, NotFoundE
 from app.models.review import Review
 from app.models.store import Store, StorePlatform
 from app.models.user import User, UserStore
+from app.services import user_region_service  # 导入用户区域服务
 
 
-def _build_store_filter_for_user(query, user: User):
+async def _build_store_filter_for_user(query, user: User, db: AsyncSession):
     """
-    根据用户角色构建门店过滤条件
-    - HQ: 查看所有门店
-    - OPERATOR: 查看关联门店
-    - STORE: 查看关联门店
+    根据用户角色和区域权限构建门店过滤条件
+    权限计算：取并集（区域权限 + 直接店铺权限）
     """
-    if user.role == "HQ":
+    
+    # 超级管理员不受限制
+    if user.role in ["SUPER_ADMIN", "HQ"]:
         return query
-    # OPERATOR 和 STORE 角色只能查看关联门店
-    return query.join(
-        UserStore,
-        UserStore.store_id == Store.id,
-    ).where(UserStore.user_id == user.id)
+    
+    # 获取用户关联的区域（包括子级）- 需要使用 await
+    region_ids = await user_region_service.get_user_accessible_region_ids(db, user.id)
+    
+    # 构建过滤条件：店铺的 region_id 在用户区域内 OR 店铺直接关联用户
+    if region_ids:
+        # 区域权限：店铺的 region_id 在用户可访问的区域列表中
+        region_filter = Store.region_id.in_(region_ids)
+        
+        # 直接关联权限：通过 owner_id 或 user_stores 表
+        direct_filter = or_(
+            Store.owner_id == user.id,
+            Store.id.in_(
+                select(UserStore.store_id).where(UserStore.user_id == user.id)
+            )
+        )
+        
+        # 取并集
+        return query.where(or_(region_filter, direct_filter))
+    else:
+        # 如果没有区域权限，只能看直接关联的店铺
+        return query.where(
+            or_(
+                Store.owner_id == user.id,
+                Store.id.in_(
+                    select(UserStore.store_id).where(UserStore.user_id == user.id)
+                )
+            )
+        )
 
 
 async def get_stores(
@@ -60,9 +85,9 @@ async def get_stores(
     query = select(Store)
     count_query = select(func.count(Store.id))
 
-    # 角色过滤
-    query = _build_store_filter_for_user(query, user)
-    count_query = _build_store_filter_for_user(count_query, user)
+    # 角色过滤 - 需要使用 await
+    query = await _build_store_filter_for_user(query, user, db)
+    count_query = await _build_store_filter_for_user(count_query, user, db)
 
     # 条件筛选
     conditions = []
@@ -448,7 +473,7 @@ async def get_stores_stats(
     """
     # 构建基础查询
     query = select(Store)
-    query = _build_store_filter_for_user(query, user)
+    query = await _build_store_filter_for_user(query, user, db)
 
     result = await db.execute(query)
     stores = list(result.scalars().all())

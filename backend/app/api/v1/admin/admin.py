@@ -29,7 +29,7 @@ from app.schemas.admin import (
     SystemHealthResponse,
     SystemStatsResponse,
 )
-from app.services import admin_service
+from app.services import admin_service, user_region_service
 
 router = APIRouter(prefix="/admin", tags=["后台管理"])
 
@@ -261,3 +261,49 @@ async def assign_stores(
     store_uuids = [UUID(sid) for sid in store_ids]
     await admin_service.assign_stores(db, user_id, store_uuids)
     return success(message="门店分配成功")
+
+
+@router.get("/permissions/admins/{user_id}/regions", summary="获取用户关联的区域")
+async def get_user_regions(
+    user_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles("HQ", "SUPER_ADMIN")),
+) -> dict:
+    """
+    获取用户关联的区域列表
+    """
+    regions = await user_region_service.get_user_regions(db, user_id)
+    return success(data={"items": regions})
+
+
+@router.post("/permissions/admins/{user_id}/regions", summary="添加用户区域关联")
+async def add_user_region(
+    user_id: UUID,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles("HQ", "SUPER_ADMIN")),
+) -> dict:
+    """
+    添加用户区域关联
+    - body: {"region_id": "uuid"}
+    """
+    region_id = body.get("region_id")
+    if not region_id:
+        raise HTTPException(status_code=400, detail="缺少 region_id 参数")
+    
+    result = await user_region_service.add_user_region(db, user_id, UUID(region_id))
+    return success(message=result["message"])
+
+
+@router.delete("/permissions/admins/{user_id}/regions/{region_id}", summary="移除用户区域关联")
+async def remove_user_region(
+    user_id: UUID,
+    region_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles("HQ", "SUPER_ADMIN")),
+) -> dict:
+    """
+    移除用户区域关联
+    """
+    result = await user_region_service.remove_user_region(db, user_id, region_id)
+    return success(message=result["message"])

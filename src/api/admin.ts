@@ -109,6 +109,34 @@ export const adminApi = {
     return response.data;
   },
 
+  // ==================== 区域分配管理 ====================
+
+  /** 获取区域树形结构 */
+  getRegionTree: async (): Promise<any> => {
+    const response = await api.get<any>('/v1/admin/regions/tree');
+    return response.data || response;
+  },
+
+  /** 获取用户关联的区域 */
+  getUserRegions: async (userId: string): Promise<any> => {
+    const response = await api.get<any>(`/v1/admin/permissions/admins/${userId}/regions`);
+    return response.data || response;
+  },
+
+  /** 添加用户区域关联 */
+  addUserRegion: async (userId: string, regionId: string): Promise<any> => {
+    const response = await api.post<any, any>(`/v1/admin/permissions/admins/${userId}/regions`, {
+      region_id: regionId,
+    });
+    return response.data || response;
+  },
+
+  /** 移除用户区域关联 */
+  removeUserRegion: async (userId: string, regionId: string): Promise<any> => {
+    const response = await api.delete(`/v1/admin/permissions/admins/${userId}/regions/${regionId}`);
+    return response.data || response;
+  },
+
   getPermissionsStructure: async (): Promise<any[]> => {
     const response = await api.get<any>('/v1/admin/permissions/structure');
     return response.data || response;

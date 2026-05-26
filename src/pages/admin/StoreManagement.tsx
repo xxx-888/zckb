@@ -22,8 +22,10 @@ export const StoreManagement: React.FC = () => {
   const [editingStore, setEditingStore] = useState<StoreType | null>(null);
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [selectedStoreForUsers, setSelectedStoreForUsers] = useState<StoreType | null>(null);
-  const [newStore, setNewStore] = useState({ name: '', type: 'restaurant', address: '', phone: '', owner_id: '' });
-  const [editData, setEditData] = useState({ name: '', type: 'restaurant', address: '', phone: '', owner_id: '', status: 'pending' });
+  const [newStore, setNewStore] = useState({ name: '', type: 'restaurant', address: '', phone: '', owner_id: '', region_id: '' });
+  const [editData, setEditData] = useState({ name: '', type: 'restaurant', address: '', phone: '', owner_id: '', status: 'pending', region_id: '' });
+  const [regions, setRegions] = useState<any[]>([]);
+  const [loadingRegions, setLoadingRegions] = useState(false);
 
   const { success, error: toastError } = useToast();
 
@@ -31,15 +33,19 @@ export const StoreManagement: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const [st, us] = await Promise.allSettled([
+      const [st, us, rg] = await Promise.allSettled([
         storesApi.getStores({ page_size: 100 }).catch(err => { console.warn('[StoreMgmt] 门店获取失败:', err); return { items: [] }; }),
         adminApi.getAdminUsers().catch(err => { console.warn('[StoreMgmt] 用户获取失败:', err); return []; }),
+        adminApi.getRegionTree().catch(err => { console.warn('[StoreMgmt] 区域获取失败:', err); return []; }),
       ]);
       if (st.status === 'fulfilled') setStores((st.value as any)?.items || st.value || []);
       if (us.status === 'fulfilled') {
         const data = us.value;
         const users = Array.isArray(data) ? data : (Array.isArray((data as any)?.items) ? (data as any).items : []);
         setAllUsers(users.map((u: any) => ({ ...u, assignedStores: u.assignedStores || u.assigned_stores || [] })));
+      }
+      if (rg.status === 'fulfilled') {
+        setRegions(rg.value || []);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : '获取数据失败');
@@ -83,13 +89,14 @@ export const StoreManagement: React.FC = () => {
 
   const handleAdd = async () => {
     if (!newStore.name) { toastError('添加失败', '请填写门店名称'); return; }
+    if (!newStore.region_id) { toastError('添加失败', '请选择所属区域'); return; }
     try {
       const data: any = { ...newStore };
       if (data.owner_id === '') delete data.owner_id;
       await storesApi.createStore(data);
       success('添加成功', `门店 "${newStore.name}" 已创建`);
       setShowAdd(false);
-      setNewStore({ name: '', type: 'restaurant', address: '', phone: '', owner_id: '' });
+      setNewStore({ name: '', type: 'restaurant', address: '', phone: '', owner_id: '', region_id: '' });
       loadData();
     } catch (err: any) { toastError('添加失败', err.message); }
   };
@@ -114,7 +121,7 @@ export const StoreManagement: React.FC = () => {
 
   const openEdit = (s: StoreType) => {
     setEditingStore(s);
-    setEditData({ name: s.name, type: s.type || 'restaurant', address: s.address || '', phone: s.phone || '', owner_id: s.owner_id || '', status: s.status || 'pending' });
+    setEditData({ name: s.name, type: s.type || 'restaurant', address: s.address || '', phone: s.phone || '', owner_id: s.owner_id || '', status: s.status || 'pending', region_id: s.region_id || '' });
     setShowEdit(true);
   };
 
@@ -210,6 +217,10 @@ export const StoreManagement: React.FC = () => {
                 <option value="">请选择负责人</option>
                 {allUsers.map(u => <option key={u.id} value={u.id}>{u.username}（{u.phone || '无手机'}）</option>)}
               </select>
+              <select className="w-full p-2.5 border border-slate-200 rounded-lg text-sm" value={newStore.region_id} onChange={e => setNewStore(p => ({ ...p, region_id: e.target.value }))}>
+                <option value="">请选择区域 *</option>
+                {regions.map(r => <option key={r.id} value={r.id}>{r.name}（{r.level === 'province' ? '省' : r.level === 'city' ? '市' : '区'}）</option>)}
+              </select>
               <div className="flex justify-end gap-3"><Button variant="ghost" onClick={() => setShowAdd(false)}>取消</Button><Button className="bg-indigo-500 text-white" onClick={handleAdd}>添加</Button></div>
             </Card>
           </div>
@@ -234,6 +245,10 @@ export const StoreManagement: React.FC = () => {
               <select className="w-full p-2.5 border border-slate-200 rounded-lg text-sm" value={editData.owner_id} onChange={e => setEditData(p => ({ ...p, owner_id: e.target.value }))}>
                 <option value="">请选择负责人</option>
                 {allUsers.map(u => <option key={u.id} value={u.id}>{u.username}（{u.phone || '无手机'}）</option>)}
+              </select>
+              <select className="w-full p-2.5 border border-slate-200 rounded-lg text-sm" value={editData.region_id} onChange={e => setEditData(p => ({ ...p, region_id: e.target.value }))}>
+                <option value="">请选择区域</option>
+                {regions.map(r => <option key={r.id} value={r.id}>{r.name}（{r.level === 'province' ? '省' : r.level === 'city' ? '市' : '区'}）</option>)}
               </select>
               <div className="flex justify-end gap-3"><Button variant="ghost" onClick={() => setShowEdit(false)}>取消</Button><Button className="bg-indigo-500 text-white" onClick={handleEdit}>保存</Button></div>
             </Card>

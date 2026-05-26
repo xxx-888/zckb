@@ -54,7 +54,7 @@ export const Dashboard: React.FC = () => {
   // ===== 判断用户角色 =====
   const isHQ = currentUser?.role === 'HQ' || currentUser?.role === 'OPERATOR';
   const [showTimeDropdown, setShowTimeDropdown] = useState(false);
-  const [timePeriod, setTimePeriod] = useState<'today' | 'yesterday' | '7days' | '30days' | 'custom'>('7days');
+  const [timePeriod, setTimePeriod] = useState<'today' | 'yesterday' | '7days' | '30days' | '90days' | 'custom'>('7days');
   const dropdownRef = React.useRef<HTMLDivElement>(null);
 
   // ===== API 数据状态 =====
@@ -65,9 +65,13 @@ export const Dashboard: React.FC = () => {
   const [healthStats, setHealthStats] = useState<HealthStatus[]>([]);
   const [alert, setAlert] = useState<AlertData | null>(null);
   const [storeHealth, setStoreHealth] = useState<{
-    healthScore: number;
-    rankPercentile: number;
-    suggestion: string;
+    store_id: string;
+    store_name: string;
+    health_score: number;
+    review_count: number;
+    avg_rating: number;
+    reply_rate: number;
+    trend: number;
   } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -87,6 +91,7 @@ export const Dashboard: React.FC = () => {
     { value: 'yesterday', label: '昨天', dateRange: '2026年05月11日' },
     { value: '7days', label: '最近7天', dateRange: '2026年05月06日 - 05月12日' },
     { value: '30days', label: '最近30天', dateRange: '2026年04月13日 - 05月12日' },
+    { value: '90days', label: '最近90天', dateRange: '2026年02月12日 - 05月12日' },
     { value: 'custom', label: '自定义', dateRange: '选择日期范围' },
   ];
 
@@ -116,24 +121,33 @@ export const Dashboard: React.FC = () => {
     navigate('/mobile/negative-reply');
   };
 
+  // ===== 时间周期映射（前端 → 后端）=====
+  const mapPeriod = (tp: string): string => {
+    const m: Record<string, string> = {
+      'today': '1d',
+      'yesterday': '1d',
+      '7days': '7d',
+      '30days': '30d',
+      '90days': '90d',
+      'custom': '7d',
+    };
+    return m[tp] || '7d';
+  };
+
   // ===== 获取数据 =====
-  const fetchAllData = useCallback(async (storeId?: string) => {
+  const fetchAllData = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
 
-      const currentStoreId = storeId || selectedStore?.id;
-      if (!currentStoreId) {
-        setLoading(false);
-        return;
-      }
+      const period = mapPeriod(timePeriod);
 
       const [coreStatsRes, platformDataRes, recentReviewsRes, storeRankingsRes, healthStatsRes] = await Promise.all([
-        fetchCoreStats(timePeriod, currentStoreId),
-        fetchPlatformData(currentStoreId),
-        fetchRecentReviews(5, currentStoreId),
-        fetchStoreRankings(5, currentStoreId),
-        fetchHealthStatus(currentStoreId),
+        fetchCoreStats(period),
+        fetchPlatformData(),
+        fetchRecentReviews(5),
+        fetchStoreRankings(5),
+        fetchHealthStatus(),
       ]);
 
       setCoreStats(coreStatsRes);
@@ -143,11 +157,16 @@ export const Dashboard: React.FC = () => {
       if (isHQ) {
         setStoreRankings(storeRankingsRes);
       } else {
-        const storeHealthRes = await fetchStoreHealth(currentStoreId);
-        setStoreHealth(storeHealthRes);
+        const storeHealthRes = await fetchStoreHealth();
+        // 后端返回数组，商户视图取第一个
+        if (storeHealthRes && storeHealthRes.length > 0) {
+          setStoreHealth(storeHealthRes[0]);
+        } else {
+          setStoreHealth(null);
+        }
       }
 
-      const alertRes = await fetchAlert(currentStoreId);
+      const alertRes = await fetchAlert();
       setAlert(alertRes);
 
       setHealthStats(healthStatsRes);
@@ -156,22 +175,14 @@ export const Dashboard: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [timePeriod, selectedStore, isHQ]);
+  }, [timePeriod, isHQ, fetchCoreStats, fetchPlatformData, fetchRecentReviews, fetchStoreRankings, fetchHealthStatus, fetchAlert, fetchStoreHealth]);
 
-  // ===== 店铺切换时重新获取数据 =====
-  useEffect(() => {
-    if (selectedStore?.id) {
-      fetchAllData(selectedStore.id);
-    }
-  }, [selectedStore, fetchAllData]);
-
+  // ===== 时间周期变化时重新获取数据 =====
   useEffect(() => {
     if (lastPeriodRef.current === timePeriod) return;
     lastPeriodRef.current = timePeriod;
-    if (selectedStore?.id) {
-      fetchAllData();
-    }
-  }, [timePeriod, selectedStore, fetchAllData]);
+    fetchAllData();
+  }, [timePeriod, fetchAllData]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -192,6 +203,22 @@ export const Dashboard: React.FC = () => {
     }
   }, [navigate]);
 
+  // ===== 订阅状态检测（优先检查） =====
+  if (subscriptionLoading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-sm text-slate-500">正在检查订阅状态...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!hasValidSubscription) {
+    return <SubscriptionPrompt featureName="首页" />;
+  }
+
   // ===== 加载状态 =====
   if (loading) {
     return (
@@ -210,7 +237,7 @@ export const Dashboard: React.FC = () => {
   }
 
   // ===== 无店铺状态 =====
-  if (!loading && !selectedStore) {
+  if (!selectedStore) {
     return (
       <MobileLayout title={isHQ ? "门店动态" : "数据概览"}>
         <div className="flex-1 flex items-center justify-center p-4">
@@ -243,20 +270,22 @@ export const Dashboard: React.FC = () => {
     );
   }
 
-  // ===== 订阅状态检测 =====
-  if (subscriptionLoading) {
+  // ===== 无数据状态 =====
+  const hasNoData = !coreStats || (recentReviews.length === 0 && platformData.length === 0);
+  if (hasNoData) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-sm text-slate-500">正在检查订阅状态...</p>
+      <MobileLayout title={isHQ ? "门店动态" : "数据概览"}>
+        <div className="flex-1 flex items-center justify-center p-4">
+          <div className="text-center">
+            <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4">
+              <BarChart3 className="w-8 h-8 text-slate-300" />
+            </div>
+            <p className="text-base font-semibold text-slate-400 mb-2">暂无数据</p>
+            <p className="text-sm text-slate-400">当前筛选条件下没有数据</p>
+          </div>
         </div>
-      </div>
+      </MobileLayout>
     );
-  }
-
-  if (!hasValidSubscription) {
-    return <SubscriptionPrompt featureName="首页" />;
   }
 
   return (
@@ -329,7 +358,7 @@ export const Dashboard: React.FC = () => {
             </div>
             <div className="flex items-center gap-1 bg-emerald-50 px-2 py-1 rounded-full">
               <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />
-              <span className="text-xs font-bold text-emerald-600">{coreStats?.review_trend || '0%'}</span>
+              <span className="text-xs font-bold text-emerald-600">{coreStats?.review_trend != null ? `+${(coreStats.review_trend as number).toFixed(1)}%` : '0%'}</span>
             </div>
           </div>
 
@@ -339,19 +368,19 @@ export const Dashboard: React.FC = () => {
               <Star className="w-4 h-4 fill-amber-400 text-amber-400 mx-auto mb-1" />
               <p className="text-lg font-black text-slate-900">{(coreStats?.avg_rating || 0).toFixed(1)}</p>
               <p className="text-[9px] text-slate-400">平均星级</p>
-              <p className="text-[9px] text-emerald-500 mt-0.5">+{coreStats?.rating_trend || '0%'}</p>
+              <p className="text-[9px] text-emerald-500 mt-0.5">{coreStats?.rating_trend != null ? `+${(coreStats.rating_trend as number).toFixed(1)}` : '+0'}</p>
             </div>
             <div className="bg-slate-50 rounded-xl p-3 text-center">
               <ThumbsUp className="w-4 h-4 text-emerald-500 mx-auto mb-1" />
-              <p className="text-lg font-black text-slate-900">{coreStats?.positive_rate || '0%'}</p>
+              <p className="text-lg font-black text-slate-900">{coreStats?.positive_rate != null ? `${(coreStats.positive_rate as number).toFixed(1)}%` : '0%'}</p>
               <p className="text-[9px] text-slate-400">好评率</p>
-              <p className="text-[9px] text-emerald-500 mt-0.5">{coreStats?.positive_trend || '0%'}</p>
+              <p className="text-[9px] text-emerald-500 mt-0.5">{coreStats?.positive_trend != null ? `+${(coreStats.positive_trend as number).toFixed(1)}%` : '0%'}</p>
             </div>
             <div className="bg-slate-50 rounded-xl p-3 text-center">
               <Bot className="w-4 h-4 text-blue-500 mx-auto mb-1" />
-              <p className="text-lg font-black text-slate-900">{coreStats?.ai_reply_rate || '0%'}</p>
+              <p className="text-lg font-black text-slate-900">{coreStats?.ai_reply_rate != null ? `${(coreStats.ai_reply_rate as number).toFixed(1)}%` : '0%'}</p>
               <p className="text-[9px] text-slate-400">AI回复率</p>
-              <p className="text-[9px] text-emerald-500 mt-0.5">{coreStats?.reply_trend || '0%'}</p>
+              <p className="text-[9px] text-emerald-500 mt-0.5">{coreStats?.reply_trend != null ? `+${(coreStats.reply_trend as number).toFixed(1)}%` : '0%'}</p>
             </div>
           </div>
 
@@ -462,7 +491,7 @@ export const Dashboard: React.FC = () => {
                     )}>{i === 0 ? '👑' : i + 1}</span>
                     <div className="flex flex-col">
                       <span className="text-sm font-medium text-slate-700">{store.name}</span>
-                      <span className="text-[10px] text-slate-400">健康值 {store.health}</span>
+                      <span className="text-[10px] text-slate-400">健康值 {store.health_score ?? '-'}</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-4">
@@ -503,13 +532,19 @@ export const Dashboard: React.FC = () => {
                 <p className="text-sm font-bold text-slate-700">口碑健康值</p>
               </div>
               <div className="flex items-baseline gap-2 mt-1">
-                <h3 className="text-4xl font-bold text-slate-900 tracking-tight">{storeHealth.healthScore}</h3>
-                <Badge className="bg-emerald-50 text-emerald-600 border-emerald-200 text-[10px] flex items-center gap-0.5">
-                  <TrendingUp className="w-3 h-3" /> 极优
+                <h3 className="text-4xl font-bold text-slate-900 tracking-tight">{storeHealth.health_score}</h3>
+                <Badge className={cn(
+                  "text-[10px] flex items-center gap-0.5 border",
+                  storeHealth.health_score >= 80 ? "bg-emerald-50 text-emerald-600 border-emerald-200" :
+                  storeHealth.health_score >= 60 ? "bg-amber-50 text-amber-600 border-amber-200" :
+                  "bg-rose-50 text-rose-600 border-rose-200"
+                )}>
+                  <TrendingUp className="w-3 h-3" />
+                  {storeHealth.health_score >= 80 ? '极优' : storeHealth.health_score >= 60 ? '良好' : '需改进'}
                 </Badge>
               </div>
               <p className="mt-4 text-slate-500 font-medium text-xs leading-relaxed max-w-[80%]">
-                {storeHealth.suggestion}
+                {storeHealth.review_count} 条评论，平均 {storeHealth.avg_rating} 星，回复率 {storeHealth.reply_rate}%
               </p>
             </div>
             <Award className="absolute -right-4 -bottom-4 w-32 h-32 text-orange-50" />
@@ -542,7 +577,7 @@ export const Dashboard: React.FC = () => {
                   </div>
                   <div className="flex flex-col flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-bold text-slate-800">{review.user}</span>
+                      <span className="text-sm font-bold text-slate-800">{review.user_name}</span>
                       <span className="text-[10px] text-slate-400">{review.time}</span>
                       <Badge className={cn(
                         "text-[9px] px-1.5 h-4 border-none",

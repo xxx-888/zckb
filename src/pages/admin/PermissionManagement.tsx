@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Shield, Search, Plus, Users, UserPlus, XCircle, CheckCircle, RefreshCw,
-  AlertCircle, Store, Settings, Pencil, Trash2, UserCheck, UserX, Clock, Calendar
+  AlertCircle, Store, Settings, Pencil, Trash2, UserCheck, UserX, Clock, Calendar, Globe
 } from 'lucide-react';
 import { Card } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
@@ -29,6 +29,12 @@ export const PermissionManagement: React.FC = () => {
   const [showStoreAssign, setShowStoreAssign] = useState(false);
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
   const [selectedStoreIds, setSelectedStoreIds] = useState<string[]>([]);
+  
+  // 区域分配状态
+  const [showRegionAssign, setShowRegionAssign] = useState(false);
+  const [selectedRegionIds, setSelectedRegionIds] = useState<string[]>([]);
+  const [regionTree, setRegionTree] = useState<any[]>([]);
+  const [loadingRegions, setLoadingRegions] = useState(false);
 
   // 表单状态
   const [formData, setFormData] = useState({ name: '', username: '', email: '', phone: '', password: '', role: 'OPERATOR', permissions: '', description: '' });
@@ -204,6 +210,101 @@ export const PermissionManagement: React.FC = () => {
     );
   };
 
+  // ==================== 区域分配 ====================
+  const fetchRegionTree = async () => {
+    try {
+      setLoadingRegions(true);
+      const data = await adminApi.getRegionTree();
+      setRegionTree(data || []);
+    } catch (err: any) {
+      console.error('[Permission] 获取区域树失败:', err);
+      toastError('获取区域失败', err.message);
+    } finally {
+      setLoadingRegions(false);
+    }
+  };
+
+  const openRegionAssign = async (user: AdminUser) => {
+    setSelectedUser(user);
+    setLoadingRegions(true);
+    setShowRegionAssign(true);
+    
+    try {
+      // 并行获取区域树和用户已关联区域
+      const [treeData, userRegionsRes] = await Promise.all([
+        adminApi.getRegionTree(),
+        adminApi.getUserRegions(user.id)
+      ]);
+      
+      setRegionTree(treeData || []);
+      
+      // 设置已选中的区域ID
+      const userRegions = userRegionsRes?.items || userRegionsRes?.data?.items || [];
+      const regionIds = userRegions.map((r: any) => r.id);
+      setSelectedRegionIds(regionIds);
+    } catch (err: any) {
+      console.error('[Permission] 打开区域分配失败:', err);
+      toastError('获取数据失败', err.message);
+    } finally {
+      setLoadingRegions(false);
+    }
+  };
+
+  const toggleRegion = (regionId: string) => {
+    setSelectedRegionIds(prev =>
+      prev.includes(regionId) ? prev.filter(id => id !== regionId) : [...prev, regionId]
+    );
+  };
+
+  const handleSaveRegionAssign = async () => {
+    if (!selectedUser) return;
+    
+    try {
+      // 获取用户当前的区域
+      const userRegionsRes = await adminApi.getUserRegions(selectedUser.id);
+      const currentRegionIds = (userRegionsRes?.items || userRegionsRes?.data?.items || []).map((r: any) => r.id);
+      
+      // 计算需要添加和移除的区域
+      const toAdd = selectedRegionIds.filter((id: string) => !currentRegionIds.includes(id));
+      const toRemove = currentRegionIds.filter((id: string) => !selectedRegionIds.includes(id));
+      
+      // 并行执行添加和移除
+      await Promise.all([
+        ...toAdd.map((regionId: string) => adminApi.addUserRegion(selectedUser.id, regionId)),
+        ...toRemove.map((regionId: string) => adminApi.removeUserRegion(selectedUser.id, regionId))
+      ]);
+      
+      success('分配成功', '区域权限已更新');
+      setShowRegionAssign(false);
+      fetchData();
+    } catch (err: any) {
+      toastError('分配失败', err.message);
+    }
+  };
+
+  // ==================== 递归渲染区域节点 ====================
+  const renderRegionNode = (region: any, depth: number): JSX.Element => {
+    const hasChildren = region.children && region.children.length > 0;
+    return (
+      <div key={region.id}>
+        <label className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${selectedRegionIds.includes(region.id) ? 'border-indigo-300 bg-indigo-50' : 'border-slate-100 hover:border-slate-200'}`} style={{ marginLeft: `${depth * 20}px` }}>
+          <input type="checkbox" checked={selectedRegionIds.includes(region.id)} onChange={() => toggleRegion(region.id)} className="w-4 h-4 rounded border-slate-300 text-indigo-500 focus:ring-indigo-400" />
+          <div className="flex-1">
+            <p className="text-sm font-medium text-slate-900">{region.name} <span className="text-xs text-slate-400 ml-2">{region.level === 'province' ? '省' : region.level === 'city' ? '市' : '区'}</span></p>
+            {region.code && <p className="text-xs text-slate-400">代码: {region.code}</p>}
+          </div>
+          {selectedRegionIds.includes(region.id) && <CheckCircle className="w-4 h-4 text-indigo-500" />}
+        </label>
+        {/* 递归渲染子级 */}
+        {hasChildren && (
+          <div className="ml-6 space-y-2 mt-2">
+            {region.children.map((child: any) => renderRegionNode(child, depth + 1))}
+          </div>
+        )}
+      </div>
+    );
+  };
+  
   // ==================== 渲染 ====================
   if (loading) return <AdminLayout><div className="flex items-center justify-center h-64"><RefreshCw className="w-6 h-6 text-slate-400 animate-spin" /></div></AdminLayout>;
   if (error) return <AdminLayout><div className="flex flex-col items-center justify-center h-64 gap-4"><AlertCircle className="w-10 h-10 text-rose-400" /><p className="text-slate-500">{error}</p><Button variant="outline" onClick={fetchData}>重试</Button></div></AdminLayout>;
@@ -281,6 +382,9 @@ export const PermissionManagement: React.FC = () => {
                   <div className="flex items-center gap-2">
                     <Button size="sm" variant="outline" onClick={() => openStoreAssign(a)}>
                       <Store className="w-3 h-3 mr-1" />门店设置
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => openRegionAssign(a)}>
+                      <Globe className="w-3 h-3 mr-1" />区域设置
                     </Button>
                     <Button size="sm" variant="ghost" onClick={() => openEditUser(a)}>
                       <Pencil className="w-3 h-3" />
@@ -428,6 +532,32 @@ export const PermissionManagement: React.FC = () => {
             <div className="flex justify-end gap-3 pt-2 border-t border-slate-100">
               <Button variant="ghost" onClick={() => setShowStoreAssign(false)}>取消</Button>
               <Button className="bg-indigo-500 text-white" onClick={handleSaveStoreAssign}>保存设置</Button>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* ==================== 区域分配 对话框 ==================== */}
+      {showRegionAssign && selectedUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowRegionAssign(false)}>
+          <Card className="w-[600px] max-h-[700px] p-6 space-y-4 overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+            <h3 className="font-bold text-slate-900">区域权限设置 - {selectedUser.username}</h3>
+            <p className="text-sm text-slate-500">选择该用户可以管理的区域（自动包含子级区域）</p>
+            <div className="flex-1 overflow-y-auto space-y-2 pr-2">
+              {loadingRegions ? (
+                <div className="flex items-center justify-center py-8">
+                  <RefreshCw className="w-6 h-6 text-slate-400 animate-spin" />
+                </div>
+              ) : regionTree.length === 0 ? (
+                <p className="text-center py-8 text-slate-400">暂无区域数据，请先在"区域管理"中创建区域</p>
+              ) : (
+                // 渲染区域树（递归）
+                regionTree.map(r => renderRegionNode(r, 0))
+              )}
+            </div>
+            <div className="flex justify-end gap-3 pt-2 border-t border-slate-100">
+              <Button variant="ghost" onClick={() => setShowRegionAssign(false)}>取消</Button>
+              <Button className="bg-indigo-500 text-white" onClick={handleSaveRegionAssign}>保存设置</Button>
             </div>
           </Card>
         </div>

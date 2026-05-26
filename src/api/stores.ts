@@ -7,12 +7,14 @@ export interface Store {
   type: 'restaurant' | 'hotel' | 'beverage';
   address?: string;
   owner_name?: string;
+  owner_id?: string;
   phone?: string;
   status: 'active' | 'pending' | 'inactive';
   health_score?: number;
   platform_count: number;
   review_count: number;
   region_id?: string;
+  region_name?: string;
   platforms?: StorePlatform[];
   created_at: string;
 }

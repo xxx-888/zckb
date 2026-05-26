@@ -39,6 +39,7 @@ class StoreResponse(BaseModel):
     platform_count: int
     review_count: int
     region_id: Optional[UUID] = None
+    region_name: Optional[str] = None
     platforms: list[StorePlatformResponse] = []
     created_at: datetime
 
@@ -54,6 +55,7 @@ class StoreCreateRequest(BaseModel):
     owner_name: Optional[str] = Field(None, description="店主姓名", max_length=100)
     owner_id: Optional[UUID] = Field(None, description="负责人ID（关联用户表）")
     phone: Optional[str] = Field(None, description="联系电话", max_length=20)
+    region_id: UUID = Field(..., description="所属区域ID")
 
 
 class StoreUpdateRequest(BaseModel):
@@ -66,6 +68,7 @@ class StoreUpdateRequest(BaseModel):
     owner_id: Optional[UUID] = Field(None, description="负责人ID（关联用户表）")
     phone: Optional[str] = Field(None, description="联系电话", max_length=20)
     status: Optional[str] = Field(None, description="门店状态: active/pending/inactive")
+    region_id: Optional[UUID] = Field(None, description="所属区域ID")
 
 
 class StoreListResponse(BaseModel):

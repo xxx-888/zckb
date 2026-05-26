@@ -17,11 +17,16 @@ export interface User {
 export interface Store {
   id: string;
   name: string;
+  type: 'restaurant' | 'hotel' | 'beverage';
   address: string;
   rating: number;
   reviewCount: number;
-  status: 'active' | 'inactive';
+  status: 'active' | 'inactive' | 'pending';
   createdAt: string;
+  owner_id?: string;
+  owner_name?: string;
+  region_id?: string;
+  region_name?: string;
 }
 
 // 评论相关

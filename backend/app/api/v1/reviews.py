@@ -5,7 +5,7 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -24,14 +24,174 @@ from app.schemas.review import (
 )
 from app.services import review_service
 
+
 router = APIRouter(prefix="/reviews", tags=["评价管理"])
 
+
+# ==================== 固定路径路由（必须放在 /{review_id} 之前）====================
+
+@router.get("/import-template", summary="下载导入模板")
+async def download_import_template(
+    example: str = Query("false", description="是否包含示例数据 (true/false)"),
+):
+    """
+    下载评论导入模板 Excel 文件
+    - example=false（默认）：空白模板，只有表头
+    - example=true：带示例数据的模板
+    """
+    from fastapi.responses import StreamingResponse
+    from urllib.parse import quote
+
+    from app.services.review_import_service import generate_import_template
+
+    # 将字符串转为布尔值（支持 true/false、1/0、yes/no，不区分大小写）
+    example_bool = example.lower() in ("true", "1", "yes", "on")
+
+    output = generate_import_template(include_example=example_bool)
+
+    # 文件名（ASCII 安全 + RFC 5987 UTF-8 编码）
+    ascii_name = "import_template.xlsx"
+    utf8_name = quote("评论导入模板（带示例）.xlsx" if example_bool else "评论导入模板（空白）.xlsx", safe="")
+    headers = {
+        "Content-Disposition": (
+            f"attachment; filename={ascii_name}; "
+            f"filename*=UTF-8''{utf8_name}"
+        ),
+    }
+
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers=headers,
+    )
+
+
+@router.post("/import", summary="批量导入评论")
+async def import_reviews(
+    file: UploadFile,
+    store_id: str = Query(..., description="关联店铺ID"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> dict:
+    """
+    从 Excel/CSV 文件批量导入评论
+    - 支持 .xlsx 和 .csv 文件
+    - 必填列：content（评论内容）
+    - 可选列：platform, rating, images, reply
+    """
+    from app.services.review_import_service import import_reviews_from_file
+
+    result = await import_reviews_from_file(
+        db=db,
+        file=file,
+        store_id=store_id,
+    )
+
+    return success(
+        data=result,
+        message=f"导入完成：成功 {result['success_count']} 条，跳过 {result['skip_count']} 条",
+    )
+
+
+@router.get("/export", summary="导出评论")
+async def export_reviews(
+    sentiment: str | None = Query(None, description="情感筛选"),
+    keyword: str | None = Query(None, description="关键词"),
+    store_id: str | None = Query(None, description="店铺ID"),
+    platform: str | None = Query(None, description="平台"),
+    rating_min: int | None = Query(None, ge=1, le=5, description="最低评分"),
+    rating_max: int | None = Query(None, ge=1, le=5, description="最高评分"),
+    start_date: str | None = Query(None, description="开始日期"),
+    end_date: str | None = Query(None, description="结束日期"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    导出评论为 Excel 文件
+    - 支持所有筛选条件
+    - 返回 Excel 文件下载
+    """
+    from fastapi.responses import StreamingResponse
+    from openpyxl import Workbook
+    from io import BytesIO
+
+    # 获取所有数据（不分页）
+    filters = {
+        "sentiment": sentiment,
+        "keyword": keyword,
+        "store_id": store_id,
+        "platform": platform,
+        "rating_min": rating_min,
+        "rating_max": rating_max,
+        "start_date": start_date,
+        "end_date": end_date,
+        "page": 1,
+        "page_size": 10000,  # 导出大量数据
+    }
+
+    reviews, total = await review_service.get_reviews(db, current_user, filters)
+
+    # 构造导出数据
+    data = []
+    for review in reviews:
+        data.append({
+            "ID": str(review.id),
+            "店铺名称": review.store.name if review.store else "",
+            "平台": review.platform,
+            "评分": review.rating,
+            "评论内容": review.content,
+            "图片": ",".join(review.images) if review.images else "",
+            "回复内容": review.reply or "",
+            "回复时间": review.replied_at.strftime("%Y-%m-%d %H:%M:%S") if review.replied_at else "",
+            "创建时间": review.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+        })
+
+    # 生成 Excel
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "评论数据"
+
+    if data:
+        # 写入表头
+        headers = list(data[0].keys())
+        ws.append(headers)
+
+        # 写入数据
+        for row in data:
+            ws.append(list(row.values()))
+    else:
+        ws.append(["暂无数据"])
+
+    # 返回文件流
+    from urllib.parse import quote
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    # 文件名（ASCII 安全 + RFC 5987 UTF-8 编码）
+    ascii_name = f"reviews_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    utf8_name = quote(f"评论导出_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx", safe="")
+    headers = {
+        "Content-Disposition": (
+            f"attachment; filename={ascii_name}; "
+            f"filename*=UTF-8''{utf8_name}"
+        ),
+    }
+
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers=headers,
+    )
+
+
+# ==================== 普通路由 ====================
 
 @router.get("", summary="评价列表")
 async def get_reviews(
     sentiment: str | None = Query(None, description="情感: positive/negative/neutral"),
     keyword: str | None = Query(None, description="关键词搜索"),
-    store_id: UUID | None = Query(None, description="门店ID"),
+    store_id: str | None = Query(None, description="门店ID"),
     platform: str | None = Query(None, description="来源平台"),
     rating_min: int | None = Query(None, ge=1, le=5, description="最低评分"),
     rating_max: int | None = Query(None, ge=1, le=5, description="最高评分"),
@@ -40,7 +200,7 @@ async def get_reviews(
     start_date: str | None = Query(None, description="开始日期(YYYY-MM-DD)"),
     end_date: str | None = Query(None, description="结束日期(YYYY-MM-DD)"),
     page: int = Query(1, ge=1, description="页码"),
-    page_size: int = Query(20, ge=1, le=100, description="每页数量"),
+    page_size: int = Query(20, ge=1, le=500, description="每页数量"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ) -> dict:
@@ -93,6 +253,8 @@ async def get_review_stats(
         data=ReviewStatsResponse(**stats).model_dump(mode="json"),
     )
 
+
+# ==================== 路径参数路由（必须放在最后）====================
 
 @router.get("/{review_id}", summary="评价详情")
 async def get_review_detail(

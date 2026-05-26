@@ -56,6 +56,7 @@ class StoreRankingResponse(BaseModel):
     reviews: int = 0
     trend: float = 0.0
     health: str = "good"
+    health_score: Optional[float] = None
 
 
 class HealthStatusResponse(BaseModel):

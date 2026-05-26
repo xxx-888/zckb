@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Search, 
   Filter, 
@@ -28,6 +28,7 @@ import { useToast } from '../../hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { fetchReviews } from '../../api/reviews';
 import type { Review } from '../../api/reviews';
+import type { Store } from '../../api/stores';
 import { useSubscription, SubscriptionPrompt } from '../../hooks/use-subscription-check';
 
 export const ReviewStream: React.FC = () => {
@@ -40,8 +41,9 @@ export const ReviewStream: React.FC = () => {
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const prevStoreIdRef = useRef<string | undefined>(undefined);
 
-  // ===== 订阅状态检测 =====
+  // ===== 订阅状态检测（必须在条件返回之前）=====
   const {
     subscription,
     loading: subscriptionLoading,
@@ -49,39 +51,75 @@ export const ReviewStream: React.FC = () => {
     hasValidSubscription,
   } = useSubscription();
 
-  // ===== 订阅状态检查 =====
-  if (subscriptionLoading) {
-    return (
-      <MobileLayout title="评论瀑布流">
-        <div className="flex items-center justify-center h-64">
-          <div className="text-center">
-            <div className="w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-            <p className="text-sm text-slate-400">正在检查订阅状态...</p>
-          </div>
-        </div>
-      </MobileLayout>
-    );
-  }
+  // ===== 监听店铺切换自定义事件（双重保险）=====
+  useEffect(() => {
+    const handler = (e: CustomEvent<Store>) => {
+      const storeFromEvent = e.detail;
+      console.log('[ReviewStream] zc-store-changed event:', storeFromEvent?.name, storeFromEvent?.id);
+      // 直接使用事件中的店铺 ID，避免异步 state 未更新
+      if (storeFromEvent?.id) {
+        loadReviews(storeFromEvent.id);
+      }
+    };
+    window.addEventListener('zc-store-changed', handler as any);
+    return () => window.removeEventListener('zc-store-changed', handler as any);
+  }, []); // 空依赖，确保只注册一次
 
-  if (!hasValidSubscription) {
-    return (
-      <MobileLayout title="评论瀑布流">
-        <SubscriptionPrompt featureName="评论" />
-      </MobileLayout>
-    );
-  }
+  // ===== useEffect 必须在条件返回之前调用 =====
+  // 用 ref 追踪上一次选中的店铺 ID，变化时强制重新加载
+  useEffect(() => {
+    if (!hasValidSubscription) return;
+    const currentStoreId = selectedStore?.id;
+    if (!currentStoreId) {
+      // 没有选中店铺但 localStorage 可能有，尝试加载
+      const savedId = localStorage.getItem('zc_selected_store_id');
+      if (savedId) {
+        console.log('[ReviewStream] no selectedStore but localStorage has:', savedId);
+        prevStoreIdRef.current = savedId;
+        loadReviews(savedId);
+        return;
+      }
+      setReviews([]);
+      setLoading(false);
+      prevStoreIdRef.current = undefined;
+      return;
+    }
+    // 店铺 ID 变化（或首次加载），触发重新获取
+    if (prevStoreIdRef.current !== currentStoreId) {
+      console.log('[ReviewStream] store changed:', prevStoreIdRef.current, '->', currentStoreId, selectedStore?.name);
+      prevStoreIdRef.current = currentStoreId;
+      loadReviews(currentStoreId);
+    }
+  }, [hasValidSubscription, selectedStore?.id]);
 
-  const loadReviews = async () => {
+  const loadReviews = async (storeId?: string) => {
     try {
       setLoading(true);
       setFetchError(null);
       const filters: any = {};
-      if (selectedStore?.id) {
-        filters.store_id = selectedStore.id;
+      // 优先使用传入的 storeId，其次用 selectedStore，最后从 localStorage 取
+      const effectiveStoreId = storeId || selectedStore?.id || localStorage.getItem('zc_selected_store_id');
+      if (effectiveStoreId) {
+        filters.store_id = effectiveStoreId;
+      } else {
+        setReviews([]);
+        setLoading(false);
+        return;
       }
+      console.log('[ReviewStream] loadReviews filters:', filters);
       const response = await fetchReviews(filters);
+      console.log('[ReviewStream] API response:', response);
       const items = response.items || [];
-      setReviews(Array.isArray(items) ? items : []);
+      console.log('[ReviewStream] items count:', items.length);
+      // 字段映射：后端字段名 → 移动端 UI 字段名
+      const mapped = items.map((r: any) => ({
+        ...r,
+        user: r.user_name || '匿名用户',
+        avatar: r.user_avatar || '',
+        time: r.created_at || r.platform_created_at || '',
+        hasImage: !!(r.images && r.images.length > 0),
+      }));
+      setReviews(Array.isArray(mapped) ? mapped : []);
     } catch (err) {
       setFetchError(err instanceof Error ? err.message : '获取数据失败');
       setReviews([]);
@@ -90,17 +128,12 @@ export const ReviewStream: React.FC = () => {
     }
   };
 
-  useEffect(() => {
-    loadReviews();
-  }, []);
-
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
     setIsRefreshing(true);
     success('数据刷新', '正在从平台获取最新评论...');
-    setTimeout(() => {
-      setIsRefreshing(false);
-      success('刷新完成', '已获取 24 条新评论');
-    }, 2000);
+    await loadReviews();
+    setIsRefreshing(false);
+    success('刷新完成', '已获取最新评论');
   };
 
   const handleSearch = (value: string) => {
@@ -133,6 +166,31 @@ export const ReviewStream: React.FC = () => {
     success('更多操作', '举报、隐藏、置顶等功能开发中');
   };
 
+  // ===== 条件渲染（必须在所有 Hooks 调用之后）=====
+  
+  // 1. 订阅加载中
+  if (subscriptionLoading) {
+    return (
+      <MobileLayout title="评论瀑布流">
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <div className="w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-sm text-slate-400">正在检查订阅状态...</p>
+          </div>
+        </div>
+      </MobileLayout>
+    );
+  }
+
+  // 2. 无有效订阅
+  if (!hasValidSubscription) {
+    return (
+      <MobileLayout title="评论瀑布流">
+        <SubscriptionPrompt featureName="评论" />
+      </MobileLayout>
+    );
+  }
+
   // ===== 加载状态 =====
   if (loading) {
     return (
@@ -145,24 +203,7 @@ export const ReviewStream: React.FC = () => {
       </MobileLayout>
     );
   }
-
-  // ===== 无店铺状态 =====
-  if (!selectedStore && !loading) {
-    return (
-      <MobileLayout title="评论瀑布流">
-        <div className="flex-1 flex items-center justify-center p-4">
-          <div className="text-center">
-            <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4">
-              <MessageSquare className="w-8 h-8 text-slate-300" />
-            </div>
-            <p className="text-base font-semibold text-slate-400 mb-2">暂无数据</p>
-            <p className="text-sm text-slate-400">请通过顶部导航切换店铺</p>
-          </div>
-        </div>
-      </MobileLayout>
-    );
-  }
-
+  
   // ===== 错误状态 =====
   if (fetchError) {
     return (
@@ -180,8 +221,18 @@ export const ReviewStream: React.FC = () => {
     );
   }
 
+  // ===== 无店铺提示（不阻塞渲染）=====
+  // 只有当既没有选中店铺、localStorage 也没有保存店铺时才显示
+  const hasStore = selectedStore?.id || localStorage.getItem('zc_selected_store_id');
+  const noStoreWarning = !hasStore ? (
+    <Card className="p-4 text-center border-amber-200 bg-amber-50">
+      <p className="text-sm text-amber-600">请通过顶部导航选择店铺以筛选评论</p>
+    </Card>
+  ) : null;
+
   return (
     <MobileLayout title="评论瀑布流">
+      {noStoreWarning}
       <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
         
         {/* Spider Status Card */}
