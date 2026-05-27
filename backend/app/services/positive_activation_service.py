@@ -12,9 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundException
 from app.models.review import Review
-from app.models.user import User
-
-
+from app.models.user import User, UserStore
+from app.models.store import Store
 async def get_high_quality_reviews(
     db: AsyncSession, user: User, page: int = 1, page_size: int = 20
 ) -> tuple[list, int]:
@@ -32,8 +31,6 @@ async def get_high_quality_reviews(
     """
     # 构建查询条件：高评分、有内容、正面情感
     # 获取用户关联的店铺ID
-    from app.models.store import Store, UserStore
-    
     # 查询用户拥有的店铺
     owned_stores_result = await db.execute(
         select(Store.id).where(Store.owner_id == user.id)
