@@ -56,7 +56,7 @@ export const AIAnalysis: React.FC = () => {
   const navigate = useNavigate();
   const { selectedStore } = useStore();
 
-  // ===== 订阅状态检测 =====
+  // ===== 订阅状态检测 (必须在所有条件return之前调用) =====
   const {
     subscription,
     loading: subscriptionLoading,
@@ -64,7 +64,42 @@ export const AIAnalysis: React.FC = () => {
     hasValidSubscription,
   } = useSubscription();
 
-  // ===== 订阅状态检查 =====
+  // ===== 数据加载 =====
+  useEffect(() => {
+    if (fetchedRef.current) return;
+    fetchedRef.current = true;
+    
+    const loadData = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const [topicsData, tagData, summaryData, riskData, historyData, statsData, appealData] = await Promise.all([
+          fetchTopics(),
+          fetchTagClustering(),
+          fetchSentimentSummary(),
+          fetchRiskLevels(),
+          fetchReplyHistory(),
+          fetchReplyStats(),
+          fetchAppealSuggestions()
+        ]);
+        setTopics(topicsData);
+        setTagClustering(tagData);
+        setSentimentSummary(summaryData);
+        setRiskLevels(riskData);
+        setReplyHistory(historyData);
+        setReplyStats(statsData);
+        setAppealSuggestions(appealData);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : '获取数据失败');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadData();
+  }, []);
+
+  // ===== 条件渲染：订阅加载中 =====
   if (subscriptionLoading) {
     return (
       <MobileLayout title="AI 智能分析">
@@ -78,6 +113,7 @@ export const AIAnalysis: React.FC = () => {
     );
   }
 
+  // ===== 条件渲染：无有效订阅 =====
   if (!hasValidSubscription) {
     return (
       <MobileLayout title="AI 智能分析">
@@ -86,39 +122,7 @@ export const AIAnalysis: React.FC = () => {
     );
   }
 
-  const loadData = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const [topicsData, tagData, summaryData, riskData, historyData, statsData, appealData] = await Promise.all([
-        fetchTopics(),
-        fetchTagClustering(),
-        fetchSentimentSummary(),
-        fetchRiskLevels(),
-        fetchReplyHistory(),
-        fetchReplyStats(),
-        fetchAppealSuggestions(),
-      ]);
-      setTopics(topicsData);
-      setTagClustering(tagData);
-      setSentimentSummary(summaryData);
-      setRiskLevels(riskData);
-      setReplyHistory(historyData);
-      setReplyStats(statsData);
-      setAppealSuggestions(appealData);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '获取数据失败');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (fetchedRef.current) return;
-    fetchedRef.current = true;
-    loadData();
-  }, []);
-
+  // ===== 条件渲染：数据加载中 =====
   if (loading) {
     return (
       <MobileLayout title="AI 智能分析">
@@ -135,21 +139,22 @@ export const AIAnalysis: React.FC = () => {
     );
   }
 
+  // ===== 条件渲染：错误状态 =====
   if (error) {
     return (
       <MobileLayout title="AI 智能分析">
         <div className="flex items-center justify-center h-64">
           <div className="text-center">
             <p className="text-sm text-rose-500 mb-4">{error}</p>
-            <button onClick={loadData} className="text-sm text-orange-600 font-bold">重试</button>
+            <button onClick={() => window.location.reload()} className="text-sm text-orange-600 font-bold">重试</button>
           </div>
         </div>
       </MobileLayout>
     );
   }
 
-  // ===== 无店铺状态 =====
-  if (!loading && !selectedStore) {
+  // ===== 条件渲染：无店铺状态 =====
+  if (!selectedStore) {
     return (
       <MobileLayout title="AI 智能分析">
         <div className="flex-1 flex items-center justify-center p-4">

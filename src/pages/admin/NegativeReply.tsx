@@ -32,6 +32,7 @@ export const NegativeReply: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
+  const [total, setTotal] = useState(0);
   const [searchKeyword, setSearchKeyword] = useState('');
   const [filterRisk, setFilterRisk] = useState<'all' | 'high' | 'medium' | 'low'>('all');
   const pageSize = 10;
@@ -39,26 +40,24 @@ export const NegativeReply: React.FC = () => {
   const { success, error: showError } = useToast();
   const fetchedRef = React.useRef(false);
 
-  const loadData = async () => {
+  const loadData = async (page: number = 1) => {
     try {
       setLoading(true);
       setError(null);
-      const data = await fetchNegativeReplyTasks();
-      // API返回格式: {items: [...], total, page, page_size}
-      const taskList = data.items || data || [];
-      setTasks(Array.isArray(taskList) ? taskList : []);
+      console.log('Loading page:', page);
+      const data = await fetchNegativeReplyTasks(undefined, page, pageSize);
+      console.log('API response:', data);
+      console.log('Items length:', data.items?.length);
+      console.log('Total:', data.total);
+      setTasks(data.items || []);
+      setTotal(data.total || 0);
+      setCurrentPage(data.page || page);
     } catch (err) {
       setError(err instanceof Error ? err.message : '获取数据失败');
     } finally {
       setLoading(false);
     }
   };
-
-  useEffect(() => {
-    if (fetchedRef.current) return;
-    fetchedRef.current = true;
-    loadData();
-  }, []);
 
   const getAvgScore = (scores: any) => {
     const vals = Object.values(scores) as number[];
@@ -67,7 +66,7 @@ export const NegativeReply: React.FC = () => {
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
-      setSelectedIds(filteredTasks.map(t => t.id));
+      setSelectedIds(tasks.map(t => t.id));
     } else {
       setSelectedIds([]);
     }
@@ -95,22 +94,25 @@ export const NegativeReply: React.FC = () => {
     success('导出报告', '正在导出差评处理报告...');
   };
 
-  // 筛选和搜索
-  const filteredTasks = tasks.filter(task => {
-    if (filterRisk !== 'all' && task.risk !== filterRisk) return false;
-    if (searchKeyword) {
-      return task.user.includes(searchKeyword) ||
-             task.content.includes(searchKeyword);
-    }
-    return true;
-  });
+  // 搜索和筛选变化时重新加载数据
+  useEffect(() => {
+    setCurrentPage(1);
+    loadData(1);
+  }, [searchKeyword, filterRisk]);
 
-  // 分页
-  const totalPages = Math.ceil(filteredTasks.length / pageSize);
-  const paginatedTasks = filteredTasks.slice(
-    (currentPage - 1) * pageSize,
-    currentPage * pageSize
-  );
+  // 分页变化时加载数据
+  useEffect(() => {
+    if (fetchedRef.current) {
+      loadData(currentPage);
+    }
+  }, [currentPage]);
+
+  // 初始加载
+  useEffect(() => {
+    if (fetchedRef.current) return;
+    fetchedRef.current = true;
+    loadData(1);
+  }, []);
 
   if (loading) {
     return (
@@ -131,7 +133,7 @@ export const NegativeReply: React.FC = () => {
         <div className="flex items-center justify-center h-64">
           <div className="text-center">
             <p className="text-sm text-rose-500 mb-4">{error}</p>
-            <Button onClick={loadData} className="bg-orange-500 hover:bg-orange-600 text-white">
+            <Button onClick={() => loadData(currentPage)} className="bg-orange-500 hover:bg-orange-600 text-white">
               重试
             </Button>
           </div>
@@ -154,7 +156,7 @@ export const NegativeReply: React.FC = () => {
               <Download className="w-4 h-4" />
               导出报告
             </Button>
-            <Button className="bg-orange-500 hover:bg-orange-600 text-white gap-2" onClick={() => loadData()}>
+            <Button className="bg-orange-500 hover:bg-orange-600 text-white gap-2" onClick={() => loadData(1)}>
               <RefreshCw className="w-4 h-4" />
               刷新数据
             </Button>
@@ -251,7 +253,7 @@ export const NegativeReply: React.FC = () => {
                   <th className="p-4 text-left">
                     <input
                       type="checkbox"
-                      checked={selectedIds.length === filteredTasks.length && filteredTasks.length > 0}
+                      checked={selectedIds.length === tasks.length && tasks.length > 0}
                       onChange={(e) => handleSelectAll(e.target.checked)}
                       className="rounded border-slate-300"
                     />
@@ -265,7 +267,7 @@ export const NegativeReply: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {paginatedTasks.map((task) => {
+                {tasks.map((task) => {
                   const avgScore = parseFloat(getAvgScore(task.scores));
                   const isLowScore = avgScore < 7;
                   const isSelected = selectedIds.includes(task.id);
@@ -361,7 +363,7 @@ export const NegativeReply: React.FC = () => {
           {/* Pagination */}
           <div className="flex items-center justify-between p-4 border-t border-slate-100">
             <p className="text-sm text-slate-500">
-              显示 {((currentPage - 1) * pageSize) + 1}-{Math.min(currentPage * pageSize, filteredTasks.length)} 条，共 {filteredTasks.length} 条
+              显示 {((currentPage - 1) * pageSize) + 1}-{Math.min(currentPage * pageSize, total)} 条，共 {total} 条
             </p>
             <div className="flex items-center gap-2">
               <Button
@@ -373,13 +375,13 @@ export const NegativeReply: React.FC = () => {
                 <ChevronLeft className="w-4 h-4" />
               </Button>
               <span className="text-sm font-medium text-slate-700">
-                {currentPage} / {totalPages}
+                {currentPage} / {Math.ceil(total / pageSize)}
               </span>
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-                disabled={currentPage === totalPages}
+                onClick={() => setCurrentPage(Math.min(Math.ceil(total / pageSize), currentPage + 1))}
+                disabled={currentPage === Math.ceil(total / pageSize)}
               >
                 <ChevronRight className="w-4 h-4" />
               </Button>

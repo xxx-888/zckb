@@ -9,6 +9,7 @@ from uuid import UUID
 
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
 from app.models.review import Review
 from app.models.store import Store, StorePlatform

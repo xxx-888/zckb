@@ -41,6 +41,9 @@ export const ReviewStream: React.FC = () => {
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const prevStoreIdRef = useRef<string | undefined>(undefined);
 
   // ===== 订阅状态检测（必须在条件返回之前）=====
@@ -92,25 +95,40 @@ export const ReviewStream: React.FC = () => {
     }
   }, [hasValidSubscription, selectedStore?.id]);
 
-  const loadReviews = async (storeId?: string) => {
+  const loadReviews = async (storeId?: string, loadMoreFlag?: boolean) => {
     try {
-      setLoading(true);
-      setFetchError(null);
+      if (!loadMoreFlag) {
+        setLoading(true);
+        setFetchError(null);
+      } else {
+        setLoadingMore(true);
+      }
       const filters: any = {};
       // 优先使用传入的 storeId，其次用 selectedStore，最后从 localStorage 取
       const effectiveStoreId = storeId || selectedStore?.id || localStorage.getItem('zc_selected_store_id');
       if (effectiveStoreId) {
         filters.store_id = effectiveStoreId;
       } else {
-        setReviews([]);
-        setLoading(false);
+        if (!loadMoreFlag) {
+          setReviews([]);
+          setLoading(false);
+        }
         return;
       }
+      
+      // 分页参数
+      const currentPage = loadMoreFlag ? page : 1;
+      filters.page = currentPage;
+      filters.page_size = 20;
+      
       console.log('[ReviewStream] loadReviews filters:', filters);
       const response = await fetchReviews(filters);
       console.log('[ReviewStream] API response:', response);
+      
       const items = response.items || [];
-      console.log('[ReviewStream] items count:', items.length);
+      const total = response.total || 0;
+      console.log('[ReviewStream] items count:', items.length, 'total:', total);
+      
       // 字段映射：后端字段名 → 移动端 UI 字段名
       const mapped = items.map((r: any) => ({
         ...r,
@@ -119,19 +137,40 @@ export const ReviewStream: React.FC = () => {
         time: r.created_at || r.platform_created_at || '',
         hasImage: !!(r.images && r.images.length > 0),
       }));
-      setReviews(Array.isArray(mapped) ? mapped : []);
+      
+      if (loadMoreFlag) {
+        setReviews(prev => [...prev, ...(Array.isArray(mapped) ? mapped : [])]);
+        setPage(prev => prev + 1);
+      } else {
+        setReviews(Array.isArray(mapped) ? mapped : []);
+        setPage(2); // 下一页是第二页
+      }
+      
+      // 判断是否还有更多数据
+      const loadedCount = loadMoreFlag ? reviews.length + mapped.length : mapped.length;
+      setHasMore(loadedCount < total);
+      
     } catch (err) {
       setFetchError(err instanceof Error ? err.message : '获取数据失败');
-      setReviews([]);
+      if (!loadMoreFlag) {
+        setReviews([]);
+      }
     } finally {
-      setLoading(false);
+      if (!loadMoreFlag) {
+        setLoading(false);
+      } else {
+        setLoadingMore(false);
+      }
     }
   };
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
+    // 重置分页状态
+    setPage(1);
+    setHasMore(true);
     success('数据刷新', '正在从平台获取最新评论...');
-    await loadReviews();
+    await loadReviews(undefined, false);
     setIsRefreshing(false);
     success('刷新完成', '已获取最新评论');
   };
@@ -402,6 +441,43 @@ export const ReviewStream: React.FC = () => {
             </Card>
           ))}
         </div>
+        
+        {/* Load More Button */}
+        {hasMore && !loading && (
+          <div className="flex justify-center py-4">
+            <Button 
+              onClick={() => loadReviews(undefined, true)}
+              disabled={loadingMore}
+              variant="outline"
+              className="border-orange-200 text-orange-600 hover:bg-orange-50"
+            >
+              {loadingMore ? (
+                <>
+                  <RefreshCcw className="w-4 h-4 mr-2 animate-spin" />
+                  加载中...
+                </>
+              ) : (
+                '加载更多'
+              )}
+            </Button>
+          </div>
+        )}
+        
+        {/* No More Data Hint */}
+        {!hasMore && reviews.length > 0 && (
+          <div className="text-center py-4 text-xs text-slate-400">
+            没有更多数据了
+          </div>
+        )}
+        
+        {/* Empty State */}
+        {!loading && reviews.length === 0 && !fetchError && (
+          <Card className="p-8 text-center">
+            <MessageCircle className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+            <p className="text-sm text-slate-500 mb-1">暂无评论数据</p>
+            <p className="text-xs text-slate-400">切换店铺或刷新试试</p>
+          </Card>
+        )}
       </div>
     </MobileLayout>
   );

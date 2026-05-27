@@ -79,14 +79,21 @@ function mapPeriod(timePeriod: string): string {
 
 /**
  * 通用 API 调用封装
- * 直接返回后端 success 响应的 data 字段，失败时抛异常由调用方处理
+ * 注意：api.ts 的响应拦截器已经返回了 response.data，所以这里直接使用 response
  */
 async function fetchAPI<T>(url: string): Promise<T> {
   const response = await api.get<any>(url);
-  if (response.code === 200 && response.data) {
-    return response.data as T;
+  // 如果后端返回的格式是 { code: 0, data: {...} }，需要解包
+  // 如果后端返回的格式是 { items: [...], total: ... }，直接使用
+  if (response.code !== undefined && response.data !== undefined) {
+    // 后端返回了 { code, data, message } 格式
+    if (response.code === 0 || response.code === 200) {
+      return response.data as T;
+    }
+    throw new Error(response.message || `API ${url} 执行失败`);
   }
-  throw new Error(response.message || `API ${url} 返回格式异常`);
+  // 后端直接返回了数据（比如 { items: [...], total: ... }）
+  return response as T;
 }
 
 // ==================== API 函数 ====================

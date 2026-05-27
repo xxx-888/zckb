@@ -27,7 +27,8 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
       const data = await subscriptionApi.getCurrentSubscription();
       setSubscription(data);
     } catch (err: any) {
-      if (err?.status === 401 || err?.status === 404) {
+      const status = err?.response?.status || err?.status;
+      if (status === 401 || status === 404) {
         setSubscription(null);
       } else {
         setError(err instanceof Error ? err : new Error('获取订阅信息失败'));

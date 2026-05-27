@@ -15,7 +15,8 @@ if TYPE_CHECKING:
     from .report import AnnualReport, WeeklyBrief, Competitor
     from .review import Review
     from .settings import AutoReplyConfig
-    from .user import Region, UserStore
+    from .user import UserStore
+    from .region import Region
 
 
 class Store(BaseModel):

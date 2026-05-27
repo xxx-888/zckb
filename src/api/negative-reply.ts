@@ -42,6 +42,9 @@ export const negativeReplyApi = {
     if (status) url += `&status=${status}`;
     if (storeId) url += `&store_id=${storeId}`;
     const response = await api.get<any>(url);
+    // 响应拦截器已经返回了response.data，所以response是{code: 200, message: "success", data: {...}}
+    // 需要返回response.data，即{items: [...], total: 100, page: 1, pageSize: 10}
+    console.log('negativeReplyApi.getTasks response:', response);
     return response.data || response;
   },
 
@@ -66,12 +69,20 @@ export const negativeReplyApi = {
   },
 };
 
-// 兼容旧函数名的别名
-export const fetchNegativeReplyTasks = async (storeId?: string): Promise<NegativeReplyTask[]> => {
-  const response = await negativeReplyApi.getTasks('pending', 1, 20, storeId);
-  const items = response.items || response;
+// 兼容旧函数名的别名（支持分页）
+export const fetchNegativeReplyTasks = async (
+  storeId?: string,
+  page: number = 1,
+  pageSize: number = 20
+): Promise<{ items: NegativeReplyTask[]; total: number; page: number; pageSize: number }> => {
+  console.log('fetchNegativeReplyTasks called with:', { storeId, page, pageSize });
+  const response = await negativeReplyApi.getTasks('pending', page, pageSize, storeId);
+  console.log('fetchNegativeReplyTasks response:', response);
+  const items = response.items || [];
+  const total = response.total || items.length;
+  
   // 转换数据格式以匹配前端期望
-  return items.map((item: any) => ({
+  const formattedItems = items.map((item: any) => ({
     id: item.id || item.review_id,
     review_id: item.review_id || item.id,
     user: item.user_name || item.user || '匿名用户',
@@ -91,4 +102,18 @@ export const fetchNegativeReplyTasks = async (storeId?: string): Promise<Negativ
     status: item.status || 'pending',
     created_at: item.created_at || new Date().toISOString(),
   }));
+  
+  console.log('fetchNegativeReplyTasks returning:', { 
+    itemsCount: formattedItems.length, 
+    total, 
+    page: response.page || page,
+    pageSize: response.pageSize || pageSize 
+  });
+  
+  return {
+    items: formattedItems,
+    total: total,
+    page: response.page || page,
+    pageSize: response.pageSize || pageSize,
+  };
 };

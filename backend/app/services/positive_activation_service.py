@@ -28,31 +28,40 @@ async def get_high_quality_reviews(
         tuple[list, int]: (好评列表, 总数)
     """
     # 构建查询条件：高评分、有内容、正面情感
-    # 获取用户关联的店铺ID
-    # 查询用户拥有的店铺
-    owned_stores_result = await db.execute(
-        select(Store.id).where(Store.owner_id == user.id)
-    )
-    owned_store_ids = [row[0] for row in owned_stores_result.all()]
-    
-    # 查询用户关联的店铺（通过 user_stores 表）
-    associated_stores_result = await db.execute(
-        select(UserStore.store_id).where(UserStore.user_id == user.id)
-    )
-    associated_store_ids = [row[0] for row in associated_stores_result.all()]
-    
-    # 合并店铺ID
-    user_store_ids = list(set(owned_store_ids + associated_store_ids))
-    
-    if not user_store_ids:
-        return [], 0
-    
-    conditions = [
-        Review.store_id.in_(user_store_ids),
-        Review.rating >= 4,
-        Review.sentiment == "positive",
-        Review.content.isnot(None),
-    ]
+    # 超级管理员可以查看所有数据，非管理员只能查看关联的店铺
+    if user.role == "SUPER_ADMIN":
+        # 超级管理员：查询所有店铺
+        conditions = [
+            Review.rating >= 4,
+            Review.sentiment == "positive",
+            Review.content.isnot(None),
+        ]
+    else:
+        # 非管理员：只查询关联的店铺
+        # 查询用户拥有的店铺
+        owned_stores_result = await db.execute(
+            select(Store.id).where(Store.owner_id == user.id)
+        )
+        owned_store_ids = [row[0] for row in owned_stores_result.all()]
+        
+        # 查询用户关联的店铺（通过 user_stores 表）
+        associated_stores_result = await db.execute(
+            select(UserStore.store_id).where(UserStore.user_id == user.id)
+        )
+        associated_store_ids = [row[0] for row in associated_stores_result.all()]
+        
+        # 合并店铺ID
+        user_store_ids = list(set(owned_store_ids + associated_store_ids))
+        
+        if not user_store_ids:
+            return [], 0
+        
+        conditions = [
+            Review.store_id.in_(user_store_ids),
+            Review.rating >= 4,
+            Review.sentiment == "positive",
+            Review.content.isnot(None),
+        ]
 
     # 查询总数
     count_stmt = select(func.count(Review.id)).where(and_(*conditions))
@@ -101,16 +110,25 @@ async def get_brand_scripts(db: AsyncSession, user: User) -> list[dict]:
         list[dict]: 品牌话术列表
     """
     # 查询用户关联的高评分评论（>=4星）
-    user_store_ids = [sa.store_id for sa in user.store_associations]
-    
-    if not user_store_ids:
-        return []
-    
-    conditions = [
-        Review.store_id.in_(user_store_ids),
-        Review.rating >= 4,
-        Review.content.isnot(None),
-    ]
+    # 超级管理员可以查看所有数据，非管理员只能查看关联的店铺
+    if user.role == "SUPER_ADMIN":
+        # 超级管理员：查询所有店铺
+        conditions = [
+            Review.rating >= 4,
+            Review.content.isnot(None),
+        ]
+    else:
+        # 非管理员：只查询关联的店铺
+        user_store_ids = [sa.store_id for sa in user.store_associations]
+        
+        if not user_store_ids:
+            return []
+        
+        conditions = [
+            Review.store_id.in_(user_store_ids),
+            Review.rating >= 4,
+            Review.content.isnot(None),
+        ]
     
     stmt = (
         select(Review)

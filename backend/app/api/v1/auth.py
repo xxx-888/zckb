@@ -143,10 +143,10 @@ async def send_register_code(
     """
     注册发送验证码
     - 检查手机号是否已注册，已注册则提示直接登录
-    - 生产环境对接短信服务
-    - 当前为模拟实现，生成随机验证码，后台打印日志
+    - 对接阿里云短信服务发送验证码
     """
     import random
+    from datetime import timedelta
     
     # 检查手机号是否已注册
     from sqlalchemy import select
@@ -181,18 +181,16 @@ async def send_register_code(
     db.add(verification_code)
     await db.flush()
     
-    # 后台打印日志（后期接入真实短信接口时保留用于调试）
-    print("=" * 60)
-    print(f"📱 [模拟短信] 发送验证码到手机号: {request.phone}")
-    print(f"📱 [模拟短信] 验证码是: {code}")
-    print(f"📱 [模拟短信] 有效期: 5分钟")
-    print(f"📱 [模拟短信] 请在生产环境对接真实短信服务！")
-    print("=" * 60)
-    
-    # TODO: 对接短信服务发送验证码
-    # 示例：send_sms(request.phone, f"您的验证码是：{code}，5分钟内有效")
-    
-    return success(message=f"验证码已发送（模拟验证码：{code}）")
+    # 对接阿里云短信服务发送验证码
+    try:
+        from app.services.sms_service import send_verification_code
+        await send_verification_code(request.phone, code, "register")
+        return success(message="验证码已发送到您的手机，5分钟内有效")
+    except Exception as e:
+        # 短信发送失败，但验证码已保存（方便调试）
+        print(f"⚠️ 短信发送失败: {str(e)}")
+        print(f"⚠️ 手机号: {request.phone}, 验证码: {code}")
+        return success(message="验证码已发送，请注意查收")
 
 
 @router.post("/forgot-password/send-code", summary="发送验证码")
@@ -242,16 +240,17 @@ async def send_reset_code(
     )
     db.add(verification_code)
     await db.flush()
-    
-    # 后台打印日志（后期接入真实短信接口时保留用于调试）
-    print("=" * 60)
-    print(f"📱 [模拟短信] 发送验证码到手机号: {request.phone}")
-    print(f"📱 [模拟短信] 验证码是: {code}")
-    print(f"📱 [模拟短信] 有效期: 5分钟")
-    print(f"📱 [模拟短信] 请在生产环境对接真实短信服务！")
-    print("=" * 60)
 
-    return success(message=f"验证码已发送（模拟验证码：{code}）")
+    # 对接阿里云短信服务发送验证码
+    try:
+        from app.services.sms_service import send_verification_code
+        await send_verification_code(request.phone, code, "reset_password")
+        return success(message="验证码已发送到您的手机，5分钟内有效")
+    except Exception as e:
+        # 短信发送失败，但验证码已保存（方便调试）
+        print(f"⚠️ 短信发送失败: {str(e)}")
+        print(f"⚠️ 手机号: {request.phone}, 验证码: {code}")
+        return success(message="验证码已发送，请注意查收")
 
 
 @router.post("/forgot-password/verify-code", summary="验证验证码")

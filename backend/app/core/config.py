@@ -45,6 +45,14 @@ class Settings(BaseSettings):
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com/v1"
     DEEPSEEK_MODEL: str = "deepseek-chat"
 
+    # ---- 阿里云短信配置 ----
+    ALIYUN_ACCESS_KEY_ID: str = ""
+    ALIYUN_ACCESS_KEY_SECRET: str = ""
+    ALIYUN_SMS_SIGN_NAME: str = ""
+    ALIYUN_SMS_TEMPLATE_CODE_REGISTER: str = ""
+    ALIYUN_SMS_TEMPLATE_CODE_RESET: str = ""
+    ALIYUN_SMS_TEMPLATE_CODE_LOGIN: str = ""
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import and_, case, func, or_, select
+from sqlalchemy import and_, case, distinct, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
@@ -20,10 +20,10 @@ from app.models.user import User, UserStore
 def _build_store_filter(user: User) -> Optional:
     """
     根据用户角色构建门店可见性过滤条件。
-    - HQ / OPERATOR：可见所有门店
+    - SUPER_ADMIN / HQ / OPERATOR：可见所有门店
     - STORE：仅可见关联门店
     """
-    if user.role in ("HQ", "OPERATOR"):
+    if user.role in ("SUPER_ADMIN", "HQ", "OPERATOR"):
         return None  # 不过滤
 
     # STORE 角色：查询 user_stores 获取关联门店 ID
@@ -114,8 +114,8 @@ async def get_reviews(
 
     where_clause = and_(*conditions)
 
-    # 查询总数
-    count_stmt = select(func.count()).select_from(Review).where(where_clause)
+    # 查询总数（使用 distinct 避免笛卡尔积）
+    count_stmt = select(func.count(distinct(Review.id))).select_from(Review).where(where_clause)
     total = (await db.execute(count_stmt)).scalar() or 0
 
     # 分页查询

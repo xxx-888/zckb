@@ -17,9 +17,9 @@ class AuditItemResponse(BaseModel):
     review_id: UUID
     store_name: Optional[str] = None
     user_name: Optional[str] = None
-    rating: int
+    rating: Optional[int] = None
     content: Optional[str] = None
-    platform: str
+    platform: Optional[str] = None
     ai_reply: Optional[str] = None
     status: str
     risk_level: Optional[str] = None
