@@ -98,7 +98,7 @@ export const PositiveActivation: React.FC = () => {
   });
 
   // 分页
-  const totalPages = Math.ceil(filteredReviews.length / pageSize);
+  const totalPages = filteredReviews.length > 0 ? Math.ceil(filteredReviews.length / pageSize) : 0;
   const paginatedReviews = filteredReviews.slice(
     (currentPage - 1) * pageSize,
     currentPage * pageSize
@@ -158,7 +158,7 @@ export const PositiveActivation: React.FC = () => {
           {[
             { label: '高质好评', value: reviews.length, color: 'text-orange-600', bg: 'bg-orange-50' },
             { label: '已授权', value: reviews.filter(r => r.authorized).length, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-            { label: '品牌话术', value: scripts.reduce((sum, s) => sum + s.count, 0), color: 'text-blue-600', bg: 'bg-blue-50' },
+            { label: '品牌话术', value: scripts.reduce((sum, s) => sum + (s.count ?? s.usage_count ?? 0), 0), color: 'text-blue-600', bg: 'bg-blue-50' },
             { label: '预计曝光', value: '12w+', color: 'text-purple-600', bg: 'bg-purple-50' },
           ].map((stat, i) => (
             <Card key={i} className="p-6 border-none shadow-sm">
@@ -255,7 +255,7 @@ export const PositiveActivation: React.FC = () => {
                           {review.hasImage && (
                             <Badge className="bg-emerald-50 text-emerald-600 border-none text-[9px]">有图</Badge>
                           )}
-                          <Badge className="bg-orange-50 text-orange-600 border-none text-[9px]">{review.length}</Badge>
+                          <Badge className="bg-orange-50 text-orange-600 border-none text-[9px]">{review.length || '-'}</Badge>
                         </div>
                       </td>
                       <td className="p-4">
@@ -345,7 +345,7 @@ export const PositiveActivation: React.FC = () => {
                     </div>
                     <div className="flex-1">
                       <h4 className="text-sm font-bold text-slate-900">{script.tag}风格</h4>
-                      <p className="text-xs text-slate-400">已同步 {script.count} 条话术</p>
+                      <p className="text-xs text-slate-400">已同步 {script.count ?? script.usage_count ?? 0} 条话术</p>
                     </div>
                     <Badge className="bg-emerald-50 text-emerald-600 border-none text-[10px]">已学习</Badge>
                   </div>
