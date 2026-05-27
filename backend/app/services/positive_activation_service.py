@@ -127,6 +127,7 @@ async def get_brand_scripts(db: AsyncSession) -> list[dict]:
             "content": "感谢您的五星好评，您的满意是我们全体团队前进的动力！",
             "category": "好评回复",
             "usage_count": 1256,
+            "progress": "92%",  # 添加progress字段
         },
         {
             "id": UUID(int=2),
@@ -134,6 +135,7 @@ async def get_brand_scripts(db: AsyncSession) -> list[dict]:
             "content": "非常感谢您的详细评价和认可！我们会继续保持品质，期待您的再次光临！",
             "category": "好评回复",
             "usage_count": 892,
+            "progress": "78%",
         },
         {
             "id": UUID(int=3),
@@ -141,6 +143,7 @@ async def get_brand_scripts(db: AsyncSession) -> list[dict]:
             "content": "感谢您的认可！下次光临时出示此评价可享专属优惠哦~",
             "category": "复购引导",
             "usage_count": 567,
+            "progress": "65%",
         },
         {
             "id": UUID(int=4),
@@ -148,6 +151,7 @@ async def get_brand_scripts(db: AsyncSession) -> list[dict]:
             "content": "发现一家宝藏餐厅！环境超赞，菜品精致，拍照打卡圣地~",
             "category": "种草文案",
             "usage_count": 423,
+            "progress": "58%",
         },
         {
             "id": UUID(int=5),
@@ -155,6 +159,7 @@ async def get_brand_scripts(db: AsyncSession) -> list[dict]:
             "content": "这家店真的绝了！每一道菜都是惊喜，强烈推荐给大家！",
             "category": "种草文案",
             "usage_count": 389,
+            "progress": "45%",
         },
     ]
     return scripts

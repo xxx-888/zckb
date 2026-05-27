@@ -341,11 +341,11 @@ export const PositiveActivation: React.FC = () => {
                 <Card key={i} className="p-6 border-none shadow-sm">
                   <div className="flex items-center gap-4 mb-4">
                     <div className="w-10 h-10 rounded-lg bg-orange-50 flex items-center justify-center text-orange-500 font-bold text-sm">
-                      {script.tag[0]}
+                      {script.name?.[0] || '?'}
                     </div>
                     <div className="flex-1">
                       <h4 className="text-sm font-bold text-slate-900">{script.tag}风格</h4>
-                      <p className="text-xs text-slate-400">已同步 {script.count ?? script.usage_count ?? 0} 条话术</p>
+                      <p className="text-xs text-slate-400">已同步 {script.usage_count ?? 0} 次</p>
                     </div>
                     <Badge className="bg-emerald-50 text-emerald-600 border-none text-[10px]">已学习</Badge>
                   </div>
