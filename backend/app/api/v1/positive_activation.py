@@ -56,7 +56,7 @@ async def get_brand_scripts(
     - 常用好评回复模板
     - 种草文案模板
     """
-    scripts = await positive_activation_service.get_brand_scripts(db)
+    scripts = await positive_activation_service.get_brand_scripts(db, current_user)
     return success(
         data=[BrandScriptResponse(**script).model_dump(mode="json") for script in scripts]
     )

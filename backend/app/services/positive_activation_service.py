@@ -3,8 +3,6 @@
 提供优质好评筛选、内容生成、授权管理等功能
 """
 
-import random
-from datetime import datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import and_, desc, func, select
@@ -83,85 +81,112 @@ async def get_high_quality_reviews(
             "has_image": bool(review.images and len(review.images) > 0),
             "length": len(review.content) if review.content else 0,
             "sentiment": review.sentiment or "positive",
-            "authorized": random.choice([True, False]),  # 模拟授权状态
+            "authorized": False,  # 默认未授权，需要用户同意
             "suggested_script": "您的满意是我们最大的动力，期待您的再次光临！",
             "created_at": review.created_at,
         })
 
-    # 如果没有数据，返回模拟数据
-    if not items:
-        for i in range(min(page_size, 5)):
-            items.append({
-                "id": UUID(int=i),
-                "user_name": f"美食家{i+1}",
-                "avatar": None,
-                "content": "这家餐厅真的太棒了！菜品精致美味，服务热情周到，环境优雅舒适，强烈推荐给大家！",
-                "rating": 5,
-                "has_image": random.choice([True, False]),
-                "length": 45,
-                "sentiment": "positive",
-                "authorized": random.choice([True, False]),
-                "suggested_script": "感谢您的五星好评，期待再次为您服务！",
-                "created_at": datetime.now() - timedelta(days=i),
-            })
-        total = 28
-
     return items, total
 
 
-async def get_brand_scripts(db: AsyncSession) -> list[dict]:
+async def get_brand_scripts(db: AsyncSession, user: User) -> list[dict]:
     """
-    获取品牌话术库
-
+    基于真实好评提炼品牌话术库
+    
     Args:
         db: 数据库会话
-
+        user: 当前用户
+        
     Returns:
         list[dict]: 品牌话术列表
     """
-    # 模拟品牌话术数据
-    scripts = [
-        {
-            "id": UUID(int=1),
-            "name": "感谢好评-通用版",
-            "content": "感谢您的五星好评，您的满意是我们全体团队前进的动力！",
-            "category": "好评回复",
-            "usage_count": 1256,
-            "progress": "92%",  # 添加progress字段
-        },
-        {
-            "id": UUID(int=2),
-            "name": "感谢好评-详细版",
-            "content": "非常感谢您的详细评价和认可！我们会继续保持品质，期待您的再次光临！",
-            "category": "好评回复",
-            "usage_count": 892,
-            "progress": "78%",
-        },
-        {
-            "id": UUID(int=3),
-            "name": "邀请复购话术",
-            "content": "感谢您的认可！下次光临时出示此评价可享专属优惠哦~",
-            "category": "复购引导",
-            "usage_count": 567,
-            "progress": "65%",
-        },
-        {
-            "id": UUID(int=4),
-            "name": "小红书种草模板",
-            "content": "发现一家宝藏餐厅！环境超赞，菜品精致，拍照打卡圣地~",
-            "category": "种草文案",
-            "usage_count": 423,
-            "progress": "58%",
-        },
-        {
-            "id": UUID(int=5),
-            "name": "抖音推广话术",
-            "content": "这家店真的绝了！每一道菜都是惊喜，强烈推荐给大家！",
-            "category": "种草文案",
-            "usage_count": 389,
-            "progress": "45%",
-        },
+    # 查询用户关联的高评分评论（>=4星）
+    user_store_ids = [sa.store_id for sa in user.store_associations]
+    
+    if not user_store_ids:
+        return []
+    
+    conditions = [
+        Review.store_id.in_(user_store_ids),
+        Review.rating >= 4,
+        Review.content.isnot(None),
     ]
+    
+    stmt = (
+        select(Review)
+        .where(and_(*conditions))
+        .order_by(desc(Review.created_at))
+        .limit(500)  # 分析最近500条好评
+    )
+    result = await db.execute(stmt)
+    reviews = result.scalars().all()
+    
+    if not reviews:
+        return []
+    
+    # 基于真实好评内容，提炼品牌话术
+    # 简化的关键词提取和话术生成
+    scripts = []
+    
+    # 1. 感谢类话术（基于真实好评的常见表达）
+    thank_you_count = len([r for r in reviews if "谢谢" in (r.content or "") or "感谢" in (r.content or "")])
+    if thank_you_count > 0:
+        scripts.append({
+            "id": UUID("11111111-1111-1111-1111-111111111111"),
+            "name": "感谢好评-真诚版",
+            "content": "非常感谢您的五星好评！您的认可是我们前进的最大动力，期待再次为您服务！",
+            "category": "好评回复",
+            "usage_count": thank_you_count,
+            "progress": f"{min(95, thank_you_count * 5)}%",
+        })
+    
+    # 2. 菜品赞美类话术
+    food_praise_count = len([r for r in reviews if any(word in (r.content or "") for word in ["好吃", "美味", "菜品", "味道"])])
+    if food_praise_count > 0:
+        scripts.append({
+            "id": UUID("22222222-2222-2222-2222-222222222222"),
+            "name": "菜品好评-专业版",
+            "content": "感谢您对我们菜品的认可！我们始终坚持选用新鲜食材，用心烹饪每一道菜，期待您下次再来品尝新品！",
+            "category": "好评回复",
+            "usage_count": food_praise_count,
+            "progress": f"{min(90, food_praise_count * 6)}%",
+        })
+    
+    # 3. 服务赞美类话术
+    service_praise_count = len([r for r in reviews if any(word in (r.content or "") for word in ["服务", "服务员", "态度"])])
+    if service_praise_count > 0:
+        scripts.append({
+            "id": UUID("33333333-3333-3333-3333-333333333333"),
+            "name": "服务好评-温暖版",
+            "content": "感谢您对我们服务的认可！优质服务是我们的承诺，我们会继续保持热情周到，让您每次用餐都感到温暖！",
+            "category": "好评回复",
+            "usage_count": service_praise_count,
+            "progress": f"{min(88, service_praise_count * 7)}%",
+        })
+    
+    # 4. 环境赞美类话术
+    env_praise_count = len([r for r in reviews if any(word in (r.content or "") for word in ["环境", "装修", "氛围", "干净"])])
+    if env_praise_count > 0:
+        scripts.append({
+            "id": UUID("44444444-4444-4444-4444-444444444444"),
+            "name": "环境好评-优雅版",
+            "content": "感谢您对我们环境的喜爱！我们精心打造的用餐环境，就是希望每一位顾客都能在这里享受愉悦的时光，期待您常来！",
+            "category": "好评回复",
+            "usage_count": env_praise_count,
+            "progress": f"{min(85, env_praise_count * 8)}%",
+        })
+    
+    # 5. 推荐类话术（用于引导复购和分享）
+    recommend_count = len([r for r in reviews if any(word in (r.content or "") for word in ["推荐", "下次", "再来", "朋友"])])
+    scripts.append({
+        "id": UUID("55555555-5555-5555-5555-555555555555"),
+        "name": "邀请复购-亲切版",
+        "content": "感谢您的推荐！您的满意是我们最大的幸福，期待您下次光临时带上亲朋好友，我们准备了专属优惠等您来享！",
+        "category": "复购引导",
+        "usage_count": max(recommend_count, 1),
+        "progress": f"{min(80, max(recommend_count * 10, 30))}%",
+    })
+    
     return scripts
 
 

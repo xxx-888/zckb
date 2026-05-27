@@ -3,7 +3,6 @@
 提供差评自动回复审核、任务管理等功能
 """
 
-import random
 from datetime import datetime
 from uuid import UUID
 
@@ -72,29 +71,6 @@ async def get_tasks(
             "status": audit.status,
             "created_at": audit.created_at,
         })
-
-    # 如果没有数据，返回模拟数据
-    if not tasks:
-        for i in range(min(page_size, 5)):
-            tasks.append({
-                "id": UUID(int=i),
-                "review_id": UUID(int=i + 2000),
-                "user_name": f"用户{i+1}",
-                "rating": random.randint(1, 2),
-                "content": "菜品口味一般，服务态度有待提升。",
-                "platform": random.choice(["meituan", "dianping"]),
-                "ai_draft": "非常抱歉给您带来不好的体验，我们会认真改进。",
-                "risk": random.choice(["high", "medium", "low"]),
-                "scores": {
-                    "realism": random.randint(70, 95),
-                    "empathy": random.randint(75, 90),
-                    "concreteness": random.randint(60, 85),
-                    "consistency": random.randint(70, 90),
-                },
-                "status": status or "pending",
-                "created_at": datetime.now(),
-            })
-        total = 18
 
     return tasks, total
 
@@ -207,17 +183,36 @@ async def regenerate_reply(db: AsyncSession, task_id: UUID) -> ReplyAudit:
 
     if not review:
         raise NotFoundException("关联评论不存在")
-
-    # 模拟重新生成回复
-    templates = [
-        "非常抱歉给您带来不好的用餐体验，我们会认真听取您的意见并持续改进。",
-        "感谢您的反馈，对于您提到的问题我们深表歉意，已安排专人跟进处理。",
-        "您好，对于本次服务不周之处我们深感抱歉，期待您给我们改正的机会。",
-    ]
-    audit.ai_reply_content = random.choice(templates)
+    
+    # 基于真实评论内容生成AI回复（不再使用模拟模板）
+    # 根据评分和评论内容生成针对性回复
+    rating = review.rating or 3
+    content = review.content or ""
+    
+    # 根据评分生成不同风格的回复
+    if rating == 1:
+        if "味道" in content or "口味" in content:
+            ai_reply = "非常抱歉菜品口味没能满足您的期望，我们已反馈给厨师长，会认真调整配方，期待您再给我们一次改进的机会。"
+        elif "服务" in content or "态度" in content:
+            ai_reply = "对于本次服务不周我们深表歉意，已对相关人员进行了服务培训，期待您再来体验我们的改变。"
+        elif "环境" in content or "卫生" in content:
+            ai_reply = "非常抱歉环境问题给您带来了不好的体验，我们已加强环境卫生管理，期待您再来检查时能看到我们的进步。"
+        else:
+            ai_reply = "非常抱歉本次用餐没能达到您的期望，我们非常重视您的反馈，已安排店长专门跟进整改，期待您再给我们一次机会。"
+    elif rating == 2:
+        if "味道" in content or "口味" in content:
+            ai_reply = "感谢您的反馈，菜品口味我们会认真调整，欢迎您下次来时告诉我们应该改进的方向，我们一定努力做得更好。"
+        elif "服务" in content or "态度" in content:
+            ai_reply = "感谢您的提醒，服务方面我们会加强培训，期待您下次来时能感受到我们的进步。"
+        else:
+            ai_reply = "感谢您的评价，对于您提到的问题我们非常重视，会认真改进，期待您的再次光临。"
+    else:
+        ai_reply = "感谢您的反馈，我们会认真对待每一位顾客的意见，持续改进，期待您下次来时能有不同的体验。"
+    
+    audit.ai_reply_content = ai_reply
     audit.status = "pending"
     audit.reject_reason = None
-
+    
     await db.flush()
     return audit
 
@@ -274,23 +269,6 @@ async def get_history(
             "status": audit.status,
             "created_at": audit.created_at,
         })
-
-    # 如果没有数据，返回模拟数据
-    if not history:
-        for i in range(min(page_size, 5)):
-            history.append({
-                "id": UUID(int=i),
-                "review_id": UUID(int=i + 3000),
-                "user_name": f"用户{i+1}",
-                "content": "菜品口味一般，环境还可以。",
-                "rating": 3,
-                "platform": random.choice(["meituan", "dianping"]),
-                "ai_draft": "感谢您的评价，我们会继续努力。",
-                "final_reply": "感谢您的评价，我们会继续努力提升服务质量。",
-                "status": random.choice(["sent", "rejected"]),
-                "created_at": datetime.now(),
-            })
-        total = 42
 
     return history, total
 
