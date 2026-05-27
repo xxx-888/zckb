@@ -44,7 +44,9 @@ export const NegativeReply: React.FC = () => {
       setLoading(true);
       setError(null);
       const data = await fetchNegativeReplyTasks();
-      setTasks(data);
+      // API返回格式: {items: [...], total, page, page_size}
+      const taskList = data.items || data || [];
+      setTasks(Array.isArray(taskList) ? taskList : []);
     } catch (err) {
       setError(err instanceof Error ? err.message : '获取数据失败');
     } finally {

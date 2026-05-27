@@ -47,8 +47,11 @@ export const PositiveActivation: React.FC = () => {
         fetchHighQualityReviews(),
         fetchBrandScripts(),
       ]);
-      setReviews(reviewData);
-      setScripts(scriptData);
+      // API返回格式: {items: [...], total, page, page_size}
+      const reviewList = reviewData.items || reviewData || [];
+      const scriptList = scriptData || [];
+      setReviews(Array.isArray(reviewList) ? reviewList : []);
+      setScripts(Array.isArray(scriptList) ? scriptList : []);
     } catch (err) {
       setError(err instanceof Error ? err.message : '获取数据失败');
     } finally {
