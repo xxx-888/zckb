@@ -1,9 +1,10 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { ToastProvider, useToast } from './hooks/use-toast';
 import Toaster from './components/ui/toaster';
+import { StoreProvider } from './context/StoreContext';
 import { SubscriptionProvider } from './hooks/use-subscription-check';
 
-// ç®¡ç†å‘˜é¡µé¢
+// ºóÌ¨¹ÜÀíÒ³Ãæ
 import { AdminLogin } from './pages/admin/AdminLogin';
 import { AdminGuard } from './components/AdminGuard';
 import { AdminDashboard } from './pages/admin/AdminDashboard';
@@ -25,15 +26,17 @@ import { AIAnalysis as AdminAIAnalysis } from './pages/admin/AIAnalysis';
 import { MobileSettings as AdminMobileSettings } from './pages/admin/MobileSettings';
 import { SubscriptionManagement } from './pages/admin/SubscriptionManagement';
 import RegionManagement from './pages/admin/RegionManagement';
+import { CollectionPackManagement } from './pages/admin/CollectionPackManagement';
+import { ReviewDetail as AdminReviewDetailPage } from './pages/admin/ReviewDetail';
 
-// ç®¡ç†å‘˜é¡µé¢ - AIé…ç½®å­é¡µé¢
+// ºóÌ¨¹ÜÀí - AIÅäÖÃ×ÓÒ³Ãæ
 import { Evaluation } from './pages/admin/AIConfig/Evaluation';
 import { ModelConfig } from './pages/admin/AIConfig/ModelConfig';
 import { Monitoring } from './pages/admin/AIConfig/Monitoring';
 import { PromptConfig } from './pages/admin/AIConfig/PromptConfig';
 import { RuleEngine } from './pages/admin/AIConfig/RuleEngine';
 
-// ç§»åŠ¨ç«¯é¡µé¢
+// ÒÆ¶¯¶ËÒ³Ãæ
 import { Login } from './pages/mobile/Login';
 import { Register } from './pages/mobile/Register';
 import { ForgotPassword } from './pages/mobile/ForgotPassword';
@@ -53,14 +56,14 @@ import { Insights } from './pages/mobile/Insights';
 import { NegativeReply } from './pages/mobile/NegativeReply';
 import { PositiveActivation } from './pages/mobile/PositiveActivation';
 import { ReviewStream } from './pages/mobile/ReviewStream';
-import { ReviewDetail } from './pages/mobile/ReviewDetail';
+import { ReviewDetail as MobileReviewDetail } from './pages/mobile/ReviewDetail';
 import { Settings } from './pages/mobile/Settings';
 import { PlatformDetail } from './pages/mobile/PlatformDetail';
 import { MobileAnnualReport } from './pages/mobile/AnnualReport';
 import { MobileCompetitorAnalysis } from './pages/mobile/CompetitorAnalysis';
 import TraceabilityDetail from './pages/mobile/TraceabilityDetail';
 
-// åº”ç”¨å†…å®¹ç»„ä»¶ - åœ¨ ToastProvider å†…éƒ¨ä½¿ç”¨ useToast
+// Ö÷Ó¦ÓÃÄÚÈİ×é¼ş - °ü¹üÔÚ ToastProvider ÄÚÒÔÊ¹ÓÃ useToast
 function AppContent() {
   const { toasts, removeToast } = useToast();
 
@@ -68,10 +71,10 @@ function AppContent() {
     <>
       <SubscriptionProvider>
         <Routes>
-          {/* é»˜è®¤é‡å®šå‘ */}
+          {/* Ä¬ÈÏÖØ¶¨Ïò */}
           <Route path="/" element={<Navigate to="/mobile" replace />} />
-        
-          {/* ==================== ç§»åŠ¨ç«¯è·¯ç”± ==================== */}
+
+          {/* ==================== ÒÆ¶¯¶ËÂ·ÓÉ ==================== */}
           <Route path="/mobile" element={<Dashboard />} />
           <Route path="/mobile/login" element={<Login />} />
           <Route path="/mobile/register" element={<Register />} />
@@ -84,7 +87,7 @@ function AppContent() {
           <Route path="/mobile/negative-reply" element={<NegativeReply />} />
           <Route path="/mobile/positive-activation" element={<PositiveActivation />} />
           <Route path="/mobile/review-stream" element={<ReviewStream />} />
-          <Route path="/mobile/review-detail/:id" element={<ReviewDetail />} />
+          <Route path="/mobile/review-detail/:id" element={<MobileReviewDetail />} />
           <Route path="/mobile/platform-detail/:platform" element={<PlatformDetail />} />
           <Route path="/mobile/annual-report" element={<MobileAnnualReport />} />
           <Route path="/mobile/competitor-analysis" element={<MobileCompetitorAnalysis />} />
@@ -98,42 +101,45 @@ function AppContent() {
           <Route path="/mobile/subscription" element={<Subscription />} />
           <Route path="/mobile/dish-elimination" element={<DishElimination />} />
           <Route path="/mobile/traceability-detail/:reportId" element={<TraceabilityDetail />} />
-        
-          {/* ==================== ç®¡ç†å‘˜è·¯ç”±ï¼ˆä»…é™HQï¼‰ ==================== */}
-        <Route path="/admin" element={<AdminLogin />} />
-        <Route path="/admin/dashboard" element={<AdminGuard><AdminDashboard /></AdminGuard>} />
-        
-        {/* ç®¡ç†å‘˜ - ä¸»è¦åŠŸèƒ½ */}
-        <Route path="/admin/ai-config" element={<AdminGuard><AIConfig /></AdminGuard>} />
-        <Route path="/admin/competitor-analysis" element={<AdminGuard><CompetitorAnalysis /></AdminGuard>} />
-        <Route path="/admin/notification-config" element={<AdminGuard><NotificationConfig /></AdminGuard>} />
-        <Route path="/admin/permission-management" element={<AdminGuard><PermissionManagement /></AdminGuard>} />
-        <Route path="/admin/reply-audit" element={<AdminGuard><ReplyAudit /></AdminGuard>} />
-        <Route path="/admin/review-management" element={<AdminGuard><ReviewManagement /></AdminGuard>} />
-        <Route path="/admin/spider-management" element={<AdminGuard><SpiderManagement /></AdminGuard>} />
-        <Route path="/admin/store-management" element={<AdminGuard><StoreManagement /></AdminGuard>} />
-        <Route path="/admin/annual-report" element={<AdminGuard><AnnualReport /></AdminGuard>} />
-        <Route path="/admin/xiaohongshu" element={<AdminGuard><XiaohongshuPage /></AdminGuard>} />
-        <Route path="/admin/xiaohongshu-analysis" element={<AdminGuard><XiaohongshuAnalysis /></AdminGuard>} />
-        {/* æ–°å¢ï¼šåå°ç®¡ç†ç¼ºå¤±çš„5ä¸ªåŠŸèƒ½æ¨¡å— */}
-        <Route path="/admin/negative-reply" element={<AdminGuard><AdminNegativeReply /></AdminGuard>} />
-        <Route path="/admin/positive-activation" element={<AdminGuard><AdminPositiveActivation /></AdminGuard>} />
-        <Route path="/admin/insights" element={<AdminGuard><AdminInsights /></AdminGuard>} />
-        <Route path="/admin/ai-analysis" element={<AdminGuard><AdminAIAnalysis /></AdminGuard>} />
-        <Route path="/admin/mobile-settings" element={<AdminGuard><AdminMobileSettings /></AdminGuard>} />
-        <Route path="/admin/subscription-management" element={<AdminGuard><SubscriptionManagement /></AdminGuard>} />
-        <Route path="/admin/region-management" element={<AdminGuard><RegionManagement /></AdminGuard>} />
-        
-        {/* ç®¡ç†å‘˜ - AIé…ç½®å­é¡µé¢ */}
-        <Route path="/admin/ai-config/evaluation" element={<AdminGuard><Evaluation /></AdminGuard>} />
-        <Route path="/admin/ai-config/model" element={<AdminGuard><ModelConfig /></AdminGuard>} />
-        <Route path="/admin/ai-config/monitoring" element={<AdminGuard><Monitoring /></AdminGuard>} />
-        <Route path="/admin/ai-config/prompts" element={<AdminGuard><PromptConfig /></AdminGuard>} />
-        <Route path="/admin/ai-config/rules" element={<AdminGuard><RuleEngine /></AdminGuard>} />
-        
-        {/* 404 */}
-        <Route path="*" element={<div>404 - é¡µé¢ä¸å­˜åœ¨</div>} />
-      </Routes>
+
+          {/* ==================== ºóÌ¨¹ÜÀíÂ·ÓÉ ==================== */}
+          <Route path="/admin" element={<AdminLogin />} />
+          <Route path="/admin/dashboard" element={<AdminGuard><AdminDashboard /></AdminGuard>} />
+
+          {/* ºóÌ¨¹ÜÀí - Ö÷ÒªÄ£¿é */}
+          <Route path="/admin/ai-config" element={<AdminGuard><AIConfig /></AdminGuard>} />
+          <Route path="/admin/competitor-analysis" element={<AdminGuard><CompetitorAnalysis /></AdminGuard>} />
+          <Route path="/admin/notification-config" element={<AdminGuard><NotificationConfig /></AdminGuard>} />
+          <Route path="/admin/permission-management" element={<AdminGuard><PermissionManagement /></AdminGuard>} />
+          <Route path="/admin/reply-audit" element={<AdminGuard><ReplyAudit /></AdminGuard>} />
+          <Route path="/admin/review-management" element={<AdminGuard><ReviewManagement /></AdminGuard>} />
+          <Route path="/admin/spider-management" element={<AdminGuard><SpiderManagement /></AdminGuard>} />
+          <Route path="/admin/store-management" element={<AdminGuard><StoreManagement /></AdminGuard>} />
+          <Route path="/admin/annual-report" element={<AdminGuard><AnnualReport /></AdminGuard>} />
+          <Route path="/admin/xiaohongshu" element={<AdminGuard><XiaohongshuPage /></AdminGuard>} />
+          <Route path="/admin/xiaohongshu-analysis" element={<AdminGuard><XiaohongshuAnalysis /></AdminGuard>} />
+
+          {/* ºóÌ¨¹ÜÀí - ĞÂÔöÄ£¿é */}
+          <Route path="/admin/negative-reply" element={<AdminGuard><AdminNegativeReply /></AdminGuard>} />
+          <Route path="/admin/positive-activation" element={<AdminGuard><AdminPositiveActivation /></AdminGuard>} />
+          <Route path="/admin/insights" element={<AdminGuard><AdminInsights /></AdminGuard>} />
+          <Route path="/admin/ai-analysis" element={<AdminGuard><AdminAIAnalysis /></AdminGuard>} />
+          <Route path="/admin/mobile-settings" element={<AdminGuard><AdminMobileSettings /></AdminGuard>} />
+          <Route path="/admin/subscription-management" element={<AdminGuard><SubscriptionManagement /></AdminGuard>} />
+          <Route path="/admin/region-management" element={<AdminGuard><RegionManagement /></AdminGuard>} />
+          <Route path="/admin/collection-pack-management" element={<AdminGuard><CollectionPackManagement /></AdminGuard>} />
+          <Route path="/admin/review-detail/:id" element={<AdminGuard><AdminReviewDetailPage /></AdminGuard>} />
+
+          {/* ºóÌ¨¹ÜÀí - AIÅäÖÃ×ÓÒ³Ãæ */}
+          <Route path="/admin/ai-config/evaluation" element={<AdminGuard><Evaluation /></AdminGuard>} />
+          <Route path="/admin/ai-config/model" element={<AdminGuard><ModelConfig /></AdminGuard>} />
+          <Route path="/admin/ai-config/monitoring" element={<AdminGuard><Monitoring /></AdminGuard>} />
+          <Route path="/admin/ai-config/prompts" element={<AdminGuard><PromptConfig /></AdminGuard>} />
+          <Route path="/admin/ai-config/rules" element={<AdminGuard><RuleEngine /></AdminGuard>} />
+
+          {/* 404 */}
+          <Route path="*" element={<div className="min-h-screen flex items-center justify-center bg-slate-50"><div className="text-center"><h1 className="text-4xl font-bold text-slate-900">404</h1><p className="text-slate-400 mt-2">Ò³Ãæ²»´æÔÚ</p></div></div>} />
+        </Routes>
       </SubscriptionProvider>
       <Toaster toasts={toasts} removeToast={removeToast} />
     </>
@@ -143,7 +149,9 @@ function AppContent() {
 function App() {
   return (
     <ToastProvider>
-      <AppContent />
+      <StoreProvider>
+        <AppContent />
+      </StoreProvider>
     </ToastProvider>
   );
 }
