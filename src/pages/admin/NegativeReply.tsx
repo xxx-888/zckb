@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   AlertCircle,
   CheckCircle2,
@@ -23,7 +24,7 @@ import { Input } from '../../components/ui/input';
 import { AdminLayout } from '../../components/AdminLayout';
 import { cn } from '../../lib/utils';
 import { useToast } from '../../hooks/use-toast';
-import { fetchNegativeReplyTasks } from '../../api/negative-reply';
+import { fetchNegativeReplyTasks, negativeReplyApi } from '../../api/negative-reply';
 import type { NegativeReplyTask } from '../../api/negative-reply';
 
 export const NegativeReply: React.FC = () => {
@@ -37,6 +38,7 @@ export const NegativeReply: React.FC = () => {
   const [filterRisk, setFilterRisk] = useState<'all' | 'high' | 'medium' | 'low'>('all');
   const pageSize = 10;
 
+  const navigate = useNavigate();
   const { success, error: showError } = useToast();
   const fetchedRef = React.useRef(false);
 
@@ -44,11 +46,13 @@ export const NegativeReply: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
-      console.log('Loading page:', page);
-      const data = await fetchNegativeReplyTasks(undefined, page, pageSize);
-      console.log('API response:', data);
-      console.log('Items length:', data.items?.length);
-      console.log('Total:', data.total);
+      const data = await fetchNegativeReplyTasks(
+        undefined,
+        page,
+        pageSize,
+        searchKeyword || undefined,
+        filterRisk || undefined
+      );
       setTasks(data.items || []);
       setTotal(data.total || 0);
       setCurrentPage(data.page || page);
@@ -59,14 +63,15 @@ export const NegativeReply: React.FC = () => {
     }
   };
 
-  const getAvgScore = (scores: any) => {
-    const vals = Object.values(scores) as number[];
+  const getAvgScore = (task: NegativeReplyTask) => {
+    const s = task.scores || { realism: 7, empathy: 7, concreteness: 7, consistency: 7 };
+    const vals = Object.values(s) as number[];
     return (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1);
   };
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
-      setSelectedIds(tasks.map(t => t.id));
+      setSelectedIds(tasks.map(t => Number(t.id)));
     } else {
       setSelectedIds([]);
     }
@@ -80,21 +85,57 @@ export const NegativeReply: React.FC = () => {
     }
   };
 
-  const handleBatchApprove = () => {
-    success('批量审核', `已批量通过 ${selectedIds.length} 条差评回复`);
-    setSelectedIds([]);
+  const handleApprove = async (taskId: string) => {
+    try {
+      await negativeReplyApi.approveTask(taskId);
+      success('审核通过', `回复已发送 (ID: ${taskId})`);
+      loadData(currentPage);
+    } catch (err) {
+      showError('操作失败', err instanceof Error ? err.message : '请重试');
+    }
   };
 
-  const handleBatchReject = () => {
-    showError('批量驳回', `已批量驳回 ${selectedIds.length} 条差评回复`);
-    setSelectedIds([]);
+  const handleReject = async (taskId: string) => {
+    try {
+      await negativeReplyApi.rejectTask(taskId, '管理员驳回，需人工处理');
+      success('已驳回', `AI 回复已驳回 (ID: ${taskId})`);
+      loadData(currentPage);
+    } catch (err) {
+      showError('操作失败', err instanceof Error ? err.message : '请重试');
+    }
+  };
+
+  const handleViewDetail = (reviewId: string) => {
+    navigate(`/admin/review-detail/${reviewId}`);
+  };
+
+  const handleBatchApprove = async () => {
+    try {
+      await Promise.all(selectedIds.map(id => negativeReplyApi.approveTask(String(id))));
+      success('批量审核', `已批量通过 ${selectedIds.length} 条差评回复`);
+      setSelectedIds([]);
+      loadData(currentPage);
+    } catch (err) {
+      showError('操作失败', err instanceof Error ? err.message : '请重试');
+    }
+  };
+
+  const handleBatchReject = async () => {
+    try {
+      await Promise.all(selectedIds.map(id => negativeReplyApi.rejectTask(String(id), '管理员批量驳回')));
+      success('批量驳回', `已批量驳回 ${selectedIds.length} 条差评回复`);
+      setSelectedIds([]);
+      loadData(currentPage);
+    } catch (err) {
+      showError('操作失败', err instanceof Error ? err.message : '请重试');
+    }
   };
 
   const handleExport = () => {
     success('导出报告', '正在导出差评处理报告...');
   };
 
-  // 搜索和筛选变化时重新加载数据
+  // 搜索和筛选变化时重新加载
   useEffect(() => {
     setCurrentPage(1);
     loadData(1);
@@ -268,9 +309,9 @@ export const NegativeReply: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {tasks.map((task) => {
-                  const avgScore = parseFloat(getAvgScore(task.scores));
+                  const avgScore = parseFloat(getAvgScore(task));
                   const isLowScore = avgScore < 7;
-                  const isSelected = selectedIds.includes(task.id);
+                  const isSelected = selectedIds.includes(Number(task.id));
 
                   return (
                     <tr key={task.id} className={cn("hover:bg-slate-50 transition-colors", isSelected && "bg-orange-50")}>
@@ -278,17 +319,17 @@ export const NegativeReply: React.FC = () => {
                         <input
                           type="checkbox"
                           checked={isSelected}
-                          onChange={(e) => handleSelectTask(task.id, e.target.checked)}
+                          onChange={(e) => handleSelectTask(Number(task.id), e.target.checked)}
                           className="rounded border-slate-300"
                         />
                       </td>
                       <td className="p-4">
                         <div className="flex items-center gap-3">
                           <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center">
-                            <span className="text-xs font-bold text-slate-600">{task.user[0]}</span>
+                            <span className="text-xs font-bold text-slate-600">{(task.user_name || task.user || '?')[0]}</span>
                           </div>
                           <div>
-                            <p className="text-sm font-medium text-slate-900">{task.user}</p>
+                            <p className="text-sm font-medium text-slate-900">{task.user_name || task.user}</p>
                             <p className="text-xs text-slate-400">{task.platform}</p>
                           </div>
                         </div>
@@ -333,6 +374,7 @@ export const NegativeReply: React.FC = () => {
                             variant="ghost"
                             className="h-8 w-8 p-0"
                             title="查看详情"
+                            onClick={() => handleViewDetail(task.review_id || String(task.id))}
                           >
                             <Eye className="w-4 h-4" />
                           </Button>
@@ -340,6 +382,7 @@ export const NegativeReply: React.FC = () => {
                             size="sm"
                             className="h-8 bg-emerald-500 hover:bg-emerald-600 text-white gap-1"
                             title="通过并发送"
+                            onClick={() => handleApprove(String(task.id))}
                           >
                             <Send className="w-3.5 h-3.5" />
                           </Button>
@@ -348,6 +391,7 @@ export const NegativeReply: React.FC = () => {
                             variant="outline"
                             className="h-8 border-rose-200 text-rose-600 hover:bg-rose-50 gap-1"
                             title="驳回"
+                            onClick={() => handleReject(String(task.id))}
                           >
                             <XCircle className="w-3.5 h-3.5" />
                           </Button>

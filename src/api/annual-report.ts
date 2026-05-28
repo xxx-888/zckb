@@ -120,60 +120,115 @@ const MOCK_ANNUAL_REPORT = {
   },
 };
 
-async function fetchAPI<T>(endpoint: string): Promise<T> {
+async function fetchAPI<T>(endpoint: string, opts?: { suppress404?: boolean }): Promise<T> {
   try {
     const res = await api.get<any>(endpoint);
     if (res?.code === 200 && res?.data) return res.data;
     if (res?.data) return res.data;
     return res as T;
-  } catch (err) {
-    console.warn(`接口 ${endpoint} 调用失败，使用测试数据:`, err);
-    if (endpoint.includes('/reports/annual')) {
-      return MOCK_ANNUAL_REPORT as T;
+  } catch (err: any) {
+    // 404（报告不存在）不报错，让调用方处理
+    if (opts?.suppress404 && err?.status === 404) {
+      return null as T;
     }
     throw err;
   }
 }
 
+/** 将后端 snake_case 的年度数据转换为前端 camelCase */
+function transformYearlyData(d: any): YearlyData {
+  if (!d) return null as any;
+  return {
+    year: d.year,
+    totalReviews: d.total_reviews || 0,
+    averageRating: d.average_rating || 0,
+    sentiment: {
+      positive: d.sentiment_distribution?.positive || 0,
+      negative: d.sentiment_distribution?.negative || 0,
+      neutral: d.sentiment_distribution?.neutral || 0,
+    },
+    replyStats: {
+      replyRate: d.reply_stats?.reply_rate || 0,
+      avgReplyTime: d.reply_stats?.avg_reply_time_hours || 0,
+      repliedCount: 0,
+      unrepliedCount: 0,
+      replySentiment: { positive: 0, negative: 0, neutral: 0 },
+    },
+    monthlyData: (d.monthly_data || []).map((m: any) => ({
+      month: m.month,
+      count: m.total || 0,
+      avgRating: m.avg_rating || 0,
+      replyCount: 0,
+    })),
+    topKeywords: (d.top_keywords || []).map((kw: any) => ({
+      word: kw.word,
+      count: kw.count,
+      sentiment: 'neutral',
+    })),
+    categoryScores: {
+      service: d.category_scores?.service || 0,
+      food: d.category_scores?.taste || 0,
+      environment: d.category_scores?.environment || 0,
+      price: d.category_scores?.value || 0,
+      speed: 0,
+    },
+  };
+}
+
+/** 将后端 snake_case 的洞察数据转换为前端 camelCase */
+function transformInsights(d: any): ReportInsights {
+  if (!d) return null as any;
+  return {
+    yearOverYear: {
+      reviewGrowth: d.year_over_year?.growth_rate || 0,
+      ratingChange: 0,
+      replyRateChange: 0,
+    },
+    highlights: d.highlights || [],
+    improvements: d.improvements || [],
+    aiSummary: d.ai_summary || '',
+    personalityType: d.personality_type || '',
+    recommendations: d.recommendations || [],
+  };
+}
+
 /** 获取年度报告数据 GET /v1/reports/annual */
 export async function fetchAnnualReport(storeId: string, year: number): Promise<{
-  yearlyData: YearlyData;
-  insights: ReportInsights;
-  historicalTrends: HistoricalTrends;
+  yearlyData: YearlyData | null;
+  insights: ReportInsights | null;
+  historicalTrends: HistoricalTrends | null;
 }> {
   if (!storeId) {
     return {
-      yearlyData: null as any,
-      insights: {
-        yearOverYear: { reviewGrowth: 0, ratingChange: 0, replyRateChange: 0 },
-        highlights: [],
-        improvements: [],
-        aiSummary: '',
-        personalityType: '',
-        recommendations: [],
-      },
-      historicalTrends: { bestYear: year, worstYear: year - 2, averageRating3Years: 0, totalReviews3Years: 0 },
+      yearlyData: null,
+      insights: null,
+      historicalTrends: null,
     };
   }
-  const data = await fetchAPI<any>(`/v1/reports/annual?store_id=${storeId}&year=${year}`);
-  const yd = data?.yearlyData?.[String(year)] || null;
-  const yearInsights = data?.insights?.[String(year)] || null;
+  const response = await fetchAPI<any>(`/v1/reports/annual?store_id=${storeId}&year=${year}`, { suppress404: true });
+  if (!response) {
+    return {
+      yearlyData: null,
+      insights: null,
+      historicalTrends: null,
+    };
+  }
+  
+  // 后端返回结构: { id, store_id, year, data: {...}, insights: {...}, generated_at }
+  const yearlyData = transformYearlyData(response.data);
+  const insights = transformInsights(response.insights);
+  
   return {
-    yearlyData: yd,
-    insights: yearInsights || {
-      yearOverYear: { reviewGrowth: 12.3, ratingChange: 0.2, replyRateChange: 7.4 },
+    yearlyData,
+    insights: insights || {
+      yearOverYear: { reviewGrowth: 0, ratingChange: 0, replyRateChange: 0 },
       highlights: [],
       improvements: [],
       aiSummary: '',
-      personalityType: data?.personalityType || '',
+      personalityType: '',
       recommendations: [],
     },
-    historicalTrends: data?.historicalTrends || {
-      bestYear: year,
-      worstYear: year - 2,
-      averageRating3Years: 0,
-      totalReviews3Years: 0,
-    },
+    historicalTrends: response.historicalTrends || null,
   };
 }
 
@@ -185,7 +240,18 @@ export async function fetchAllYearlyData(storeId?: string): Promise<Record<numbe
 }
 
 /** 生成年度报告 POST /v1/reports/annual/generate */
-export async function generateAnnualReport(year: number, storeId?: string): Promise<{success: boolean; message: string}> {
-  const response = await api.post<any, any>('/v1/reports/annual/generate', { year, store_id: storeId });
-  return response.data || response;
+export async function generateAnnualReport(year: number, storeId?: string): Promise<{success: boolean; message: string; data?: any}> {
+  try {
+    const response = await api.post<any, any>('/v1/reports/annual/generate', { year, store_id: storeId });
+    // api 拦截器返回 response.data，后端返回 { code: 200, data: {...}, message: '...' }
+    const result = response?.data || response;
+    return {
+      success: true,
+      message: result?.message || `${year}年度报告生成成功`,
+      data: result,
+    };
+  } catch (err: any) {
+    const msg = err?.response?.data?.message || err?.message || '生成失败';
+    return { success: false, message: msg };
+  }
 }

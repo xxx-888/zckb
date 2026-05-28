@@ -6,7 +6,7 @@ import {
   MessageSquare, 
   ThumbsUp, 
   MoreVertical,
-  RefreshCcw,
+  RefreshCw,
   CheckCircle2,
   AlertCircle,
   Clock,
@@ -44,7 +44,6 @@ export const ReviewStream: React.FC = () => {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const prevStoreIdRef = useRef<string | undefined>(undefined);
 
   // ===== 订阅状态检测（必须在条件返回之前）=====
   const {
@@ -59,43 +58,42 @@ export const ReviewStream: React.FC = () => {
     const handler = (e: CustomEvent<Store>) => {
       const storeFromEvent = e.detail;
       console.log('[ReviewStream] zc-store-changed event:', storeFromEvent?.name, storeFromEvent?.id);
-      // 直接使用事件中的店铺 ID，避免异步 state 未更新
       if (storeFromEvent?.id) {
         loadReviews(storeFromEvent.id);
       }
     };
     window.addEventListener('zc-store-changed', handler as any);
     return () => window.removeEventListener('zc-store-changed', handler as any);
-  }, []); // 空依赖，确保只注册一次
+  }, []);
 
-  // ===== useEffect 必须在条件返回之前调用 =====
-  // 用 ref 追踪上一次选中的店铺 ID，变化时强制重新加载
+  // ===== 店铺变化 或 tab 切换 都触发重新加载 =====
   useEffect(() => {
     if (!hasValidSubscription) return;
-    const currentStoreId = selectedStore?.id;
-    if (!currentStoreId) {
-      // 没有选中店铺但 localStorage 可能有，尝试加载
-      const savedId = localStorage.getItem('zc_selected_store_id');
-      if (savedId) {
-        console.log('[ReviewStream] no selectedStore but localStorage has:', savedId);
-        prevStoreIdRef.current = savedId;
-        loadReviews(savedId);
-        return;
-      }
+    const effectiveStoreId = selectedStore?.id || localStorage.getItem('zc_selected_store_id');
+    if (!effectiveStoreId) {
       setReviews([]);
       setLoading(false);
-      prevStoreIdRef.current = undefined;
+      setHasMore(false);
       return;
     }
-    // 店铺 ID 变化（或首次加载），触发重新获取
-    if (prevStoreIdRef.current !== currentStoreId) {
-      console.log('[ReviewStream] store changed:', prevStoreIdRef.current, '->', currentStoreId, selectedStore?.name);
-      prevStoreIdRef.current = currentStoreId;
-      loadReviews(currentStoreId);
-    }
-  }, [hasValidSubscription, selectedStore?.id]);
+    console.log('[ReviewStream] load by store/tab change:', effectiveStoreId, activeTab);
+    loadReviews(effectiveStoreId, false, activeTab);
+  }, [hasValidSubscription, selectedStore?.id, activeTab]);
 
-  const loadReviews = async (storeId?: string, loadMoreFlag?: boolean) => {
+  // ===== 搜索关键词变化 → 重新加载 =====
+  useEffect(() => {
+    if (!hasValidSubscription) return;
+    const effectiveStoreId = selectedStore?.id || localStorage.getItem('zc_selected_store_id');
+    if (effectiveStoreId) {
+      loadReviews(effectiveStoreId, false, activeTab);
+    }
+  }, [searchKeyword, hasValidSubscription]);
+
+  const loadReviews = async (
+    storeId?: string,
+    loadMoreFlag?: boolean,
+    sentimentFilter?: 'all' | 'positive' | 'negative'
+  ) => {
     try {
       if (!loadMoreFlag) {
         setLoading(true);
@@ -104,7 +102,12 @@ export const ReviewStream: React.FC = () => {
         setLoadingMore(true);
       }
       const filters: any = {};
-      // 优先使用传入的 storeId，其次用 selectedStore，最后从 localStorage 取
+      // 用 rating 过滤，比不可靠的 sentiment 字段更准确
+      if (sentimentFilter === 'negative') {
+        filters.rating_max = 2;
+      } else if (sentimentFilter === 'positive') {
+        filters.rating_min = 4;
+      }
       const effectiveStoreId = storeId || selectedStore?.id || localStorage.getItem('zc_selected_store_id');
       if (effectiveStoreId) {
         filters.store_id = effectiveStoreId;
@@ -115,21 +118,19 @@ export const ReviewStream: React.FC = () => {
         }
         return;
       }
-      
-      // 分页参数
+
       const currentPage = loadMoreFlag ? page : 1;
       filters.page = currentPage;
       filters.page_size = 20;
-      
+
       console.log('[ReviewStream] loadReviews filters:', filters);
       const response = await fetchReviews(filters);
       console.log('[ReviewStream] API response:', response);
-      
+
       const items = response.items || [];
       const total = response.total || 0;
       console.log('[ReviewStream] items count:', items.length, 'total:', total);
-      
-      // 字段映射：后端字段名 → 移动端 UI 字段名
+
       const mapped = items.map((r: any) => ({
         ...r,
         user: r.user_name || '匿名用户',
@@ -137,19 +138,18 @@ export const ReviewStream: React.FC = () => {
         time: r.created_at || r.platform_created_at || '',
         hasImage: !!(r.images && r.images.length > 0),
       }));
-      
+
       if (loadMoreFlag) {
         setReviews(prev => [...prev, ...(Array.isArray(mapped) ? mapped : [])]);
         setPage(prev => prev + 1);
       } else {
         setReviews(Array.isArray(mapped) ? mapped : []);
-        setPage(2); // 下一页是第二页
+        setPage(2);
       }
-      
-      // 判断是否还有更多数据
+
       const loadedCount = loadMoreFlag ? reviews.length + mapped.length : mapped.length;
       setHasMore(loadedCount < total);
-      
+
     } catch (err) {
       setFetchError(err instanceof Error ? err.message : '获取数据失败');
       if (!loadMoreFlag) {
@@ -166,11 +166,10 @@ export const ReviewStream: React.FC = () => {
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    // 重置分页状态
     setPage(1);
     setHasMore(true);
     success('数据刷新', '正在从平台获取最新评论...');
-    await loadReviews(undefined, false);
+    await loadReviews(undefined, false, activeTab);
     setIsRefreshing(false);
     success('刷新完成', '已获取最新评论');
   };
@@ -205,9 +204,8 @@ export const ReviewStream: React.FC = () => {
     success('更多操作', '举报、隐藏、置顶等功能开发中');
   };
 
-  // ===== 条件渲染（必须在所有 Hooks 调用之后）=====
-  
-  // 1. 订阅加载中
+  // ===== 条件渲染 =====
+
   if (subscriptionLoading) {
     return (
       <MobileLayout title="评论瀑布流">
@@ -221,7 +219,6 @@ export const ReviewStream: React.FC = () => {
     );
   }
 
-  // 2. 无有效订阅
   if (!hasValidSubscription) {
     return (
       <MobileLayout title="评论瀑布流">
@@ -230,7 +227,6 @@ export const ReviewStream: React.FC = () => {
     );
   }
 
-  // ===== 加载状态 =====
   if (loading) {
     return (
       <MobileLayout title="评论瀑布流">
@@ -242,8 +238,7 @@ export const ReviewStream: React.FC = () => {
       </MobileLayout>
     );
   }
-  
-  // ===== 错误状态 =====
+
   if (fetchError) {
     return (
       <MobileLayout title="评论瀑布流">
@@ -251,7 +246,10 @@ export const ReviewStream: React.FC = () => {
           <Card className="p-6 text-center">
             <AlertCircle className="w-12 h-12 text-rose-500 mx-auto mb-4" />
             <p className="text-sm text-slate-600 mb-4">{fetchError}</p>
-            <Button onClick={loadReviews} className="bg-orange-500 hover:bg-orange-600 text-white">
+            <Button onClick={() => {
+              const id = selectedStore?.id || localStorage.getItem('zc_selected_store_id');
+              if (id) loadReviews(id, false, activeTab);
+            }} className="bg-orange-500 hover:bg-orange-600 text-white">
               重试
             </Button>
           </Card>
@@ -260,8 +258,6 @@ export const ReviewStream: React.FC = () => {
     );
   }
 
-  // ===== 无店铺提示（不阻塞渲染）=====
-  // 只有当既没有选中店铺、localStorage 也没有保存店铺时才显示
   const hasStore = selectedStore?.id || localStorage.getItem('zc_selected_store_id');
   const noStoreWarning = !hasStore ? (
     <Card className="p-4 text-center border-amber-200 bg-amber-50">
@@ -273,17 +269,17 @@ export const ReviewStream: React.FC = () => {
     <MobileLayout title="评论瀑布流">
       {noStoreWarning}
       <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
-        
+
         {/* Spider Status Card */}
         <Card className="p-4 border-none shadow-sm bg-orange-50/50 border border-orange-100/50">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <RefreshCcw className={cn("w-3.5 h-3.5 text-orange-600", isRefreshing && "animate-spin")} />
+              <RefreshCw className={cn("w-3.5 h-3.5 text-orange-600", isRefreshing && "animate-spin")} />
               <span className="text-xs font-bold text-slate-800 uppercase tracking-tight">数据实时同步中...</span>
             </div>
             <span className="text-[10px] text-slate-400">14:25</span>
           </div>
-          
+
           <div className="flex gap-2">
              {['美团', '点评', '抖音', '小红书'].map((p, i) => (
                 <div key={i} className="flex-1 h-1 bg-slate-100 rounded-full overflow-hidden">
@@ -351,15 +347,12 @@ export const ReviewStream: React.FC = () => {
         <div className="space-y-3">
           {reviews
             .filter(review => {
-              if (activeTab === 'positive') return review.sentiment === 'positive';
-              if (activeTab === 'negative') return review.sentiment === 'negative';
-              return true;
-            })
-            .filter(review => {
               if (!searchKeyword.trim()) return true;
-              return                      review.content.includes(searchKeyword) || 
-                     review.user.includes(searchKeyword) ||
-                     (review.tags || []).some(tag => tag.includes(searchKeyword));
+              return (
+                (review.content || '').includes(searchKeyword) ||
+                (review.user || '').includes(searchKeyword) ||
+                (review.tags || []).some((tag: string) => tag.includes(searchKeyword))
+              );
             })
             .map((review) => (
             <Card 
@@ -398,13 +391,13 @@ export const ReviewStream: React.FC = () => {
                    <span className="text-[8px] text-slate-300 uppercase font-black">{review.platform}</span>
                 </div>
               </div>
-              
+
               <p className="text-sm text-slate-600 leading-relaxed mb-3">
                 {review.content}
               </p>
 
               <div className="flex flex-wrap gap-1.5 mb-4">
-                {(review.tags || []).map((tag, i) => (
+                {(review.tags || []).map((tag: string, i: number) => (
                   <Badge key={i} variant="outline" className="text-[9px] px-1.5 py-0 h-4 border-slate-100 bg-slate-50 text-slate-400 font-medium">
                     {tag}
                   </Badge>
@@ -441,19 +434,19 @@ export const ReviewStream: React.FC = () => {
             </Card>
           ))}
         </div>
-        
+
         {/* Load More Button */}
         {hasMore && !loading && (
           <div className="flex justify-center py-4">
             <Button 
-              onClick={() => loadReviews(undefined, true)}
+              onClick={() => loadReviews(undefined, true, activeTab)}
               disabled={loadingMore}
               variant="outline"
               className="border-orange-200 text-orange-600 hover:bg-orange-50"
             >
               {loadingMore ? (
                 <>
-                  <RefreshCcw className="w-4 h-4 mr-2 animate-spin" />
+                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
                   加载中...
                 </>
               ) : (
@@ -462,14 +455,14 @@ export const ReviewStream: React.FC = () => {
             </Button>
           </div>
         )}
-        
+
         {/* No More Data Hint */}
         {!hasMore && reviews.length > 0 && (
           <div className="text-center py-4 text-xs text-slate-400">
             没有更多数据了
           </div>
         )}
-        
+
         {/* Empty State */}
         {!loading && reviews.length === 0 && !fetchError && (
           <Card className="p-8 text-center">
@@ -482,4 +475,3 @@ export const ReviewStream: React.FC = () => {
     </MobileLayout>
   );
 };
-

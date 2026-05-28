@@ -139,6 +139,12 @@ export const reviewsApi = {
     return response.data;
   },
 
+  // 重新生成 AI 回复（后台评论详情页用）
+  regenerateReply: async (id: string): Promise<any> => {
+    const response = await api.post<any>(`/v1/reviews/${id}/regenerate-reply`);
+    return response.data || response;
+  },
+
   // 批量导入评论
   importReviews: async (file: File, storeId: string): Promise<any> => {
     const formData = new FormData();

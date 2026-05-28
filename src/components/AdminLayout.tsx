@@ -23,6 +23,7 @@ import {
   Smartphone,
   CreditCard,
   Globe,
+  Database,
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Avatar } from './ui/avatar';
@@ -51,6 +52,7 @@ const adminNavItems = [
   { icon: Bell, label: '通知配置', path: '/admin/notification-config' },
   { icon: CreditCard, label: '订阅管理', path: '/admin/subscription-management' },
   { icon: Globe, label: '区域管理', path: '/admin/region-management' },
+  { icon: Database, label: '采集套餐', path: '/admin/collection-pack-management' },
 ];
 
 export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {

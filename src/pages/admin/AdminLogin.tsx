@@ -34,9 +34,9 @@ export const AdminLogin: React.FC = () => {
     try {
       const result = await authApi.login({ phone: username, password });
       
-      // 仅限 HQ（总部管理员）角色可登录后台
+      // 仅限 SUPER_ADMIN（系统管理员）可登录后台
       const role = result.user.role;
-      if (role === 'HQ') {
+      if (role === 'SUPER_ADMIN') {
         success('登录成功', '正在跳转到管理后台...');
         navigate('/admin/dashboard');
       } else {

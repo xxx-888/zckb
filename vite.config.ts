@@ -1,8 +1,8 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
+import fs from 'fs'
 
-// https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
   resolve: {
@@ -14,14 +14,25 @@ export default defineConfig({
     port: 5173,
     host: true,
     proxy: {
-      // 代理 /api 请求到后端 FastAPI 服务
-      // 前端请求: /api/auth/login
-      // 直接转发到: http://localhost:8000/api/auth/login
-      // 后端路由已配置 /api 前缀，无需重写
       '/api': {
         target: 'http://localhost:8000',
         changeOrigin: true,
       },
+    },
+    // SPA fallback: 所有非静态资源请求都返回 index.html
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const url = req.url || '';
+        if (url.startsWith('/api') || /\.\w+$/.test(url.split('?')[0])) {
+          return next();
+        }
+        const indexHtml = fs.readFileSync(
+          path.resolve(__dirname, 'index.html'),
+          'utf-8'
+        );
+        res.setHeader('Content-Type', 'text/html');
+        res.end(indexHtml);
+      });
     },
   },
 })

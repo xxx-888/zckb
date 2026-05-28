@@ -86,21 +86,33 @@ export const Dashboard: React.FC = () => {
     hasValidSubscription,
   } = useSubscription();
 
-  // ===== 时间筛选选项 =====
-  const timeOptions = [
-    { value: 'today', label: '今天', dateRange: '2026年05月12日' },
-    { value: 'yesterday', label: '昨天', dateRange: '2026年05月11日' },
-    { value: '7days', label: '最近7天', dateRange: '2026年05月06日 - 05月12日' },
-    { value: '30days', label: '最近30天', dateRange: '2026年04月13日 - 05月12日' },
-    { value: '90days', label: '最近90天', dateRange: '2026年02月12日 - 05月12日' },
-    { value: 'custom', label: '自定义', dateRange: '选择日期范围' },
-  ];
+  // ===== 动态日期计算 =====
+  const getTimeOptions = () => {
+    const fmt = (d: Date) =>
+      `${d.getFullYear()}年${String(d.getMonth() + 1).padStart(2, '0')}月${String(d.getDate()).padStart(2, '0')}日`;
+    const now = new Date();
+    const today = fmt(now);
+    const yesterday = fmt(new Date(now.getTime() - 86400000));
+    const range = (days: number) => {
+      const d = new Date(now.getTime() - days * 86400000);
+      return `${fmt(d)} - ${today}`;
+    };
+    return [
+      { value: 'today', label: '今天', dateRange: today },
+      { value: 'yesterday', label: '昨天', dateRange: yesterday },
+      { value: '7days', label: '最近7天', dateRange: range(6) },
+      { value: '30days', label: '最近30天', dateRange: range(29) },
+      { value: '90days', label: '最近90天', dateRange: range(89) },
+      { value: 'custom', label: '自定义', dateRange: '选择日期范围' },
+    ];
+  };
+  const timeOptions = React.useMemo(() => getTimeOptions(), []);
 
   const getCurrentDateRange = () => {
     return timeOptions.find(opt => opt.value === timePeriod)?.dateRange || '';
   };
 
-  const handleTimePeriodChange = (period: 'today' | 'yesterday' | '7days' | '30days' | 'custom') => {
+  const handleTimePeriodChange = (period: 'today' | 'yesterday' | '7days' | '30days' | '90days' | 'custom') => {
     setTimePeriod(period);
     setShowTimeDropdown(false);
     success('时间筛选', `已切换到${timeOptions.find(opt => opt.value === period)?.label}`);
@@ -141,17 +153,17 @@ export const Dashboard: React.FC = () => {
       setLoading(true);
       setError(null);
 
-      const period = mapPeriod(timePeriod);
-
-      console.log('[Dashboard] fetchAllData 开始获取数据, timePeriod:', timePeriod, 'period:', period);
+      // 直接传 timePeriod 给 API 函数，由 dashboard.ts 里的 mapPeriod 统一映射
+      console.log('[Dashboard] fetchAllData 开始获取数据, timePeriod:', timePeriod);
       console.log('[Dashboard] isHQ:', isHQ, 'currentUser.role:', currentUser?.role);
 
+      // 所有 API 都传入 timePeriod，确保时间筛选对所有数据生效
       const [coreStatsRes, platformDataRes, recentReviewsRes, storeRankingsRes, healthStatsRes] = await Promise.all([
-        fetchCoreStats(period),
-        fetchPlatformData(),
-        fetchRecentReviews(5),
-        fetchStoreRankings(5),
-        fetchHealthStatus(),
+        fetchCoreStats(timePeriod),
+        fetchPlatformData(timePeriod),
+        fetchRecentReviews(5, timePeriod),
+        fetchStoreRankings(5, timePeriod),
+        fetchHealthStatus(timePeriod),
       ]);
 
       console.log('[Dashboard] coreStatsRes:', coreStatsRes);
@@ -165,7 +177,7 @@ export const Dashboard: React.FC = () => {
       if (isHQ) {
         setStoreRankings(storeRankingsRes);
       } else {
-        const storeHealthRes = await fetchStoreHealth();
+        const storeHealthRes = await fetchStoreHealth(timePeriod);
         console.log('[Dashboard] storeHealthRes:', storeHealthRes);
         if (storeHealthRes && storeHealthRes.length > 0) {
           setStoreHealth(storeHealthRes[0]);
@@ -174,7 +186,7 @@ export const Dashboard: React.FC = () => {
         }
       }
 
-      const alertRes = await fetchAlert();
+      const alertRes = await fetchAlert(timePeriod);
       console.log('[Dashboard] alertRes:', alertRes);
       setAlert(alertRes);
 
@@ -227,27 +239,10 @@ export const Dashboard: React.FC = () => {
     }
   }, [hasValidSubscription, subscriptionLoading]);
 
-  // ===== 调试面板（临时）=====
-  const debugInfo = (
-    <div className="fixed top-16 left-2 right-2 bg-black/90 text-white text-[10px] p-2 rounded-lg z-50 font-mono overflow-auto max-h-48">
-      <p className="text-orange-400 font-bold">⚡ 调试信息</p>
-      <p>loading: {loading ? 'true' : 'false'}</p>
-      <p>error: {error || 'null'}</p>
-      <p>currentUser?.role: {currentUser?.role || 'null'}</p>
-      <p>isHQ: {isHQ ? 'true' : 'false'}</p>
-      <p>selectedStore: {selectedStore ? selectedStore.name : 'null'}</p>
-      <p>coreStats: {coreStats ? `有数据(${coreStats.total_reviews})` : 'null'}</p>
-      <p>platformData: {platformData.length}条</p>
-      <p>recentReviews: {recentReviews.length}条</p>
-      <p>hasNoData: {(!coreStats || !coreStats.total_reviews || (recentReviews.length === 0 && platformData.length === 0)) ? 'true' : 'false'}</p>
-    </div>
-  );
-
   // ===== 加载状态 =====
   if (loading) {
     return (
       <MobileLayout title="数据概览">
-        {debugInfo}
         <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500 p-4">
           <Skeleton lines={1} className="h-8 w-48 mb-4" />
           <Card className="p-5">
@@ -394,25 +389,29 @@ export const Dashboard: React.FC = () => {
             </div>
           </div>
 
-          {/* 第三行：平台分布 */}
+            {/* 第三行：平台分布 */}
           <div className="mb-3">
             <p className="text-[9px] text-slate-400 mb-2 font-medium flex items-center gap-1">
               <BarChart3 className="w-3 h-3" /> 平台分布
             </p>
             <div className="bg-slate-50 rounded-xl p-3 space-y-2">
-              {platformData.map((item, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <iconify-icon icon={item.icon} class="text-sm opacity-90 w-5 flex-shrink-0"></iconify-icon>
-                  <span className="text-[9px] text-slate-600 w-10 flex-shrink-0">{item.platform === '大众点评' ? '点评' : item.platform === '小红书' ? '小红书' : item.platform}</span>
-                  <div className="flex-1 bg-slate-200 rounded-full h-2">
-                    <div
-                      className={`h-full rounded-full ${item.color}`}
-                      style={{ width: `${item.percentage}%` }}
-                    ></div>
+              {platformData && platformData.length > 0 ? (
+                platformData.map((item, index) => (
+                  <div key={`platform-${index}-${item.platform}`} className="flex items-center gap-2">
+                    <iconify-icon icon={item.icon} className="text-sm opacity-90 w-5 flex-shrink-0"></iconify-icon>
+                    <span className="text-[9px] text-slate-600 w-10 flex-shrink-0">{item.platform === '大众点评' ? '点评' : item.platform === '小红书' ? '小红书' : item.platform}</span>
+                    <div className="flex-1 bg-slate-200 rounded-full h-2">
+                      <div
+                        className={`h-full rounded-full ${item.color}`}
+                        style={{ width: `${item.percentage || 0}%` }}
+                      ></div>
+                    </div>
+                    <span className="text-[9px] font-bold text-slate-600 w-10 text-right">{item.count || 0}条</span>
                   </div>
-                  <span className="text-[9px] font-bold text-slate-600 w-10 text-right">{item.count}条</span>
-                </div>
-              ))}
+                ))
+              ) : (
+                <p className="text-[9px] text-slate-400 text-center py-2">暂无平台数据</p>
+              )}
             </div>
           </div>
 
@@ -423,33 +422,37 @@ export const Dashboard: React.FC = () => {
             </p>
             <div className="bg-slate-50 rounded-xl p-3">
               <div className="grid grid-cols-4 gap-2">
-                {healthStats.map((stat, i) => (
-                  <div key={i} className="flex flex-col items-center gap-1">
-                    <div className="relative">
-                      <iconify-icon
-                        icon={stat.platform === '美团' ? 'simple-icons:meituan' :
-                               stat.platform === '大众点评' ? 'simple-icons:dianping' :
-                               stat.platform === '抖音' ? 'simple-icons:tiktok' : 'simple-icons:xiaohongshu'}
-                        class={cn("text-lg",
-                          stat.platform === '美团' ? 'text-yellow-500' :
-                          stat.platform === '大众点评' ? 'text-orange-500' :
-                          stat.platform === '抖音' ? 'text-slate-900' : 'text-red-500'
-                        )}
-                      ></iconify-icon>
-                      <div className={cn(
-                        "absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full border-2 border-white",
-                        stat.status === 'normal' ? 'bg-emerald-500' : 'bg-amber-500'
-                      )}></div>
+                {healthStats && healthStats.length > 0 ? (
+                  healthStats.map((stat, index) => (
+                    <div key={`health-${index}-${stat.platform}`} className="flex flex-col items-center gap-1">
+                      <div className="relative">
+                        <iconify-icon
+                          icon={stat.platform === '美团' ? 'simple-icons:meituan' :
+                                 stat.platform === '大众点评' ? 'simple-icons:dianping' :
+                                 stat.platform === '抖音' ? 'simple-icons:tiktok' : 'simple-icons:xiaohongshu'}
+                          class={cn("text-lg",
+                            stat.platform === '美团' ? 'text-yellow-500' :
+                            stat.platform === '大众点评' ? 'text-orange-500' :
+                            stat.platform === '抖音' ? 'text-slate-900' : 'text-red-500'
+                          )}
+                        ></iconify-icon>
+                        <div className={cn(
+                          "absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full border-2 border-white",
+                          stat.status === 'normal' ? 'bg-emerald-500' : 'bg-amber-500'
+                        )}></div>
+                      </div>
+                      <div className="flex items-center gap-0.5">
+                        <div className={cn(
+                          "w-1 h-1 rounded-full",
+                          stat.status === 'normal' ? 'bg-emerald-500' : 'bg-amber-500'
+                        )}></div>
+                        <span className="text-[8px] text-slate-400">{stat.time || '未知'}</span>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-0.5">
-                      <div className={cn(
-                        "w-1 h-1 rounded-full",
-                        stat.status === 'normal' ? 'bg-emerald-500' : 'bg-amber-500'
-                      )}></div>
-                      <span className="text-[8px] text-slate-400">{stat.time}</span>
-                    </div>
-                  </div>
-                ))}
+                  ))
+                ) : (
+                  <p className="text-[9px] text-slate-400 text-center col-span-4 py-2">暂无数据源状态</p>
+                )}
               </div>
             </div>
           </div>
@@ -571,12 +574,13 @@ export const Dashboard: React.FC = () => {
             </h3>
             <span className="text-[10px] text-slate-500 font-bold bg-slate-100 px-2 py-0.5 rounded-full">{recentReviews.length} 条评论</span>
           </div>
-          {recentReviews.map((review) => (
-            <Card
-              key={review.id}
-              className="p-4 border-slate-100 shadow-sm active:bg-slate-50 transition-colors bg-white relative cursor-pointer hover:shadow-md transition-all"
-              onClick={() => handleReviewClick(review.id)}
-            >
+          {recentReviews && recentReviews.length > 0 ? (
+            recentReviews.map((review, index) => (
+              <Card
+                key={`review-${review.id}-${index}`}
+                className="p-4 border-slate-100 shadow-sm active:bg-slate-50 transition-colors bg-white relative cursor-pointer hover:shadow-md transition-all"
+                onClick={() => handleReviewClick(review.id)}
+              >
               <div className="flex justify-between items-start">
                 <div className="flex gap-3 flex-1">
                   <div className={cn(
@@ -637,7 +641,12 @@ export const Dashboard: React.FC = () => {
                 </Button>
               </div>
             </Card>
-          ))}
+          ))
+        ) : (
+          <Card className="p-8 text-center">
+            <p className="text-sm text-slate-400">暂无最新评论</p>
+          </Card>
+        )}
         </div>
       </div>
     </MobileLayout>

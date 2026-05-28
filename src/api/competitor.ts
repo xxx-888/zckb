@@ -44,7 +44,7 @@ export const competitorApi = {
     return response.data || response;
   },
 
-  createCompetitor: async (data: Partial<Competitor>): Promise<Competitor> => {
+  addCompetitor: async (data: Partial<Competitor>): Promise<Competitor> => {
     const response = await api.post<any, any>('/v1/competitors', data);
     return response.data || response;
   },
@@ -87,3 +87,5 @@ export const competitorApi = {
 // 兼容旧函数名的别名
 export const fetchCompetitorTasks = competitorApi.getTasks;
 export const createCompetitorTask = competitorApi.createTask;
+export const fetchCompetitorPlans = competitorApi.getPlans;
+export const addCompetitor = competitorApi.addCompetitor;

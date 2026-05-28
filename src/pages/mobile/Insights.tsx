@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  TrendingUp, 
-  Target, 
-  BarChart3, 
-  PieChart, 
-  Users, 
+import {
+  TrendingUp,
+  Target,
+  BarChart3,
+  PieChart,
+  Users,
   MapPin,
   ChevronRight,
   ArrowUpRight,
@@ -36,7 +36,6 @@ export const Insights: React.FC = () => {
   const [threeGoodThreeBad, setThreeGoodThreeBad] = useState<{goods: string[], bads: string[]}>({goods: [], bads: []});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const fetchedRef = React.useRef(false);
 
   const { success } = useToast();
   const navigate = useNavigate();
@@ -51,13 +50,17 @@ export const Insights: React.FC = () => {
   } = useSubscription();
 
   const loadData = async () => {
+    if (!selectedStore?.id) {
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
       setError(null);
-      const storeId = selectedStore?.id;
+      const period = reportType === 'week' ? '7d' : '30d';
       const [dishData, threeData] = await Promise.all([
-        fetchTopDish(undefined, storeId),
-        fetchThreeGoodThreeBad(undefined, storeId),
+        fetchTopDish(period, selectedStore.id),
+        fetchThreeGoodThreeBad(period, selectedStore.id),
       ]);
       setTopDish(dishData);
       setThreeGoodThreeBad(threeData);
@@ -69,10 +72,9 @@ export const Insights: React.FC = () => {
   };
 
   useEffect(() => {
-    if (fetchedRef.current) return;
-    fetchedRef.current = true;
+    if (subscriptionLoading) return;
     loadData();
-  }, []);
+  }, [selectedStore?.id, reportType, subscriptionLoading]);
 
   const handleViewDetail = () => {
     navigate('/mobile/traceability-detail/RPT-2025-001');
@@ -119,13 +121,13 @@ export const Insights: React.FC = () => {
     return (
       <MobileLayout title="经营洞察">
         <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500 p-4">
-          <Skeleton lines={1} className="h-8 w-48 mb-4" />
+          <Skeleton className="h-8 w-48 mb-4" />
           <Card className="p-5">
-            <Skeleton lines={1} className="h-8 w-32 mb-4" />
-            <Skeleton lines={3} className="space-y-2" />
+            <Skeleton className="h-8 w-32 mb-4" />
+            <Skeleton className="space-y-2" />
           </Card>
           <Skeleton card className="mt-4" />
-          <Skeleton lines={5} className="mt-4 space-y-3" />
+          <Skeleton className="mt-4 space-y-3" />
         </div>
       </MobileLayout>
     );
@@ -145,17 +147,14 @@ export const Insights: React.FC = () => {
     );
   }
 
-  // 5. 无店铺
+  // 5. 店铺加载中
   if (!selectedStore) {
     return (
       <MobileLayout title="经营洞察">
         <div className="flex-1 flex items-center justify-center p-4">
           <div className="text-center">
-            <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4">
-              <TrendingUp className="w-8 h-8 text-slate-300" />
-            </div>
-            <p className="text-base font-semibold text-slate-400 mb-2">暂无数据</p>
-            <p className="text-sm text-slate-400">请通过顶部导航切换店铺</p>
+            <div className="w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-sm text-slate-400">正在加载店铺数据...</p>
           </div>
         </div>
       </MobileLayout>
@@ -166,7 +165,7 @@ export const Insights: React.FC = () => {
   return (
     <MobileLayout title="经营洞察">
       <div className="space-y-6 pb-20 animate-in fade-in slide-in-from-bottom-4 duration-500">
-        
+
         {/* 竞对分析入口 - 移到最顶部 */}
         <Card
           className="p-5 bg-white border-slate-100 shadow-sm cursor-pointer hover:shadow-md transition-all duration-300"
@@ -189,13 +188,13 @@ export const Insights: React.FC = () => {
         {/* "Three Goods and Three Bads" Report */}
         <div className="space-y-3">
           <h3 className="font-bold text-slate-800 text-sm px-1 flex justify-between items-center">
-            "三好三差”智能月报
+            "三好三差"智能月报
             <div className="flex bg-slate-100 p-0.5 rounded-lg">
-              <button 
+              <button
                 onClick={() => setReportType('week')}
                 className={cn("px-2 py-1 text-[9px] font-bold rounded-md transition-all", reportType === 'week' ? "bg-white text-orange-600 shadow-sm" : "text-slate-400")}
               >周</button>
-              <button 
+              <button
                 onClick={() => setReportType('month')}
                 className={cn("px-2 py-1 text-[9px] font-bold rounded-md transition-all", reportType === 'month' ? "bg-white text-orange-600 shadow-sm" : "text-slate-400")}
               >月</button>
@@ -218,8 +217,8 @@ export const Insights: React.FC = () => {
                 ))}
               </div>
             </div>
-            <Button 
-              variant="ghost" 
+            <Button
+              variant="ghost"
               className="w-full h-8 text-orange-600 text-[10px] font-bold bg-orange-50/50 rounded-lg"
               onClick={handleViewDetail}
             >
@@ -235,8 +234,8 @@ export const Insights: React.FC = () => {
           </h3>
           <div className="space-y-2">
             {topDish.map((dish, i) => (
-              <Card 
-                key={i} 
+              <Card
+                key={i}
                 className="p-4 border-none shadow-sm flex items-center justify-between bg-white cursor-pointer hover:shadow-md transition-all"
                 onClick={() => handleDishClick(dish.name)}
               >
@@ -267,7 +266,7 @@ export const Insights: React.FC = () => {
         </div>
 
         {/* Last-place Elimination Advice */}
-        <Card 
+        <Card
           className="p-5 border-none shadow-sm bg-slate-900 text-white relative overflow-hidden cursor-pointer hover:shadow-lg transition-all"
           onClick={handleEliminationClick}
         >
@@ -275,14 +274,14 @@ export const Insights: React.FC = () => {
           <div className="relative z-10 space-y-4">
             <div className="flex items-center gap-2">
               <Zap className="w-4 h-4 text-amber-400" />
-              <h4 className="text-sm font-bold">"末位淘汰”建议</h4>
+              <h4 className="text-sm font-bold">"末位淘汰"建议</h4>
             </div>
             <p className="text-[11px] text-slate-300 leading-relaxed">
               基于近 30 天评价，菜品 <span className="text-amber-400 font-bold underline">"麻辣烫"</span> 差评率持续高于 20%，且近期销量表现一般。
             </p>
             <div className="bg-white/5 p-3 rounded-xl border border-white/10 space-y-2">
               <p className="text-[10px] text-slate-400">主要问题：口感过咸、食材种类单一</p>
-              <Button 
+              <Button
                 className="w-full bg-amber-500 hover:bg-amber-600 text-white h-8 text-[10px] font-bold border-none"
                 onClick={(e) => {
                   e.stopPropagation();
@@ -307,8 +306,8 @@ export const Insights: React.FC = () => {
                 <h4 className="text-[11px] font-bold text-slate-800">金牌服务案例库</h4>
                 <p className="text-[9px] text-slate-400 mt-1">已沉淀 42 条优秀案例</p>
               </div>
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 className="w-full h-8 text-[9px] font-bold border-slate-100"
                 onClick={() => success('查看案例', '正在加载金牌服务案例库...')}
               >
@@ -323,8 +322,8 @@ export const Insights: React.FC = () => {
                 <h4 className="text-[11px] font-bold text-slate-800">反面教材修正工单</h4>
                 <p className="text-[9px] text-slate-400 mt-1">3 条工单正在整改中</p>
               </div>
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 className="w-full h-8 text-[9px] font-bold border-slate-100"
                 onClick={() => success('处理工单', '正在加载反面教材修正工单...')}
               >
@@ -343,7 +342,7 @@ export const Insights: React.FC = () => {
               <p className="text-xs font-bold text-slate-700">商圈竞品对比</p>
             </div>
             <p className="text-[11px] text-slate-500 leading-relaxed">
-              您的竞品 A 近期"上菜慢”的差评增多，建议您本店主推"30分钟未上齐免单”服务。
+              您的竞品 A 近期"上菜慢"的差评增多，建议您本店主推"30分钟未上齐免单"服务。
             </p>
             <div className="pt-2">
                <div className="flex justify-between text-[10px] mb-1">

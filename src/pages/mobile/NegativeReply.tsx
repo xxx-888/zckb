@@ -16,16 +16,17 @@ import { Card } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { Skeleton } from '../../components/ui/skeleton';
-import { MobileLayout } from '../../components/MobileLayout';
+import { MobileLayout, useStore } from '../../components/MobileLayout';
 import { cn } from '../../lib/utils';
 import { useToast } from '../../hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
-import { fetchNegativeReplyTasks } from '../../api/negative-reply';
+import { fetchNegativeReplyTasks, negativeReplyApi } from '../../api/negative-reply';
 import type { NegativeReplyTask } from '../../api/negative-reply';
 
 export const NegativeReply: React.FC = () => {
   const { success, error } = useToast();
   const navigate = useNavigate();
+  const { selectedStore } = useStore();
   const [tasks, setTasks] = useState<NegativeReplyTask[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -38,7 +39,7 @@ export const NegativeReply: React.FC = () => {
       setFetchError(null);
       const storeId = selectedStore?.id;
       const data = await fetchNegativeReplyTasks(storeId);
-      setTasks(data);
+      setTasks(data.items || []);
     } catch (err) {
       setFetchError(err instanceof Error ? err.message : '获取数据失败');
     } finally {
@@ -66,20 +67,38 @@ export const NegativeReply: React.FC = () => {
     }, 2000);
   };
 
-  const handleApproveReply = (taskId: number) => {
-    success('审核通过', `回复已发送，用户将收到通知 (ID: ${taskId})`);
+  const handleApproveReply = async (taskId: number) => {
+    try {
+      await negativeReplyApi.approveTask(String(taskId));
+      success('审核通过', `回复已发送 (ID: ${taskId})`);
+      loadData();
+    } catch (err) {
+      error('操作失败', err instanceof Error ? err.message : '请重试');
+    }
   };
 
-  const handleRejectReply = (taskId: number) => {
-    success('已驳回', `AI 回复已驳回，请手动编写 (ID: ${taskId})`);
+  const handleRejectReply = async (taskId: number) => {
+    try {
+      await negativeReplyApi.rejectTask(String(taskId), '用户驳回，需人工处理');
+      success('已驳回', `AI 回复已驳回，请手动编写 (ID: ${taskId})`);
+      loadData();
+    } catch (err) {
+      error('操作失败', err instanceof Error ? err.message : '请重试');
+    }
   };
 
-  const handleEditReply = (taskId: number) => {
-    success('编辑回复', `正在跳转到编辑页面 (ID: ${taskId})...`);
+  const handleEditReply = async (taskId: number) => {
+    try {
+      await negativeReplyApi.regenerateReply(String(taskId));
+      success('重新生成', `AI 正在重新生成回复草稿 (ID: ${taskId})...`);
+      loadData();
+    } catch (err) {
+      error('操作失败', err instanceof Error ? err.message : '请重试');
+    }
   };
 
-  const handleViewTask = (taskId: number) => {
-    navigate(`/mobile/review-detail/${taskId}`);
+  const handleViewTask = (taskId: number, reviewId?: string) => {
+    navigate(`/mobile/review-detail/${reviewId || taskId}`);
   };
 
   if (loading) {
@@ -152,7 +171,7 @@ export const NegativeReply: React.FC = () => {
               <Card 
                 key={task.id} 
                 className="p-0 border-none shadow-md overflow-hidden bg-white cursor-pointer hover:shadow-lg transition-all"
-                onClick={() => handleViewTask(task.id)}
+                onClick={() => handleViewTask(task.id, task.review_id || task.id)}
               >
                 <div className="p-4 border-b border-slate-50">
                   <div className="flex justify-between items-start mb-2">

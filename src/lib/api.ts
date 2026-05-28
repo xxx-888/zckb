@@ -46,34 +46,59 @@ class ApiClient {
         return response.data;
       },
       (error) => {
-        // 优先使用后端返回的错误信息
         const statusCode = error.response?.status;
         const responseData = error.response?.data;
+        const suppress404 = error.config?._suppress404;
 
-        // FastAPI 422 错误：提取 detail 中的具体校验信息
-        let backendMessage = responseData?.message;
-        if (!backendMessage && statusCode === 422 && responseData?.detail) {
-          const details = Array.isArray(responseData.detail)
-            ? responseData.detail.map((d: any) => `${d.loc?.join('.')}: ${d.msg}`).join('; ')
-            : JSON.stringify(responseData.detail);
-          backendMessage = `参数校验失败: ${details}`;
+        // 402 订阅过期：重定向到订阅页面
+        if (statusCode === 402) {
+          const message = responseData?.message || '订阅已过期，请续费';
+          // 避免重复跳转
+          if (window.location.pathname !== '/mobile/subscription') {
+            // 用 toast 提示（如果可用），然后跳转
+            console.warn('[API] 订阅过期:', message);
+            window.location.href = '/mobile/subscription';
+          }
+          const err: any = new Error(message);
+          err.response = error.response;
+          err.status = 402;
+          return Promise.reject(err);
         }
 
-        const message = backendMessage || `请求失败 (${statusCode || '网络错误'})`;
-        
-        console.error('API Error:', {
-          url: error.config?.url,
-          status: statusCode,
-          message: backendMessage,
-          data: error.response?.data,
-        });
-        
-        // 创建一个包含后端错误信息的错误对象
-        const err = new Error(message);
-        (err as any).response = error.response;
-        (err as any).status = statusCode;
-        (err as any).backendMessage = backendMessage;
-        
+        // 404 且标记了 suppress404：不打 error log，直接 reject
+        if (suppress404 && statusCode === 404) {
+          console.warn(`[API] 404 (suppressed): ${error.config?.url}`);
+        } else {
+          // FastAPI 422 错误：提取 detail 中的具体校验信息
+          let backendMessage = responseData?.message;
+          if (!backendMessage && statusCode === 422 && responseData?.detail) {
+            const details = Array.isArray(responseData.detail)
+              ? responseData.detail.map((d: any) => `${d.loc?.join('.')}: ${d.msg}`).join('; ')
+              : JSON.stringify(responseData.detail);
+            backendMessage = `参数校验失败: ${details}`;
+          }
+
+          const message = backendMessage || `请求失败 (${statusCode || '网络错误'})`;
+
+          console.error('API Error:', {
+            url: error.config?.url,
+            status: statusCode,
+            message: backendMessage,
+            data: error.response?.data,
+          });
+
+          const err = new Error(message);
+          (err as any).response = error.response;
+          (err as any).status = statusCode;
+          (err as any).backendMessage = backendMessage;
+
+          return Promise.reject(err);
+        }
+
+        // suppress404 + 404：构造一个 rejected promise，让 fetchAPI 的 catch 处理
+        const err: any = new Error(responseData?.message || 'Not Found');
+        err.response = error.response;
+        err.status = statusCode;
         return Promise.reject(err);
       }
     );

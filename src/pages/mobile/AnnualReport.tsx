@@ -55,6 +55,8 @@ export const MobileAnnualReport: React.FC = () => {
   const navigate = useNavigate();
   const { selectedStoreId } = useStore();
 
+  const [generating, setGenerating] = useState(false);
+
   const loadData = async (year: number) => {
     try {
       setLoading(true);
@@ -73,11 +75,12 @@ export const MobileAnnualReport: React.FC = () => {
 
   // 初始化时预加载所有年份数据（用于年度对比 tab）
   useEffect(() => {
+    if (!selectedStoreId) return;
     setLoading(true);
     const allYears = [2023, 2024, 2025];
     let loaded = 0;
     allYears.forEach(y => {
-      fetchAnnualReport(selectedStoreId || '', y).then(data => {
+      fetchAnnualReport(selectedStoreId, y).then(data => {
         if (data.yearlyData) {
           setYearlyData(prev => ({ ...prev, [y]: data.yearlyData! }));
         }
@@ -88,17 +91,34 @@ export const MobileAnnualReport: React.FC = () => {
         if (loaded === allYears.length) setLoading(false);
       });
     });
-  }, []);
+  }, [selectedStoreId]);
 
   // 切换年份时更新 insights 和 historical
   useEffect(() => {
-    if (lastYearRef.current === selectedYear) return;
-    lastYearRef.current = selectedYear;
-    fetchAnnualReport(selectedStoreId || '', selectedYear).then(data => {
+    if (!selectedStoreId || !selectedYear) return;
+    fetchAnnualReport(selectedStoreId, selectedYear).then(data => {
       if (data.insights) setInsights(data.insights);
       if (data.historicalTrends) setHistorical(data.historicalTrends);
     }).catch(console.error);
-  }, [selectedYear]);
+  }, [selectedYear, selectedStoreId]);
+
+  const handleGenerate = async () => {
+    if (!selectedStoreId) return;
+    setGenerating(true);
+    try {
+      const result = await generateAnnualReport(selectedYear, selectedStoreId);
+      if (result.success) {
+        success('生成成功', result.message || `${selectedYear}年度报告已生成`);
+        await loadData(selectedYear);
+      } else {
+        console.error('生成报告失败', result.message);
+      }
+    } catch (err: any) {
+      console.error('生成报告异常', err);
+    } finally {
+      setGenerating(false);
+    }
+  };
 
   const handleExport = () => {
     success('导出报告', '正在生成精美 PDF 报告...');
@@ -174,10 +194,43 @@ export const MobileAnnualReport: React.FC = () => {
               <option key={year} value={year}>{year} 年</option>
             ))}
           </select>
-          <Button variant="outline" size="sm" onClick={handleExport} className="gap-1">
-            <Download className="w-4 h-4" /> 导出
-          </Button>
+          {currentData && (
+            <Button variant="outline" size="sm" onClick={handleExport} className="gap-1">
+              <Download className="w-4 h-4" /> 导出
+            </Button>
+          )}
+          {!currentData && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleGenerate}
+              disabled={generating}
+              className="gap-1 text-indigo-600 border-indigo-200"
+            >
+              <RefreshCw className={`w-4 h-4 ${generating ? 'animate-spin' : ''}`} />
+              {generating ? '生成中...' : '生成报告'}
+            </Button>
+          )}
         </div>
+
+        {/* 报告不存在时显示空状态 */}
+        {!currentData && !loading && (
+          <Card className="p-8 bg-white border-slate-100 shadow-sm text-center">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-slate-100 flex items-center justify-center">
+              <BarChart3 className="w-8 h-8 text-slate-400" />
+            </div>
+            <h3 className="text-lg font-bold text-slate-700 mb-2">{selectedYear} 年度报告暂无数据</h3>
+            <p className="text-sm text-slate-400 mb-4">点击下方按钮，系统将基于该年份的评论数据自动生成年度报告</p>
+            <Button
+              onClick={handleGenerate}
+              disabled={generating}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white gap-2"
+            >
+              <Sparkles className={`w-4 h-4 ${generating ? 'animate-pulse' : ''}`} />
+              {generating ? '正在生成报告...' : `生成 ${selectedYear} 年度报告`}
+            </Button>
+          </Card>
+        )}
 
         {currentData && insights && (
           <>
@@ -205,9 +258,11 @@ export const MobileAnnualReport: React.FC = () => {
               </div>
               <Button
                 className="mt-4 bg-orange-50 hover:bg-orange-100 text-orange-600 border-orange-200"
-                onClick={() => loadData(selectedYear)}
+                onClick={handleGenerate}
+                disabled={generating}
               >
-                <RefreshCw className="w-4 h-4 mr-2" /> 重新生成
+                <RefreshCw className={`w-4 h-4 mr-2 ${generating ? 'animate-spin' : ''}`} /> 
+                {generating ? '生成中...' : '重新生成'}
               </Button>
             </Card>
 
