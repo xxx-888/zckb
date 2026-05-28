@@ -50,6 +50,20 @@ class BusinessException(AppException):
         super().__init__(message=message, code=code, status_code=400)
 
 
+class SubscriptionRequiredException(AppException):
+    """订阅过期/未订阅异常 (402)"""
+
+    def __init__(self, message: str = "订阅已过期，请续费", code: int = 402) -> None:
+        super().__init__(message=message, code=code, status_code=402)
+
+
+class CreditInsufficientException(AppException):
+    """采集积分不足异常 (402)"""
+
+    def __init__(self, message: str = "采集积分不足", code: int = 402) -> None:
+        super().__init__(message=message, code=code, status_code=402)
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     """
     注册全局异常处理器到 FastAPI 应用
