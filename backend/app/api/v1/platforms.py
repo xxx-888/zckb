@@ -8,8 +8,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db
-from app.core.deps import get_current_active_user
+from app.core.deps import require_valid_subscription, get_db
 from app.core.response import success, error, paginated
 from app.models.user import User
 from app.schemas.platform import (
@@ -35,7 +34,7 @@ router = APIRouter(prefix="/platforms", tags=["平台关联"])
 async def connect_platform(
     request: PlatformConnectRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     连接平台账号
@@ -79,7 +78,7 @@ async def connect_platform(
 async def get_platform_stores(
     platform: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取平台店铺列表
@@ -109,7 +108,7 @@ async def get_platform_stores(
 async def bind_platform_store(
     request: PlatformBindRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     绑定平台店铺
@@ -155,7 +154,7 @@ async def bind_platform_store(
 async def unbind_platform_store(
     store_platform_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     解绑平台店铺
@@ -171,7 +170,7 @@ async def unbind_platform_store(
 async def sync_platform_data(
     request: PlatformSyncRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     同步平台数据
@@ -199,7 +198,7 @@ async def sync_platform_data(
 async def get_sync_status(
     store_platform_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取同步状态
@@ -226,7 +225,7 @@ async def reply_on_platform(
     store_platform_id: UUID,
     request: PlatformReplyRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     在平台上回复评论
@@ -252,7 +251,7 @@ async def reply_on_platform(
 @router.get("/accounts", summary="获取已连接的平台账号列表")
 async def get_connected_accounts(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取已连接的平台账号列表
@@ -280,7 +279,7 @@ async def get_connected_accounts(
 async def get_platform_store_details(
     store_platform_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取平台店铺详情
@@ -310,7 +309,7 @@ async def get_platform_store_details(
 async def refresh_platform_token(
     store_platform_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     刷新平台Token
@@ -329,7 +328,7 @@ async def refresh_platform_token(
 async def get_platform_statistics(
     store_id: UUID | None = None,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取平台统计概览

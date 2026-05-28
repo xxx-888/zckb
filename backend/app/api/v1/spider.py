@@ -9,8 +9,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db
-from app.core.deps import get_current_active_user
+from app.core.deps import require_valid_subscription, get_db
 from app.core.response import paginated, success
 from app.models.user import User
 from app.schemas.spider import (
@@ -33,7 +32,7 @@ router = APIRouter(prefix="/spider", tags=["爬虫管理"])
 @router.get("/platforms", summary="平台列表")
 async def get_platforms(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取所有爬虫平台列表
@@ -51,7 +50,7 @@ async def get_platforms(
 async def create_platform(
     request: SpiderPlatformCreateRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     创建新的爬虫平台
@@ -68,7 +67,7 @@ async def update_platform(
     platform_id: UUID,
     request: SpiderPlatformUpdateRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     更新爬虫平台信息
@@ -84,7 +83,7 @@ async def update_platform(
 async def delete_platform(
     platform_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     删除爬虫平台
@@ -97,7 +96,7 @@ async def delete_platform(
 async def sync_platform(
     platform_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     手动触发单个平台的数据同步
@@ -112,7 +111,7 @@ async def sync_platform(
 @router.post("/sync-all", summary="同步所有平台")
 async def sync_all_platforms(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     手动触发所有活跃平台的数据同步
@@ -133,7 +132,7 @@ async def get_sync_logs(
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取爬虫同步日志列表
@@ -154,7 +153,7 @@ async def get_sync_logs(
 async def test_platform_connection(
     platform_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     测试爬虫平台连接
@@ -169,7 +168,7 @@ async def get_tasks(
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取爬虫任务列表
@@ -190,7 +189,7 @@ async def get_tasks(
 async def create_task(
     request: SpiderTaskCreateRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     创建新的爬虫任务
@@ -206,7 +205,7 @@ async def create_task(
 async def cancel_task(
     task_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     取消待执行或运行中的爬虫任务

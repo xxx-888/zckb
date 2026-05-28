@@ -8,8 +8,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db
-from app.core.deps import get_current_active_user
+from app.core.deps import require_valid_subscription, get_db
 from app.core.response import success
 from app.models.user import User
 from app.schemas.settings import (
@@ -33,7 +32,7 @@ router = APIRouter(prefix="/settings", tags=["设置管理"])
 async def get_reply_templates(
     store_id: UUID | None = Query(None, description="门店ID"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取当前用户的回复模板列表
@@ -54,7 +53,7 @@ async def get_reply_templates(
 async def create_reply_template(
     request: ReplyTemplateCreateRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     创建新的回复模板
@@ -76,7 +75,7 @@ async def update_reply_template(
     template_id: UUID,
     request: ReplyTemplateUpdateRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     更新指定回复模板
@@ -95,7 +94,7 @@ async def update_reply_template(
 async def delete_reply_template(
     template_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     删除指定回复模板
@@ -112,7 +111,7 @@ async def delete_reply_template(
 async def get_auto_reply_config(
     store_id: UUID = Query(..., description="门店ID"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取指定门店的自动回复配置
@@ -128,7 +127,7 @@ async def update_auto_reply_config(
     store_id: UUID = Query(..., description="门店ID"),
     request: AutoReplyConfigUpdateRequest = ...,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     更新指定门店的自动回复配置
@@ -154,7 +153,7 @@ async def update_auto_reply_config(
 @router.get("/notification", summary="获取通知设置")
 async def get_notification_setting(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取当前用户的通知设置
@@ -171,7 +170,7 @@ async def get_notification_setting(
 async def update_notification_setting(
     request: UserNotificationSettingUpdateRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     更新当前用户的通知设置

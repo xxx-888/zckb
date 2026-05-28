@@ -8,12 +8,10 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db
-from app.core.deps import get_current_active_user
+from app.core.deps import require_valid_subscription, get_db
 from app.core.response import paginated, success
 from app.models.user import User
 from app.schemas.negative_reply import (
-    ApproveRequest,
     NegativeReplyHistoryResponse,
     NegativeReplyTaskListResponse,
     NegativeReplyTaskResponse,
@@ -30,7 +28,7 @@ async def get_tasks(
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页大小"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取差评处理任务列表
@@ -51,9 +49,8 @@ async def get_tasks(
 @router.post("/tasks/{task_id}/approve", summary="批准并发送")
 async def approve_task(
     task_id: UUID,
-    request: ApproveRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     批准并发送差评回复
@@ -72,7 +69,7 @@ async def reject_task(
     task_id: UUID,
     request: RejectRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     驳回差评回复任务
@@ -92,7 +89,7 @@ async def reject_task(
 async def regenerate_reply(
     task_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     重新生成AI回复
@@ -115,7 +112,7 @@ async def get_history(
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页大小"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取已处理历史记录

@@ -9,8 +9,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db
-from app.core.deps import get_current_active_user
+from app.core.deps import require_valid_subscription, get_db
 from app.core.response import success
 from app.models.user import User
 from app.schemas.report import (
@@ -31,7 +30,7 @@ async def get_annual_report(
     store_id: UUID = Query(..., description="门店ID"),
     year: int = Query(..., description="年份", ge=2000, le=2100),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取指定门店的年度报告
@@ -76,7 +75,7 @@ async def get_annual_report(
 async def get_all_years_data(
     store_id: UUID = Query(..., description="门店ID"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取门店所有有数据的年份列表及简要数据
@@ -97,7 +96,7 @@ async def get_all_years_data(
 async def generate_annual_report(
     request: GenerateReportRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     生成指定门店的年度报告
@@ -149,7 +148,7 @@ async def get_weekly_brief(
     store_id: UUID = Query(..., description="门店ID"),
     week_start: str | None = Query(None, description="周开始日期(YYYY-MM-DD)"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取指定门店的周报
@@ -189,7 +188,7 @@ async def get_weekly_brief(
 async def generate_weekly_brief(
     store_id: UUID = Query(..., description="门店ID"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     生成指定门店的周报

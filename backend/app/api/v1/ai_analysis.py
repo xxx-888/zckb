@@ -8,8 +8,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db
-from app.core.deps import get_current_active_user
+from app.core.deps import require_valid_subscription, get_db
 from app.core.response import paginated, success
 from app.models.user import User
 from app.schemas.ai_analysis import (
@@ -30,7 +29,7 @@ router = APIRouter(prefix="/ai-analysis", tags=["AI分析"])
 async def get_topics(
     period: str = Query("30d", description="时间周期"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取语义分析主题
@@ -47,7 +46,7 @@ async def get_topics(
 async def get_tag_clustering(
     period: str = Query("30d", description="时间周期"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取差评标签聚类分析
@@ -63,7 +62,7 @@ async def get_tag_clustering(
 @router.get("/sentiment-summary", summary="情感指数")
 async def get_sentiment_summary(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取情感指数汇总
@@ -77,7 +76,7 @@ async def get_sentiment_summary(
 @router.get("/risk-levels", summary="风险分级")
 async def get_risk_levels(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取风险分级统计
@@ -93,7 +92,7 @@ async def get_reply_history(
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页大小"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取自动回复历史记录
@@ -114,7 +113,7 @@ async def get_reply_history(
 @router.get("/reply-stats", summary="回复统计")
 async def get_reply_stats(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取回复统计数据
@@ -130,7 +129,7 @@ async def get_reply_stats(
 async def get_appeal_suggestion(
     review_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取申诉建议

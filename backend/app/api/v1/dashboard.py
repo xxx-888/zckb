@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.deps import get_current_active_user
+from app.core.deps import require_valid_subscription
 from app.core.response import success
 from app.models.user import User
 from app.schemas.dashboard import (
@@ -27,7 +27,7 @@ router = APIRouter(prefix="/dashboard", tags=["仪表盘"])
 async def get_core_stats(
     period: str = Query("30d", description="统计周期: 7d/30d/90d"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取核心统计数据
@@ -45,14 +45,15 @@ async def get_core_stats(
 
 @router.get("/platform-distribution", summary="平台分布")
 async def get_platform_distribution(
+    period: str = Query("30d", description="统计周期: 1d/7d/30d/90d"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取各平台评论分布数据
     - 包含各平台评论数量和占比
     """
-    distribution = await dashboard_service.get_platform_distribution(db, current_user)
+    distribution = await dashboard_service.get_platform_distribution(db, current_user, period)
 
     items = [
         PlatformDistributionResponse(**item).model_dump(mode="json")
@@ -66,7 +67,7 @@ async def get_platform_distribution(
 async def get_recent_reviews(
     limit: int = Query(10, ge=1, le=50, description="返回数量"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取最新评论列表
@@ -94,7 +95,7 @@ async def get_recent_reviews(
 async def get_store_rankings(
     limit: int = Query(10, ge=1, le=50, description="返回数量"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取门店排行榜
@@ -112,7 +113,7 @@ async def get_store_rankings(
 @router.get("/health-status", summary="数据源健康")
 async def get_health_status(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取各平台数据源健康状态
@@ -130,7 +131,7 @@ async def get_health_status(
 @router.get("/alert", summary="异常警告")
 async def get_alerts(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取异常警告列表
@@ -147,7 +148,7 @@ async def get_alerts(
 @router.get("/store-health", summary="门店健康值")
 async def get_store_health(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取门店健康值列表

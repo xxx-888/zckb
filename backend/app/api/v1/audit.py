@@ -9,8 +9,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db
-from app.core.deps import get_current_active_user
+from app.core.deps import require_valid_subscription, get_db
 from app.core.response import paginated, success
 from app.models.user import User
 from app.schemas.audit import (
@@ -30,7 +29,7 @@ router = APIRouter(prefix="/audit", tags=["回复审核"])
 @router.get("/stats", summary="审核统计")
 async def get_audit_stats(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取审核统计数据
@@ -50,7 +49,7 @@ async def get_audit_list(
     page: int = Query(1, ge=1, description="页码"),
     limit: int = Query(20, ge=1, le=100, description="每页数量"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取AI回复审核列表
@@ -75,7 +74,7 @@ async def get_audit_list(
 async def get_audit_detail(
     audit_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取审核记录详情
@@ -91,7 +90,7 @@ async def approve_audit(
     audit_id: UUID,
     request: AuditApproveRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     审核通过AI回复
@@ -110,7 +109,7 @@ async def reject_audit(
     audit_id: UUID,
     request: AuditRejectRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     审核拒绝AI回复
@@ -131,7 +130,7 @@ async def regenerate_reply(
     audit_id: UUID,
     request: AuditRegenerateRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     重新生成AI回复

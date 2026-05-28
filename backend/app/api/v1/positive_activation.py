@@ -8,8 +8,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db
-from app.core.deps import get_current_active_user
+from app.core.deps import require_valid_subscription, get_db
 from app.core.response import paginated, success
 from app.models.user import User
 from app.schemas.positive_activation import (
@@ -28,7 +27,7 @@ async def get_high_quality_reviews(
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页大小"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取优质好评列表
@@ -49,7 +48,7 @@ async def get_high_quality_reviews(
 @router.get("/brand-scripts", summary="品牌话术库")
 async def get_brand_scripts(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取品牌话术库
@@ -66,7 +65,7 @@ async def get_brand_scripts(
 async def copy_script(
     script_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     记录话术复制行为
@@ -80,7 +79,7 @@ async def copy_script(
 async def send_authorization(
     review_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     发送授权请求
@@ -95,7 +94,7 @@ async def send_authorization(
 async def generate_content(
     request: GenerateContentRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     生成种草内容

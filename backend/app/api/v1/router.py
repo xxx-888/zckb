@@ -102,3 +102,13 @@ api_router.include_router(admin_subscription_router)
 from app.api.v1.admin.region import router as admin_region_router
 
 api_router.include_router(admin_region_router)
+
+# collection_pack - 采集套餐（用户端）
+from app.api.v1.collection_pack import router as collection_pack_router
+
+api_router.include_router(collection_pack_router)
+
+# admin/collection_pack - 采集套餐管理（后台）
+from app.api.v1.admin.collection_pack import router as admin_collection_pack_router
+
+api_router.include_router(admin_collection_pack_router)

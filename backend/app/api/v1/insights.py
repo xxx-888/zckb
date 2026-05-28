@@ -6,8 +6,7 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db
-from app.core.deps import get_current_active_user
+from app.core.deps import require_valid_subscription, get_db
 from app.core.response import success
 from app.models.user import User
 from app.schemas.insights import (
@@ -26,7 +25,7 @@ router = APIRouter(prefix="/insights", tags=["经营洞察"])
 async def get_top_dishes(
     period: str = Query("30d", description="时间周期"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取菜品口碑排行
@@ -43,7 +42,7 @@ async def get_top_dishes(
 async def get_three_good_three_bad(
     period: str = Query("30d", description="时间周期"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取三好三差报告
@@ -57,7 +56,7 @@ async def get_three_good_three_bad(
 @router.get("/dish-elimination", summary="末位淘汰建议")
 async def get_dish_elimination(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取末位淘汰建议
@@ -74,7 +73,7 @@ async def get_dish_elimination(
 async def get_service_cases(
     case_type: str | None = Query(None, description="案例类型: complaint/praise/suggestion"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取服务案例库
@@ -91,7 +90,7 @@ async def get_service_cases(
 @router.get("/competitor-opportunities", summary="同行机会洞察")
 async def get_competitor_opportunities(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取同行机会洞察

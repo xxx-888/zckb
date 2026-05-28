@@ -7,9 +7,10 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.core.database import get_db
-from app.core.deps import get_current_active_user
+from app.core.deps import require_valid_subscription, get_db
 from app.core.response import paginated, success
 from app.models.user import User
 from app.schemas.review import (
@@ -71,7 +72,7 @@ async def import_reviews(
     file: UploadFile,
     store_id: str = Query(..., description="关联店铺ID"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     从 Excel/CSV 文件批量导入评论
@@ -104,7 +105,7 @@ async def export_reviews(
     start_date: str | None = Query(None, description="开始日期"),
     end_date: str | None = Query(None, description="结束日期"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ):
     """
     导出评论为 Excel 文件
@@ -202,7 +203,7 @@ async def get_reviews(
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=500, description="每页数量"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取评价列表
@@ -241,7 +242,7 @@ async def get_reviews(
 async def get_review_stats(
     period: str = Query("30d", description="统计周期: 7d/30d/90d/all"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取评价统计数据
@@ -260,7 +261,7 @@ async def get_review_stats(
 async def get_review_detail(
     review_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取评价详情
@@ -279,7 +280,7 @@ async def get_similar_reviews(
     review_id: UUID,
     limit: int = Query(5, ge=1, le=20, description="返回数量"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取相似评论列表
@@ -306,7 +307,7 @@ async def get_similar_reviews(
 async def create_review(
     request: ReviewCreateRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     新增评价（爬虫入库用）
@@ -324,7 +325,7 @@ async def update_review(
     review_id: UUID,
     request: ReviewUpdateRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     更新评价信息
@@ -344,7 +345,7 @@ async def update_review(
 async def delete_review(
     review_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     删除评价（软删除）
@@ -358,7 +359,7 @@ async def delete_review(
 async def batch_delete_reviews(
     request: BatchDeleteRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     批量删除评价（软删除）
@@ -372,7 +373,7 @@ async def batch_delete_reviews(
 async def like_review(
     review_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     赞同评论
@@ -387,7 +388,7 @@ async def quick_reply(
     review_id: UUID,
     request: QuickReplyRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     快速回复评论
@@ -406,7 +407,7 @@ async def quick_reply(
 async def approve_reply(
     review_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     审核通过 AI 回复并发送
@@ -421,4 +422,41 @@ async def approve_reply(
             "reviewed_at": audit.reviewed_at.isoformat() if audit.reviewed_at else None,
         },
         message="回复已审核通过并发送",
+    )
+
+
+@router.post("/{review_id}/regenerate-reply", summary="重新生成AI回复")
+async def regenerate_reply(
+    review_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_valid_subscription),
+) -> dict:
+    """
+    重新生成指定评论的 AI 回复
+    - 查找或创建对应的差评审核任务
+    - 调用 AI 重新生成回复内容
+    """
+    from app.models.review import ReplyAudit
+    from app.services import negative_reply_service
+
+    # 查找是否已有审核任务
+    stmt = select(ReplyAudit).where(ReplyAudit.review_id == review_id)
+    result = await db.execute(stmt)
+    audit = result.scalar_one_or_none()
+
+    if not audit:
+        # 没有任务就创建一个
+        audit = await negative_reply_service.create_negative_task(db, review_id)
+        await db.refresh(audit)
+
+    # 重新生成 AI 回复
+    audit = await negative_reply_service.regenerate_reply(db, audit.id)
+
+    return success(
+        data={
+            "review_id": str(review_id),
+            "ai_reply_draft": audit.ai_reply_content,
+            "status": audit.status,
+        },
+        message="AI 回复已重新生成",
     )

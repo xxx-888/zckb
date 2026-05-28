@@ -8,8 +8,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db
-from app.core.deps import get_current_active_user
+from app.core.deps import require_valid_subscription, get_db
 from app.core.response import paginated, success
 from app.models.user import User
 from app.schemas.notification import (
@@ -35,7 +34,7 @@ router = APIRouter(prefix="/notifications", tags=["通知管理"])
 @router.get("/channels", summary="渠道列表")
 async def get_channels(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取所有通知渠道列表
@@ -53,7 +52,7 @@ async def get_channels(
 async def create_channel(
     request: NotificationChannelCreateRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     创建新的通知渠道
@@ -74,7 +73,7 @@ async def update_channel(
     channel_id: UUID,
     request: NotificationChannelUpdateRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     更新指定通知渠道
@@ -90,7 +89,7 @@ async def update_channel(
 async def delete_channel(
     channel_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     删除指定通知渠道
@@ -103,7 +102,7 @@ async def delete_channel(
 async def test_channel(
     channel_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     测试通知渠道是否正常工作
@@ -119,7 +118,7 @@ async def test_channel(
 @router.get("/rules", summary="规则列表")
 async def get_rules(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取所有通知规则列表
@@ -137,7 +136,7 @@ async def get_rules(
 async def create_rule(
     request: NotificationRuleCreateRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     创建新的通知规则
@@ -159,7 +158,7 @@ async def update_rule(
     rule_id: UUID,
     request: NotificationRuleUpdateRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     更新指定通知规则
@@ -175,7 +174,7 @@ async def update_rule(
 async def delete_rule(
     rule_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     删除指定通知规则
@@ -192,7 +191,7 @@ async def get_history(
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页大小"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取通知推送历史记录
@@ -216,7 +215,7 @@ async def get_history(
 @router.get("/templates", summary="模板列表")
 async def get_templates(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取所有通知模板列表
@@ -234,7 +233,7 @@ async def get_templates(
 async def create_template(
     request: NotificationTemplateCreateRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     创建新的通知模板
@@ -257,7 +256,7 @@ async def update_template(
     template_id: UUID,
     request: NotificationTemplateUpdateRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     更新指定通知模板

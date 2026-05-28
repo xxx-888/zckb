@@ -131,6 +131,36 @@ class AIService:
         except Exception as e:
             raise BusinessException(f"AI生成回复失败: {str(e)}")
 
+    async def generate_text(self, prompt: str, system_prompt: str = "你是一个专业的AI助手。") -> str:
+        """
+        通用文本生成方法，供其他服务调用AI模型
+
+        Args:
+            prompt: 用户提示词
+            system_prompt: 系统提示词
+
+        Returns:
+            str: AI生成的文本内容
+        """
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt},
+        ]
+
+        model_config = await self.get_active_model()
+
+        try:
+            if model_config.provider == "openai":
+                return await self._call_openai(messages, model_config)
+            elif model_config.provider == "zhipu":
+                return await self._call_zhipu(messages, model_config)
+            elif model_config.provider == "deepseek":
+                return await self._call_deepseek(messages, model_config)
+            else:
+                raise BusinessException(f"不支持的AI提供商: {model_config.provider}")
+        except Exception as e:
+            raise BusinessException(f"AI文本生成失败: {str(e)}")
+
     async def analyze_sentiment(self, content: str) -> dict:
         """
         情感分析

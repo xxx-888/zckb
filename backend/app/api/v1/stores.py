@@ -9,8 +9,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db
-from app.core.deps import get_current_active_user
+from app.core.deps import require_valid_subscription, get_db
 from app.core.response import paginated, success
 from app.models.user import User
 from app.schemas.store import (
@@ -30,7 +29,7 @@ async def get_stores(
     type: Optional[str] = Query(None, description="门店类型: restaurant/hotel/beverage"),
     status: Optional[str] = Query(None, description="门店状态: active/pending/inactive"),
     keyword: Optional[str] = Query(None, description="搜索关键词（名称/地址）"),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """
@@ -62,7 +61,7 @@ async def get_stores(
 
 @router.get("/stats", summary="门店汇总统计")
 async def get_stores_stats(
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """
@@ -76,7 +75,7 @@ async def get_stores_stats(
 @router.get("/{store_id}", summary="门店详情")
 async def get_store_detail(
     store_id: UUID,
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """
@@ -93,7 +92,7 @@ async def get_store_detail(
 @router.post("", summary="新增门店")
 async def create_store(
     request: StoreCreateRequest,
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """
@@ -112,7 +111,7 @@ async def create_store(
 async def update_store(
     store_id: UUID,
     request: StoreUpdateRequest,
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """
@@ -132,7 +131,7 @@ async def update_store(
 @router.delete("/{store_id}", summary="删除门店")
 async def delete_store(
     store_id: UUID,
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """
@@ -147,7 +146,7 @@ async def delete_store(
 @router.post("/{store_id}/activate", summary="激活门店")
 async def activate_store(
     store_id: UUID,
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """
@@ -166,7 +165,7 @@ async def activate_store(
 async def get_store_review_stats(
     store_id: UUID,
     period: Optional[str] = Query("all", description="统计周期: 7d/30d/90d/all"),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """
@@ -182,7 +181,7 @@ async def get_store_review_stats(
 @router.get("/{store_id}/monthly-stats", summary="门店月度统计")
 async def get_store_monthly_stats(
     store_id: UUID,
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """
@@ -199,7 +198,7 @@ async def get_store_monthly_stats(
 async def get_store_recent_reviews(
     store_id: UUID,
     limit: int = Query(10, ge=1, le=50, description="返回数量"),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_valid_subscription),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """

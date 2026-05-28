@@ -228,6 +228,7 @@ async def get_core_stats(
 async def get_platform_distribution(
     db: AsyncSession,
     user: User,
+    period: str = "30d",
 ) -> list[dict]:
     """
     获取平台分布数据
@@ -235,11 +236,16 @@ async def get_platform_distribution(
     Args:
         db: 数据库会话
         user: 当前用户
+        period: 统计周期 (1d/7d/30d/90d)
 
     Returns:
         list[dict]: 各平台评论数量和占比
     """
-    conditions = [Review.status == "normal"]
+    days = _get_period_days(period)
+    now = datetime.utcnow()
+    period_start = now - timedelta(days=days)
+
+    conditions = [Review.status == "normal", Review.created_at >= period_start]
     store_filter = _build_store_filter(user)
     if store_filter is not None:
         conditions.append(store_filter)
@@ -280,6 +286,7 @@ async def get_recent_reviews(
     db: AsyncSession,
     user: User,
     limit: int = 10,
+    period: str = "30d",
 ) -> list[Review]:
     """
     获取最新评论列表
@@ -288,11 +295,16 @@ async def get_recent_reviews(
         db: 数据库会话
         user: 当前用户
         limit: 返回数量
+        period: 统计周期 (1d/7d/30d/90d)
 
     Returns:
         list[Review]: 最新评论列表
     """
-    conditions = [Review.status == "normal"]
+    days = _get_period_days(period)
+    now = datetime.utcnow()
+    period_start = now - timedelta(days=days)
+
+    conditions = [Review.status == "normal", Review.created_at >= period_start]
     store_filter = _build_store_filter(user)
     if store_filter is not None:
         conditions.append(store_filter)

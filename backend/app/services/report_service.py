@@ -3,6 +3,7 @@
 处理年度报告、周报相关的业务逻辑
 """
 
+import json
 import re
 from collections import Counter
 from datetime import datetime, timedelta
@@ -138,8 +139,13 @@ async def generate_annual_report(
     top_keywords = _extract_top_keywords(reviews)
     category_scores = _calculate_category_scores(reviews)
 
-    # 生成洞察数据
-    insights = _generate_insights(reviews, year, total_reviews, avg_rating)
+    # 获取门店名称用于AI分析
+    store_result = await db.execute(select(Store).where(Store.id == store_id))
+    store = store_result.scalar_one_or_none()
+    store_name = store.name if store else "本店"
+
+    # 使用AI生成洞察数据
+    insights = await _generate_insights_with_ai(db, reviews, year, total_reviews, avg_rating, store_name)
 
     # 检查是否已存在报告
     stmt = select(AnnualReport).where(
@@ -512,47 +518,129 @@ def _calculate_monthly_data(reviews: list[Review], year: int) -> list[dict]:
     return result
 
 
-def _generate_insights(
+async def _generate_insights_with_ai(
+    db: AsyncSession,
+    reviews: list[Review],
+    year: int,
+    total_reviews: int,
+    avg_rating: float,
+    store_name: str,
+) -> dict:
+    """
+    使用AI分析评论数据，生成报告洞察
+
+    Args:
+        db: 数据库会话
+        reviews: 评论列表
+        year: 年份
+        total_reviews: 评论总数
+        avg_rating: 平均评分
+        store_name: 门店名称
+
+    Returns:
+        dict: AI生成的洞察数据
+    """
+    from app.services.ai_service import AIService
+
+    # 采样评论（最多取50条有内容的评论给AI分析）
+    sample_reviews = [r for r in reviews if r.content and len(r.content.strip()) > 5]
+    sample_reviews = sample_reviews[:50]
+
+    if not sample_reviews:
+        return _fallback_insights(reviews, year, total_reviews, avg_rating)
+
+    # 构造AI分析用的评论摘要
+    review_texts = []
+    sentiment_map = {"positive": "正面", "negative": "负面", "neutral": "中性"}
+    for r in sample_reviews[:30]:  # 最多30条，避免超token
+        sent = sentiment_map.get(r.sentiment or "neutral", "中性")
+        review_texts.append(f"评分{r.rating}星({sent}): {r.content[:100]}")
+
+    reviews_summary = "\n".join(review_texts)
+
+    # 统计信息
+    positive_count = sum(1 for r in reviews if r.sentiment == "positive")
+    negative_count = sum(1 for r in reviews if r.sentiment == "negative")
+    replied_count = sum(1 for r in reviews if r.reply and r.reply.strip())
+
+    prompt = f"""你是餐饮行业的专业分析师。请基于以下{store_name}门店{year}年度的评论数据，进行深度分析并输出JSON结果。
+
+## 评论数据（共{total_reviews}条，展示{len(sample_reviews[:30])}条样本）
+{reviews_summary}
+
+## 统计数据
+- 总评论数：{total_reviews}
+- 平均评分：{avg_rating}分
+- 正面评论：{positive_count}条
+- 负面评论：{negative_count}条
+- 已回复：{replied_count}条（回复率{round(replied_count/total_reviews*100, 1) if total_reviews else 0}%）
+
+## 要求
+请严格按以下JSON格式输出，不要输出任何其他内容：
+```json
+{{
+  "highlights": ["亮点1", "亮点2", ...],     // 最多3条，基于数据的正面发现
+  "improvements": ["改进点1", "改进点2", ...], // 最多3条，具体可执行的改进建议
+  "ai_summary": "100字以内的年度总结，专业且有温度",
+  "personality_type": "从以下选一个：口碑王者 / 品质之选 / 人气热店 / 潜力新星 / 稳扎稳打",
+  "recommendations": ["建议1", "建议2", "建议3"],  // 最多3条具体建议
+  "year_over_year_growth": 0  // 暂无同比数据时填0
+}}
+```"""
+
+    try:
+        ai_service = AIService(db)
+        result_text = await ai_service.generate_text(
+            prompt,
+            system_prompt="你是餐饮行业的专业数据分析师，擅长从评论数据中挖掘洞察。"
+        )
+
+        # 提取JSON
+        import re
+        json_match = re.search(r'```json\s*(\{.*?\})\s*```', result_text, re.DOTALL)
+        if json_match:
+            result = json.loads(json_match.group(1))
+        else:
+            # 尝试直接解析
+            json_start = result_text.find('{')
+            json_end = result_text.rfind('}') + 1
+            if json_start >= 0 and json_end > json_start:
+                result = json.loads(result_text[json_start:json_end])
+            else:
+                raise ValueError("无法解析AI返回的JSON")
+
+        return {
+            "year_over_year": {"growth_rate": result.get("year_over_year_growth", 0)},
+            "highlights": result.get("highlights", [])[:3],
+            "improvements": result.get("improvements", [])[:3],
+            "ai_summary": result.get("ai_summary", ""),
+            "personality_type": result.get("personality_type"),
+            "recommendations": result.get("recommendations", [])[:3],
+        }
+
+    except Exception as e:
+        print(f"AI洞察生成失败: {e}, 使用规则生成")
+        return _fallback_insights(reviews, year, total_reviews, avg_rating)
+
+
+def _fallback_insights(
     reviews: list[Review],
     year: int,
     total_reviews: int,
     avg_rating: float,
 ) -> dict:
-    """
-    生成报告洞察
-
-    Args:
-        reviews: 评论列表
-        year: 年份
-        total_reviews: 评论总数
-        avg_rating: 平均评分
-
-    Returns:
-        dict: 洞察数据
-    """
-    # 生成亮点
+    """AI失败时的兜底规则"""
     highlights = []
     if avg_rating >= 4.5:
         highlights.append(f"{year}年整体评分表现优异，平均评分达到{avg_rating}分")
     if total_reviews > 1000:
         highlights.append(f"全年收获{total_reviews}条评论，品牌关注度持续走高")
 
-    # 生成改进点
     improvements = []
     negative_rate = sum(1 for r in reviews if r.sentiment == "negative") / total_reviews if total_reviews else 0
     if negative_rate > 0.1:
         improvements.append("负面评价占比略高，建议加强服务质量管理")
 
-    # AI摘要
-    ai_summary = f"{year}年度共收到{total_reviews}条评论，整体表现"
-    if avg_rating >= 4.0:
-        ai_summary += "良好"
-    elif avg_rating >= 3.0:
-        ai_summary += "中等"
-    else:
-        ai_summary += "有待提升"
-
-    # 店铺个性类型
     personality_type = None
     if avg_rating >= 4.5 and total_reviews > 500:
         personality_type = "口碑王者"
@@ -561,20 +649,13 @@ def _generate_insights(
     elif total_reviews > 1000:
         personality_type = "人气热店"
 
-    # 建议
-    recommendations = []
-    if negative_rate > 0.05:
-        recommendations.append("关注负面评价，及时改进服务")
-    recommendations.append("继续保持优质菜品质量")
-    recommendations.append("加强与顾客的互动回复")
-
     return {
-        "year_over_year": {"growth_rate": 0},  # 需要与上年数据对比
-        "highlights": highlights,
-        "improvements": improvements,
-        "ai_summary": ai_summary,
+        "year_over_year": {"growth_rate": 0},
+        "highlights": highlights[:3],
+        "improvements": improvements[:3],
+        "ai_summary": f"{year}年度共收到{total_reviews}条评论，整体表现{'优秀' if avg_rating >= 4.0 else '中等' if avg_rating >= 3.0 else '有待提升'}。",
         "personality_type": personality_type,
-        "recommendations": recommendations,
+        "recommendations": ["继续保持优质菜品质量", "加强与顾客的互动回复"],
     }
 
 
