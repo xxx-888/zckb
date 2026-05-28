@@ -63,6 +63,8 @@ backend/generate_*.py
 backend/import_*.py
 backend/parse_*.py
 backend/read_*.py
+backend/find_*.py
+backend/fix_*.py
 
 # Data files
 *.xlsx
