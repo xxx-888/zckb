@@ -18,10 +18,18 @@ export interface PlatformStoreInfo {
 
 export interface PlatformAccount {
   id: string;
+  user_id?: string;
   platform: string;
-  platform_account: string;
-  connected: boolean;
+  platform_username: string;
+  cookies_status: string;
   last_sync_at?: string;
+  error_msg?: string;
+  created_at?: string;
+}
+
+export interface UpdatePlatformAccountDto {
+  username?: string;
+  password?: string;
 }
 
 // API 函数
@@ -82,9 +90,37 @@ export const platformsApi = {
     return response.data;
   },
 
-  // 获取已连接的平台账号
-  getConnectedAccounts: async (): Promise<PlatformAccount[]> => {
+  // 获取已连接的平台账号（用户维度）
+  getAccounts: async (): Promise<PlatformAccount[]> => {
     const response = await api.get<any>('/v1/platforms/accounts');
     return response.data || response;
+  },
+
+  // 管理员：获取所有用户的平台绑定账号
+  getAllAccounts: async (): Promise<PlatformAccount[]> => {
+    const response = await api.get<any>('/v1/platforms/admin/accounts');
+    return response.data || response;
+  },
+
+  // 解绑平台账号
+  unbindPlatform: async (accountId: string): Promise<void> => {
+    await api.delete(`/v1/platforms/account/${accountId}`);
+  },
+
+  // 刷新 Cookies
+  refreshCookies: async (accountId: string): Promise<any> => {
+    const response = await api.post(`/v1/platforms/account/${accountId}/refresh`);
+    return response.data || response;
+  },
+
+  // 同步账号登录状态（普通用户）
+  syncAccountStatus: async (accountId: string): Promise<void> => {
+    const response = await api.post(`/v1/platforms/accounts/${accountId}/sync-status`);
+    return response.data || response;
+  },
+
+  // 更新平台账号（修改用户名/密码）
+  updateAccount: async (accountId: string, data: UpdatePlatformAccountDto): Promise<void> => {
+    await api.put(`/v1/platforms/account/${accountId}`, data);
   },
 };

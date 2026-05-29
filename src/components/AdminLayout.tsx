@@ -14,16 +14,12 @@ import {
   Menu,
   ChevronRight,
   Monitor,
-  Target,
-  Sparkles,
   AlertCircle,
   Star,
-  BarChart3,
-  Brain,
-  Smartphone,
   CreditCard,
   Globe,
   Database,
+  Link2,
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Avatar } from './ui/avatar';
@@ -40,11 +36,6 @@ const adminNavItems = [
   { icon: MessageSquare, label: '评论管理', path: '/admin/review-management' },
   { icon: AlertCircle, label: '差评处理', path: '/admin/negative-reply' },
   { icon: Star, label: '好评激活', path: '/admin/positive-activation' },
-  { icon: BarChart3, label: '经营洞察', path: '/admin/insights' },
-  { icon: Brain, label: 'AI分析', path: '/admin/ai-analysis' },
-  { icon: Smartphone, label: '移动端设置', path: '/admin/mobile-settings' },
-  { icon: Target, label: '竞品对标', path: '/admin/competitor-analysis' },
-  { icon: Sparkles, label: '小红书分析', path: '/admin/xiaohongshu-analysis' },
   { icon: ShieldCheck, label: '权限管理', path: '/admin/permission-management' },
   { icon: Monitor, label: '爬虫管理', path: '/admin/spider-management' },
   { icon: Settings2, label: 'AI配置', path: '/admin/ai-config' },
@@ -53,6 +44,7 @@ const adminNavItems = [
   { icon: CreditCard, label: '订阅管理', path: '/admin/subscription-management' },
   { icon: Globe, label: '区域管理', path: '/admin/region-management' },
   { icon: Database, label: '采集套餐', path: '/admin/collection-pack-management' },
+  { icon: Link2, label: '平台绑定管理', path: '/admin/platform-bind-manage' },
 ];
 
 export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {

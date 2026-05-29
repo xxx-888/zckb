@@ -54,7 +54,7 @@ class AIService:
             .order_by(desc(AIModelConfig.priority))
         )
         result = await self.db.execute(stmt)
-        model = result.scalar_one_or_none()
+        model = result.scalars().first()
 
         if not model:
             raise BusinessException("没有可用的AI模型配置")
@@ -150,7 +150,7 @@ class AIService:
         model_config = await self.get_active_model()
 
         try:
-            if model_config.provider == "openai":
+            if model_config.provider in ("openai", "local"):
                 return await self._call_openai(messages, model_config)
             elif model_config.provider == "zhipu":
                 return await self._call_zhipu(messages, model_config)
@@ -528,7 +528,7 @@ class AIService:
         model_config: AIModelConfig,
     ) -> str:
         """
-        调用OpenAI API
+        调用OpenAI / OpenAI兼容API（local/Ollama也走这里）
 
         Args:
             messages: 消息列表
@@ -540,10 +540,10 @@ class AIService:
         api_key = decrypt_api_key(model_config.api_key_encrypted)
         endpoint = model_config.endpoint_url or "https://api.openai.com/v1/chat/completions"
 
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
+        headers = {"Content-Type": "application/json"}
+        # local(Ollama) 不需要鉴权
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
 
         payload = {
             "model": model_config.model_name,
@@ -556,7 +556,7 @@ class AIService:
             async with session.post(endpoint, headers=headers, json=payload) as response:
                 if response.status != 200:
                     error_text = await response.text()
-                    raise BusinessException(f"OpenAI API调用失败: {error_text}")
+                    raise BusinessException(f"API调用失败: {error_text}")
 
                 data = await response.json()
                 return data["choices"][0]["message"]["content"]

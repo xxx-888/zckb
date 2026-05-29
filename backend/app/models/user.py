@@ -73,6 +73,11 @@ class User(BaseModel):
         "UserNotificationSetting", back_populates="user", uselist=False, lazy="selectin"
     )
     
+    # -- 平台账号 --
+    platform_accounts: Mapped[list[PlatformAccount]] = relationship(
+        "PlatformAccount", back_populates="user", lazy="selectin"
+    )
+
     # -- 多对多关系：用户关联的区域 --
     regions: Mapped[list[Region]] = relationship(
         "Region",

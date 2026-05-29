@@ -5,6 +5,7 @@
 
 import base64
 import json
+import logging
 from datetime import datetime, timedelta
 from typing import Optional
 from uuid import UUID, uuid4
@@ -15,8 +16,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import BusinessException, NotFoundException
 from app.models.review import Review
 from app.models.spider import SpiderTask
-from app.models.store import Store, StorePlatform
+from app.models.store import Store, StorePlatform, PlatformAccount
 from app.models.user import User, UserStore
+
+logger = logging.getLogger(__name__)
 
 
 class PlatformService:
@@ -53,21 +56,46 @@ class PlatformService:
         if platform not in valid_platforms:
             raise BusinessException(f"不支持的平台类型: {platform}")
 
-        # TODO: 实际应调用平台OAuth或登录API验证账号
-        # 这里模拟验证成功
-
-        # 加密存储凭证
+        # 加密存储账号凭证（不实际登录，只保存信息）
         encrypted_credentials = await self._encrypt_credentials(credentials)
 
-        # 返回模拟的店铺列表
+        # 写入 platform_accounts 表
+        stmt = select(PlatformAccount).where(
+            PlatformAccount.user_id == user_id,
+            PlatformAccount.platform == platform,
+        )
+        result = await self.db.execute(stmt)
+        existing = result.scalar_one_or_none()
+
+        if existing:
+            existing.platform_username = credentials.get("username", "")
+            existing.cookies_status = "pending"
+            existing.last_sync_at = datetime.utcnow()
+            existing.error_msg = None
+            account = existing
+        else:
+            account = PlatformAccount(
+                user_id=user_id,
+                platform=platform,
+                platform_username=credentials.get("username", ""),
+                cookies_encrypted=encrypted_credentials,
+                cookies_status="pending",
+                last_sync_at=datetime.utcnow(),
+            )
+            self.db.add(account)
+
+        await self.db.flush()
+        await self.db.refresh(account)
+
+        # 返回模拟店铺列表（用于前端展示并绑定门店）
         mock_stores = await self.get_platform_stores(platform, credentials)
 
         return {
             "success": True,
-            "message": "平台账号连接成功",
+            "message": "平台账号已保存，待爬虫服务处理",
+            "account_id": str(account.id),
             "platform": platform,
             "stores": mock_stores,
-            "encrypted_credentials": encrypted_credentials,
         }
 
     async def get_platform_stores(
@@ -151,6 +179,7 @@ class PlatformService:
         platform: str,
         platform_store_id: str,
         platform_store_name: str,
+        account_id: UUID | None = None,
     ) -> StorePlatform:
         """
         绑定平台店铺
@@ -160,6 +189,7 @@ class PlatformService:
             platform: 平台名称
             platform_store_id: 平台侧门店ID
             platform_store_name: 平台侧门店名称
+            account_id: 平台账号ID（可选）
 
         Returns:
             StorePlatform: 平台店铺关联对象
@@ -189,6 +219,7 @@ class PlatformService:
             # 更新现有绑定
             existing.platform_store_id = platform_store_id
             existing.platform_store_name = platform_store_name
+            existing.account_id = account_id
             existing.connected = True
             existing.last_sync_at = None
             existing.sync_status = "pending"
@@ -202,6 +233,7 @@ class PlatformService:
             platform=platform,
             platform_store_id=platform_store_id,
             platform_store_name=platform_store_name,
+            account_id=account_id,
             connected=True,
             sync_status="pending",
         )
@@ -471,54 +503,90 @@ class PlatformService:
 
     async def get_connected_platforms(self, user: User) -> list[dict]:
         """
-        获取用户已连接的平台列表
+        获取用户已连接的平台账号列表
 
         Args:
             user: 当前用户
 
         Returns:
-            list[dict]: 平台列表
+            list[dict]: 平台账号列表
         """
-        # 获取用户关联的门店ID
-        store_ids = [us.store_id for us in user.store_associations]
-
-        if not store_ids:
-            return []
-
-        # 查询已连接的平台
         stmt = (
-            select(
-                StorePlatform.id,
-                StorePlatform.platform,
-                StorePlatform.platform_store_name,
-                StorePlatform.connected,
-                StorePlatform.last_sync_at,
-                Store.name.label("store_name"),
-            )
-            .join(Store, StorePlatform.store_id == Store.id)
-            .where(
-                and_(
-                    StorePlatform.store_id.in_(store_ids),
-                    StorePlatform.connected.is_(True),
-                )
-            )
-            .order_by(desc(StorePlatform.last_sync_at))
+            select(PlatformAccount)
+            .where(PlatformAccount.user_id == user.id)
+            .order_by(desc(PlatformAccount.created_at))
         )
         result = await self.db.execute(stmt)
-        rows = result.all()
+        accounts = result.scalars().all()
 
         platforms = []
-        for row in rows:
+        for acc in accounts:
             platforms.append({
-                "id": row.id,
-                "platform": row.platform,
-                "platform_store_name": row.platform_store_name,
-                "store_name": row.store_name,
-                "connected": row.connected,
-                "last_sync_at": row.last_sync_at,
+                "id": acc.id,
+                "platform": acc.platform,
+                "platform_username": acc.platform_username,
+                "connected": acc.cookies_status == "valid",
+                "cookies_status": acc.cookies_status,
+                "last_sync_at": acc.last_sync_at,
+                "error_msg": acc.error_msg,
             })
 
         return platforms
+
+    async def update_account(
+        self,
+        account_id: UUID,
+        username: str | None = None,
+        password: str | None = None,
+    ) -> PlatformAccount:
+        """
+        更新平台账号的用户名/密码
+
+        Args:
+            account_id: 平台账号ID
+            username: 新用户名（可选）
+            password: 新密码（可选，会加密存储）
+
+        Returns:
+            PlatformAccount: 更新后的账号对象
+        """
+        stmt = select(PlatformAccount).where(PlatformAccount.id == account_id)
+        result = await self.db.execute(stmt)
+        account = result.scalar_one_or_none()
+
+        if not account:
+            raise NotFoundException("平台账号不存在")
+
+        if username is not None:
+            account.platform_username = username
+
+        if password is not None and password != "":
+            # 复用 _encrypt_credentials 加密新密码
+            encrypted = await self._encrypt_credentials({
+                "username": account.platform_username,
+                "password": password,
+            })
+            account.cookies_encrypted = encrypted
+            account.cookies_status = "pending"
+            account.error_msg = None
+
+        await self.db.flush()
+        await self.db.refresh(account)
+        return account
+
+    async def get_account_by_id(self, account_id: UUID) -> PlatformAccount | None:
+        """
+        根据ID获取平台账号
+
+        Args:
+            account_id: 平台账号ID
+
+        Returns:
+            PlatformAccount | None
+        """
+        stmt = select(PlatformAccount).where(PlatformAccount.id == account_id)
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
 
     async def get_platform_store_details(self, store_platform_id: UUID) -> dict:
         """

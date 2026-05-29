@@ -3,14 +3,19 @@
 处理平台账号连接、店铺绑定、数据同步等平台关联相关接口
 """
 
+from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
-from app.core.deps import require_valid_subscription, get_db
+from app.core.deps import require_valid_subscription, get_db, require_roles
 from app.core.response import success, error, paginated
+from app.core.exceptions import NotFoundException
 from app.models.user import User
+from app.models.store import PlatformAccount, StorePlatform
 from app.schemas.platform import (
     PlatformConnectRequest,
     PlatformConnectResponse,
@@ -59,6 +64,7 @@ async def connect_platform(
         data=PlatformConnectResponse(
             success=result["success"],
             message=result["message"],
+            account_id=result.get("account_id"),
             stores=[
                 PlatformStoreInfo(
                     platform_store_id=s["platform_store_id"],
@@ -85,8 +91,6 @@ async def get_platform_stores(
     - 返回指定平台下的所有店铺
     """
     platform_service = PlatformService(db)
-
-    # 使用模拟凭证获取店铺列表
     stores = await platform_service.get_platform_stores(platform, {})
 
     return success(
@@ -116,31 +120,18 @@ async def bind_platform_store(
     """
     platform_service = PlatformService(db)
 
-    # 获取平台店铺信息
-    stores = await platform_service.get_platform_stores("", {})
-    platform_store = None
-    for s in stores:
-        if s["platform_store_id"] == request.platform_store_id:
-            platform_store = s
-            break
-
-    if not platform_store:
-        # 使用默认名称
-        platform_store_name = f"平台店铺-{request.platform_store_id}"
-    else:
-        platform_store_name = platform_store["platform_store_name"]
-
     result = await platform_service.bind_platform_store(
         store_id=request.store_id,
-        platform=platform_store["platform"] if platform_store else "meituan",
+        platform=request.platform,
         platform_store_id=request.platform_store_id,
-        platform_store_name=platform_store_name,
+        platform_store_name=request.platform_store_name,
+        account_id=request.account_id,
     )
 
     return success(
         data={
-            "id": result.id,
-            "store_id": result.store_id,
+            "id": str(result.id),
+            "store_id": str(result.store_id),
             "platform": result.platform,
             "platform_store_id": result.platform_store_id,
             "platform_store_name": result.platform_store_name,
@@ -150,7 +141,7 @@ async def bind_platform_store(
     )
 
 
-@router.delete("/{store_platform_id}", summary="解绑平台店铺")
+@router.delete("/store/{store_platform_id}", summary="解绑平台店铺")
 async def unbind_platform_store(
     store_platform_id: UUID,
     db: AsyncSession = Depends(get_db),
@@ -211,7 +202,7 @@ async def get_sync_status(
         data=SyncStatusResponse(
             store_platform_id=result["store_platform_id"],
             status=result["status"],
-            progress=0,  # 可从任务中计算
+            progress=0,
             message=result["status"],
             last_sync_at=result["last_sync_at"],
             next_sync_at=result["next_sync_at"],
@@ -255,24 +246,73 @@ async def get_connected_accounts(
 ) -> dict:
     """
     获取已连接的平台账号列表
-    - 返回当前用户所有门店关联的平台账号
+    - 返回当前用户的所有平台账号
     """
     platform_service = PlatformService(db)
-    platforms = await platform_service.get_connected_platforms(current_user)
+    accounts = await platform_service.get_connected_platforms(current_user)
 
     return success(
         data=[
             {
-                "id": str(p["id"]),
-                "platform": p["platform"],
-                "platform_account": p["platform_store_name"],
-                "connected": p["connected"],
-                "last_sync_at": p["last_sync_at"],
+                "id": str(a["id"]),
+                "platform": a["platform"],
+                "platform_username": a["platform_username"],
+                "cookies_status": a.get("cookies_status", "unknown"),
+                "last_sync_at": a.get("last_sync_at"),
             }
-            for p in platforms
+            for a in accounts
         ],
         message="获取成功",
     )
+
+
+@router.post("/accounts/{account_id}/sync-status", summary="同步平台账号登录状态")
+async def sync_account_status(
+    account_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_valid_subscription),
+) -> dict:
+    """
+    同步平台账号登录状态
+    - 将账号标记为 pending，等待爬虫服务更新状态
+    - 普通用户只能同步自己的账号
+    """
+    platform_service = PlatformService(db)
+    account = await platform_service.get_account_by_id(account_id)
+
+    if not account or str(account.user_id) != str(current_user.id):
+        raise NotFoundException("平台账号不存在")
+
+    account.cookies_status = "pending"
+    account.last_sync_at = datetime.utcnow()
+    account.error_msg = None
+    await db.commit()
+
+    return success(message="已提交同步请求，请稍后刷新查看状态")
+
+
+@router.put("/account/{account_id}", summary="更新平台账号")
+async def update_platform_account(
+    account_id: UUID,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_valid_subscription),
+) -> dict:
+    """
+    更新平台账号的用户名/密码
+    - 普通用户只能修改自己的账号
+    """
+    platform_service = PlatformService(db)
+    account = await platform_service.get_account_by_id(account_id)
+
+    if not account or str(account.user_id) != str(current_user.id):
+        raise NotFoundException("平台账号不存在")
+
+    username = body.get("username")
+    password = body.get("password")
+
+    await platform_service.update_account(account_id, username=username, password=password)
+    return success(message="修改成功")
 
 
 @router.get("/store/{store_platform_id}", summary="获取平台店铺详情")
@@ -341,3 +381,90 @@ async def get_platform_statistics(
         data=result,
         message="获取成功",
     )
+
+
+# ============ 管理员接口 ============
+
+@router.get("/admin/accounts", summary="管理员：获取所有用户的平台绑定账号")
+async def admin_get_all_accounts(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles("SUPER_ADMIN")),
+) -> dict:
+    """
+    管理员获取所有用户的平台绑定账号
+    """
+    from sqlalchemy.orm import selectinload
+
+    stmt = (
+        select(PlatformAccount)
+        .options(selectinload(PlatformAccount.user))
+        .order_by(PlatformAccount.created_at.desc())
+    )
+    result = await db.execute(stmt)
+    accounts = result.scalars().all()
+
+    data = []
+    for acc in accounts:
+        user_email = acc.user.email if acc.user else ""
+        user_name = acc.user.username if acc.user else ""
+        data.append({
+            "id": str(acc.id),
+            "user_id": str(acc.user_id) if acc.user_id else None,
+            "user_email": user_email,
+            "user_name": user_name,
+            "platform": acc.platform,
+            "platform_username": acc.platform_username or "",
+            "cookies_status": acc.cookies_status or "unknown",
+            "last_sync_at": acc.last_sync_at.isoformat() if acc.last_sync_at else None,
+            "error_msg": acc.error_msg or "",
+            "created_at": acc.created_at.isoformat() if acc.created_at else None,
+        })
+
+    return success(data=data, message="获取成功")
+
+
+@router.delete("/account/{account_id}", summary="管理员：解绑平台账号")
+async def admin_unbind_account(
+    account_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles("SUPER_ADMIN")),
+) -> dict:
+    """
+    管理员解绑指定平台账号
+    """
+    stmt = select(PlatformAccount).where(PlatformAccount.id == account_id)
+    result = await db.execute(stmt)
+    account = result.scalar_one_or_none()
+
+    if not account:
+        raise NotFoundException("平台账号不存在")
+
+    await db.delete(account)
+    await db.commit()
+
+    return success(message="解绑成功")
+
+
+@router.post("/account/{account_id}/refresh", summary="管理员：刷新账号 Cookies")
+async def admin_refresh_cookies(
+    account_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles("SUPER_ADMIN")),
+) -> dict:
+    """
+    管理员刷新指定账号的 Cookies
+    """
+    stmt = select(PlatformAccount).where(PlatformAccount.id == account_id)
+    result = await db.execute(stmt)
+    account = result.scalar_one_or_none()
+
+    if not account:
+        raise NotFoundException("平台账号不存在")
+
+    # 标记状态为 pending，等待爬虫服务处理
+    account.cookies_status = "pending"
+    account.last_sync_at = datetime.utcnow()
+    account.error_msg = None
+    await db.commit()
+
+    return success(message="已标记为待刷新，等待爬虫服务处理")

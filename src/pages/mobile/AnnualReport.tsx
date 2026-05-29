@@ -42,6 +42,9 @@ import { fetchAnnualReport, fetchAllYearlyData, generateAnnualReport } from '../
 import type { YearlyData, ReportInsights, HistoricalTrends } from '../../api/annual-report';
 import { useStore } from '../../context/StoreContext';
 
+// 辅助：安全取数
+const num = (v: any): number => (typeof v === 'number' && !isNaN(v)) ? v : 0;
+
 export const MobileAnnualReport: React.FC = () => {
   const [selectedYear, setSelectedYear] = useState(2025);
   const [yearlyData, setYearlyData] = useState<Record<number, YearlyData>>({});
@@ -130,8 +133,9 @@ export const MobileAnnualReport: React.FC = () => {
 
   const currentData = yearlyData[selectedYear];
 
+  // ===== 渲染辅助 =====
   const renderStars = (rating: number) => {
-    const stars = [];
+    const stars: JSX.Element[] = [];
     for (let i = 1; i <= 5; i++) {
       if (i <= Math.floor(rating)) {
         stars.push(<Star key={i} className="w-4 h-4 fill-yellow-400 text-yellow-400" />);
@@ -150,36 +154,182 @@ export const MobileAnnualReport: React.FC = () => {
     return <Minus className="w-4 h-4 text-gray-400" />;
   };
 
+  // ===== 新数据项辅助 =====
+  /** 评分分布柱状图 */
+  const renderRatingDist = () => {
+    const dist = currentData?.ratingDistribution;
+    if (!dist || !dist.total) return null;
+    const labels = ['1星', '2星', '3星', '4星', '5星'];
+    const colors = ['bg-rose-400', 'bg-orange-400', 'bg-amber-400', 'bg-emerald-400', 'bg-emerald-600'];
+    return (
+      <Card className="p-6" key="rating-dist">
+        <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+          <Star className="w-5 h-5 text-amber-500" />
+          评分分布
+        </h3>
+        <div className="space-y-2">
+          {[5, 4, 3, 2, 1].map((star, i) => {
+            const count = dist[star as keyof typeof dist] || 0;
+            const pct = dist.total > 0 ? Math.round((count / dist.total) * 100) : 0;
+            return (
+              <div key={star} className="flex items-center gap-2">
+                <span className="text-xs text-slate-500 w-6 text-right">{star}星</span>
+                <div className="flex-1 bg-slate-100 rounded-full h-3">
+                  <div
+                    className={`${colors[4 - i]} h-full rounded-full transition-all duration-700`}
+                    style={{ width: `${pct}%` }}
+                  ></div>
+                </div>
+                <span className="text-xs text-slate-600 w-12 text-right">{count}条</span>
+              </div>
+            );
+          })}
+          <div className="text-xs text-slate-400 text-center pt-1">
+            均分 {dist.avg || 0} · 共 {dist.total} 条
+          </div>
+        </div>
+      </Card>
+    );
+  };
+
+  /** 平台来源分布 */
+  const renderPlatformDist = () => {
+    const pd = currentData?.platformDistribution;
+    if (!pd || !Object.keys(pd).length) return null;
+    const entries = Object.entries(pd).sort((a: any, b: any) => b[1] - a[1]);
+    const total = entries.reduce((s: number, e: any) => s + e[1], 0);
+    const colors = ['bg-blue-500', 'bg-emerald-500', 'bg-purple-500', 'bg-orange-500', 'bg-pink-500'];
+    return (
+      <Card className="p-6" key="platform-dist">
+        <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+          <Store className="w-5 h-5 text-blue-500" />
+          平台来源分布
+        </h3>
+        <div className="space-y-3">
+          {entries.map(([platform, count]: any, i: number) => {
+            const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+            return (
+              <div key={platform}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-sm text-slate-600">{platform}</span>
+                  <span className="text-sm font-bold text-slate-700">{count}条 ({pct}%)</span>
+                </div>
+                <div className="bg-slate-100 rounded-full h-2.5">
+                  <div
+                    className={`${colors[i % colors.length]} h-full rounded-full transition-all duration-700`}
+                    style={{ width: `${pct}%` }}
+                  ></div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+    );
+  };
+
+  /** 回复情感分布 */
+  const renderReplySentiment = () => {
+    const rs = currentData?.replySentiment;
+    if (!rs || !rs.total) return null;
+    const items = [
+      { label: '正面回复', value: rs.positive || 0, color: 'bg-emerald-400' },
+      { label: '中性回复', value: rs.neutral || 0, color: 'bg-slate-400' },
+      { label: '负面回复', value: rs.negative || 0, color: 'bg-rose-400' },
+    ];
+    return (
+      <Card className="p-6" key="reply-sentiment">
+        <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+          <MessageSquare className="w-5 h-5 text-blue-500" />
+          回复情感分布
+        </h3>
+        <div className="flex gap-1 mb-3 h-4 rounded-full overflow-hidden">
+          {items.map(item => {
+            const pct = rs.total > 0 ? Math.round((item.value / rs.total) * 100) : 0;
+            return pct > 0 ? (
+              <div
+                key={item.label}
+                className={item.color}
+                style={{ width: `${pct}%` }}
+                title={`${item.label}: ${item.value}条`}
+              ></div>
+            ) : null;
+          })}
+        </div>
+        <div className="flex justify-between text-xs text-slate-500">
+          {items.map(item => (
+            <span key={item.label}>{item.label}: {item.value}条</span>
+          ))}
+        </div>
+      </Card>
+    );
+  };
+
+  /** 月度情感趋势 */
+  const renderMonthlySentiment = () => {
+    const ms = currentData?.monthlySentiment;
+    if (!ms || !ms.length) return null;
+    const maxCount = Math.max(...ms.map((m: any) => m.total || 0), 1);
+    return (
+      <Card className="p-6" key="monthly-sentiment">
+        <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+          <Activity className="w-5 h-5 text-indigo-600" />
+          月度情感 & 回复率趋势
+        </h3>
+        <div className="space-y-2">
+          {ms.map((m: any, i: number) => {
+            const posPct = m.total > 0 ? Math.round((m.positive / m.total) * 100) : 0;
+            const negPct = m.total > 0 ? Math.round((m.negative / m.total) * 100) : 0;
+            const neuPct = 100 - posPct - negPct;
+            return (
+              <div key={i}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs text-slate-500 w-8">{m.month}月</span>
+                  <span className="text-xs text-slate-400">
+                    回复率 {m.replyRate || 0}%
+                  </span>
+                </div>
+                <div className="flex h-3 rounded-full overflow-hidden bg-slate-100">
+                  <div className="bg-emerald-400 transition-all duration-700" style={{ width: `${posPct}%` }}></div>
+                  <div className="bg-slate-300 transition-all duration-700" style={{ width: `${neuPct}%` }}></div>
+                  <div className="bg-rose-400 transition-all duration-700" style={{ width: `${negPct}%` }}></div>
+                </div>
+              </div>
+            );
+          })}
+          <div className="flex justify-center gap-3 text-xs text-slate-400 pt-1">
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-400 inline-block"></span>正面</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-slate-300 inline-block"></span>中性</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-rose-400 inline-block"></span>负面</span>
+          </div>
+        </div>
+      </Card>
+    );
+  };
+
+  // ===== 骨架屏 =====
   if (loading && !currentData) {
     return (
       <MobileLayout title={`${selectedYear} 年度报告`}>
         <div className="space-y-6 p-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
-          {/* 标题骨架 */}
           <Skeleton lines={2} className="p-6" />
-          
-          {/* 统计卡片骨架 */}
           <div className="flex gap-3">
             <Skeleton lines={3} card={true} className="flex-1 p-4" />
             <Skeleton lines={3} card={true} className="flex-1 p-4" />
           </div>
-          
-          {/* 图表骨架 */}
           <Skeleton lines={4} card={true} className="p-6" />
-          
-          {/* 列表骨架 */}
           <Skeleton lines={4} card={true} className="p-6" />
-          
-          {/* 底部骨架 */}
           <Skeleton lines={3} card={true} className="p-6" />
         </div>
       </MobileLayout>
     );
   }
 
+  // ===== 主渲染 =====
   return (
     <MobileLayout title={`${selectedYear} 年度报告`}>
       <div className="space-y-6 pb-24 animate-in fade-in slide-in-from-bottom-4 duration-500">
-        
+
         {/* Header with Year Selector */}
         <div className="flex items-center justify-between">
           <Button variant="ghost" size="icon" onClick={handleBack}>
@@ -256,12 +406,23 @@ export const MobileAnnualReport: React.FC = () => {
                   <span>均分 {historical?.averageRating3Years || 0}</span>
                 </div>
               </div>
+              {/* 新增：活跃天数 & 峰值月份 */}
+              <div className="flex items-center gap-4 mt-2 text-sm text-slate-500">
+                <div className="flex items-center gap-1">
+                  <Calendar className="w-4 h-4" />
+                  <span>活跃天数 {currentData.activeDays || 0} 天</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Flame className="w-4 h-4 text-rose-500" />
+                  <span>峰值月份 {currentData.peakMonth?.month || '-'}月 ({currentData.peakMonth?.count || 0}条)</span>
+                </div>
+              </div>
               <Button
                 className="mt-4 bg-orange-50 hover:bg-orange-100 text-orange-600 border-orange-200"
                 onClick={handleGenerate}
                 disabled={generating}
               >
-                <RefreshCw className={`w-4 h-4 mr-2 ${generating ? 'animate-spin' : ''}`} /> 
+                <RefreshCw className={`w-4 h-4 mr-2 ${generating ? 'animate-spin' : ''}`} />
                 {generating ? '生成中...' : '重新生成'}
               </Button>
             </Card>
@@ -289,7 +450,7 @@ export const MobileAnnualReport: React.FC = () => {
               ))}
             </div>
 
-            {/* Overview Tab */}
+            {/* ==================== OVERVIEW TAB ==================== */}
             {activeTab === 'overview' && (
               <>
                 {/* Year-over-Year Comparison */}
@@ -375,25 +536,11 @@ export const MobileAnnualReport: React.FC = () => {
                   </Card>
                 )}
 
-                {/* Market & Competitor Card */}
-                {currentData && (
-                  <div className="grid grid-cols-2 gap-3">
-                    {currentData.competitorAvgRating !== undefined && (
-                      <Card className="p-4 bg-slate-50 border-slate-100">
-                        <Trophy className="w-6 h-6 text-amber-500 mb-2" />
-                        <p className="text-2xl font-black text-slate-900">{currentData.competitorAvgRating}</p>
-                        <p className="text-xs text-slate-400">竞品平均分</p>
-                      </Card>
-                    )}
-                    {currentData.marketShare !== undefined && (
-                      <Card className="p-4 bg-slate-50 border-slate-100">
-                        <Target className="w-6 h-6 text-indigo-500 mb-2" />
-                        <p className="text-2xl font-black text-slate-900">{currentData.marketShare}%</p>
-                        <p className="text-xs text-slate-400">市场份额</p>
-                      </Card>
-                    )}
-                  </div>
-                )}
+                {/* 新增：评分分布 */}
+                {renderRatingDist()}
+
+                {/* 新增：平台来源分布 */}
+                {renderPlatformDist()}
 
                 {/* Core Stats */}
                 <div className="grid grid-cols-2 gap-3">
@@ -437,13 +584,13 @@ export const MobileAnnualReport: React.FC = () => {
                       return (
                         <div key={key}>
                           <div className="flex items-center justify-between mb-1">
-                            <span className="text-sm text-slate-600">{labels[key]}</span>
+                            <span className="text-sm text-slate-600">{labels[key] || key}</span>
                             <span className="text-sm font-bold text-slate-700">{value}分</span>
                           </div>
                           <div className="bg-slate-100 rounded-full h-2">
                             <div
                               className="bg-gradient-to-r from-indigo-500 to-purple-500 h-full rounded-full transition-all duration-700"
-                              style={{ width: `${(value / 5) * 100}%` }}
+                              style={{ width: `${(num(value) / 5) * 100}%` }}
                             ></div>
                           </div>
                         </div>
@@ -479,7 +626,7 @@ export const MobileAnnualReport: React.FC = () => {
               </>
             )}
 
-            {/* Reply Analysis Tab */}
+            {/* ==================== REPLY TAB ==================== */}
             {activeTab === 'reply' && (
               <>
                 {/* Reply Rate Card */}
@@ -488,7 +635,7 @@ export const MobileAnnualReport: React.FC = () => {
                     <MessageSquare className="w-5 h-5 text-blue-500" />
                     商家回复分析
                   </h3>
-                  
+
                   <div className="grid grid-cols-2 gap-4 mb-4">
                     <div className="text-center">
                       <div className="relative w-20 h-20 mx-auto mb-2">
@@ -516,7 +663,10 @@ export const MobileAnnualReport: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="space-y-2">
+                  {/* 新增：回复情感分布 */}
+                  {renderReplySentiment()}
+
+                  <div className="space-y-2 mt-4">
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-slate-600">已回复</span>
                       <span className="font-bold text-emerald-500">{currentData.replyStats.repliedCount} 条</span>
@@ -530,7 +680,7 @@ export const MobileAnnualReport: React.FC = () => {
               </>
             )}
 
-            {/* Historical Trends Tab */}
+            {/* ==================== TRENDS TAB ==================== */}
             {activeTab === 'trends' && (
               <>
                 {/* Monthly Trend Chart */}
@@ -546,7 +696,7 @@ export const MobileAnnualReport: React.FC = () => {
                           <span className="text-xs text-slate-500 w-10">{month.month}月</span>
                           <div className="flex-1 mx-3">
                             <div className="bg-slate-100 rounded-full h-3">
-                              <div className="bg-indigo-500 h-full rounded-full transition-all duration-700" style={{ width: `${(month.count / 500) * 100}%` }}></div>
+                              <div className="bg-indigo-500 h-full rounded-full transition-all duration-700" style={{ width: `${(num(month.count) / 500) * 100}%` }}></div>
                             </div>
                           </div>
                           <span className="text-xs text-slate-700 w-16 text-right">{month.count}条 / {month.avgRating}分</span>
@@ -555,10 +705,13 @@ export const MobileAnnualReport: React.FC = () => {
                     ))}
                   </div>
                 </Card>
+
+                {/* 新增：月度情感 & 回复率趋势 */}
+                {renderMonthlySentiment()}
               </>
             )}
 
-            {/* Year Comparison Tab */}
+            {/* ==================== COMPARISON TAB ==================== */}
             {activeTab === 'comparison' && historical && (
               <>
                 {/* Comparison Table */}
@@ -604,6 +757,36 @@ export const MobileAnnualReport: React.FC = () => {
                         </tr>
                       </tbody>
                     </table>
+                  </div>
+                </Card>
+
+                {/* 新增：最佳/最差月份对比 */}
+                <Card className="p-6">
+                  <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+                    <Award className="w-5 h-5 text-amber-500" />
+                    最佳 & 最差月份
+                  </h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="p-4 bg-emerald-50 rounded-lg border border-emerald-200">
+                      <p className="text-xs text-emerald-600 font-bold mb-1">最佳月份</p>
+                      <p className="text-2xl font-black text-emerald-700">
+                        {currentData.peakMonth?.month || '-'}月
+                      </p>
+                      <p className="text-xs text-emerald-500 mt-1">{currentData.peakMonth?.count || 0} 条评论</p>
+                    </div>
+                    <div className="p-4 bg-rose-50 rounded-lg border border-rose-200">
+                      <p className="text-xs text-rose-600 font-bold mb-1">最差月份</p>
+                      {(() => {
+                        const monthlyArr = currentData.monthlyData || [];
+                        const worst = monthlyArr.reduce((min: any, m: any) =>
+                          (m.count || 0) < (min.count || Infinity) ? m : min, { month: '-', count: Infinity });
+                        return (
+                          <p className="text-2xl font-black text-rose-700">
+                            {worst.month !== '-' ? `${worst.month}月` : '-'}
+                          </p>
+                        );
+                      })()}
+                    </div>
                   </div>
                 </Card>
               </>

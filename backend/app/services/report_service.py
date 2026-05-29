@@ -43,9 +43,9 @@ async def get_annual_report(
             AnnualReport.store_id == store_id,
             AnnualReport.year == year,
         )
-    )
+    ).order_by(AnnualReport.generated_at.desc())
     result = await db.execute(stmt)
-    report = result.scalar_one_or_none()
+    report = result.scalars().first()
 
     if not report:
         raise NotFoundException(f"{year}年度报告不存在")
@@ -107,11 +107,13 @@ async def generate_annual_report(
     """
     # 检查门店是否存在
     store_result = await db.execute(select(Store).where(Store.id == store_id))
-    store = store_result.scalar_one_or_none()
+    store = store_result.scalars().first()
     if not store:
         raise NotFoundException("门店不存在")
 
     # 获取该年份的所有评论
+    # 优先使用 platform_created_at（平台发布时间），fallback 到 created_at（入库时间）
+    # 两个字段都是 naive datetime（timezone=False），直接比较
     start_date = datetime(year, 1, 1)
     end_date = datetime(year + 1, 1, 1)
 
@@ -119,12 +121,26 @@ async def generate_annual_report(
         and_(
             Review.store_id == store_id,
             Review.status == "normal",
-            Review.created_at >= start_date,
-            Review.created_at < end_date,
+            Review.platform_created_at.isnot(None),
+            Review.platform_created_at >= start_date,
+            Review.platform_created_at < end_date,
         )
     )
     result = await db.execute(stmt)
     reviews = list(result.scalars().all())
+
+    # 如果该年份用 platform_created_at 查不到，fallback 到 created_at
+    if not reviews:
+        stmt = select(Review).where(
+            and_(
+                Review.store_id == store_id,
+                Review.status == "normal",
+                Review.created_at >= start_date,
+                Review.created_at < end_date,
+            )
+        )
+        result = await db.execute(stmt)
+        reviews = list(result.scalars().all())
 
     if not reviews:
         raise BusinessException(f"{year}年暂无评论数据，无法生成报告")
@@ -138,16 +154,21 @@ async def generate_annual_report(
     monthly_data = _calculate_monthly_data(reviews, year)
     top_keywords = _extract_top_keywords(reviews)
     category_scores = _calculate_category_scores(reviews)
+    rating_distribution = _calculate_rating_distribution(reviews)
+    platform_distribution = _calculate_platform_distribution(reviews)
+    reply_sentiment = _calculate_reply_sentiment(reviews)
+    peak_month = _calculate_peak_month(reviews, year)
+    active_days = _calculate_active_days(reviews, year)
 
     # 获取门店名称用于AI分析
     store_result = await db.execute(select(Store).where(Store.id == store_id))
-    store = store_result.scalar_one_or_none()
+    store = store_result.scalars().first()
     store_name = store.name if store else "本店"
 
     # 使用AI生成洞察数据
     insights = await _generate_insights_with_ai(db, reviews, year, total_reviews, avg_rating, store_name)
 
-    # 检查是否已存在报告
+    # 检查是否已存在报告（可能有重复，取第一条）
     stmt = select(AnnualReport).where(
         and_(
             AnnualReport.store_id == store_id,
@@ -155,7 +176,7 @@ async def generate_annual_report(
         )
     )
     result = await db.execute(stmt)
-    existing_report = result.scalar_one_or_none()
+    existing_report = result.scalars().first()
 
     if existing_report:
         # 更新现有报告
@@ -166,6 +187,12 @@ async def generate_annual_report(
         existing_report.monthly_data = monthly_data
         existing_report.top_keywords = top_keywords
         existing_report.category_scores = category_scores
+        existing_report.rating_distribution = rating_distribution
+        existing_report.platform_distribution = platform_distribution
+        existing_report.reply_sentiment = reply_sentiment
+        existing_report.peak_month = peak_month
+        existing_report.active_days = active_days
+        existing_report.monthly_sentiment = _monthly_sentiment(reviews, year)
         existing_report.insights = insights
         existing_report.generated_at = datetime.utcnow()
         await db.flush()
@@ -183,6 +210,12 @@ async def generate_annual_report(
             monthly_data=monthly_data,
             top_keywords=top_keywords,
             category_scores=category_scores,
+            rating_distribution=rating_distribution,
+            platform_distribution=platform_distribution,
+            reply_sentiment=reply_sentiment,
+            peak_month=peak_month,
+            active_days=active_days,
+            monthly_sentiment=_monthly_sentiment(reviews, year),
             insights=insights,
             generated_at=datetime.utcnow(),
         )
@@ -253,16 +286,31 @@ async def generate_weekly_brief(
     week_end = week_start + timedelta(days=7)
 
     # 获取本周评论
+    # 优先使用 platform_created_at（平台发布时间），fallback 到 created_at（入库时间）
     stmt = select(Review).where(
         and_(
             Review.store_id == store_id,
             Review.status == "normal",
-            Review.created_at >= week_start,
-            Review.created_at < week_end,
+            Review.platform_created_at.isnot(None),
+            Review.platform_created_at >= week_start,
+            Review.platform_created_at < week_end,
         )
     )
     result = await db.execute(stmt)
     reviews = list(result.scalars().all())
+
+    # 如果查不到，fallback 到 created_at
+    if not reviews:
+        stmt = select(Review).where(
+            and_(
+                Review.store_id == store_id,
+                Review.status == "normal",
+                Review.created_at >= week_start,
+                Review.created_at < week_end,
+            )
+        )
+        result = await db.execute(stmt)
+        reviews = list(result.scalars().all())
 
     total_reviews = len(reviews)
 
@@ -387,6 +435,8 @@ def _calculate_reply_stats(reviews: list[Review]) -> dict:
 
     return {
         "reply_rate": round(replied / total * 100, 1),
+        "replied_count": replied,
+        "unreplied_count": total - replied,
         "avg_reply_time_hours": avg_reply_time,
         "ai_reply_rate": round(ai_replied / replied * 100, 1) if replied else 0,
     }
@@ -496,7 +546,8 @@ def _calculate_monthly_data(reviews: list[Review], year: int) -> list[dict]:
         }
 
     for r in reviews:
-        month = r.created_at.month
+        dt = r.platform_created_at or r.created_at
+        month = dt.month if dt else 1
         monthly_stats[month]["total"] += 1
         monthly_stats[month]["ratings"].append(r.rating)
 
@@ -515,6 +566,102 @@ def _calculate_monthly_data(reviews: list[Review], year: int) -> list[dict]:
         del stats["ratings"]
         result.append(stats)
 
+    return result
+
+
+def _calculate_rating_distribution(reviews: list[Review]) -> dict:
+    """
+    计算评分分布（1-5星各多少条）
+    """
+    dist = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+    for r in reviews:
+        rating = int(r.rating)
+        if rating in dist:
+            dist[rating] += 1
+    total = len(reviews)
+    dist["avg"] = round(sum(r.rating for r in reviews) / total, 1) if total else 0
+    dist["total"] = total
+    return dist
+
+
+def _calculate_platform_distribution(reviews: list[Review]) -> dict:
+    """
+    计算平台来源分布
+    """
+    from collections import Counter
+    counter = Counter(r.platform for r in reviews if r.platform)
+    return dict(counter)
+
+
+def _calculate_reply_sentiment(reviews: list[Review]) -> dict:
+    """
+    计算已回复评论的情感分布
+    """
+    replied = [r for r in reviews if r.reply is not None]
+    if not replied:
+        return {"positive": 0, "negative": 0, "neutral": 0, "total": 0}
+    return {
+        "positive": sum(1 for r in replied if r.sentiment == "positive"),
+        "negative": sum(1 for r in replied if r.sentiment == "negative"),
+        "neutral": sum(1 for r in replied if r.sentiment == "neutral"),
+        "total": len(replied),
+    }
+
+
+def _calculate_peak_month(reviews: list[Review], year: int) -> dict:
+    """
+    计算评论峰值月份
+    """
+    from collections import Counter
+    month_counts = Counter()
+    for r in reviews:
+        dt = r.platform_created_at or r.created_at
+        if dt:
+            month_counts[dt.month] += 1
+    if not month_counts:
+        return {"month": 0, "count": 0}
+    peak_month = month_counts.most_common(1)[0][0]
+    return {"month": peak_month, "count": month_counts[peak_month]}
+
+
+def _calculate_active_days(reviews: list[Review], year: int) -> int:
+    """
+    计算有评论产生的活跃天数
+    """
+    days = set()
+    for r in reviews:
+        dt = r.platform_created_at or r.created_at
+        if dt:
+            days.add(dt.date() if hasattr(dt, 'date') else str(dt)[:10])
+    return len(days)
+
+
+def _monthly_sentiment(reviews: list[Review], year: int) -> list[dict]:
+    """
+    计算月度情感分布和回复率趋势
+    """
+    monthly = {}
+    for month in range(1, 13):
+        monthly[month] = {"month": month, "positive": 0, "negative": 0, "neutral": 0, "replied": 0, "total": 0}
+
+    for r in reviews:
+        dt = r.platform_created_at or r.created_at
+        month = dt.month if dt else 1
+        monthly[month]["total"] += 1
+        if r.sentiment == "positive":
+            monthly[month]["positive"] += 1
+        elif r.sentiment == "negative":
+            monthly[month]["negative"] += 1
+        else:
+            monthly[month]["neutral"] += 1
+        if r.reply is not None:
+            monthly[month]["replied"] += 1
+
+    result = []
+    for month in range(1, 13):
+        m = monthly[month]
+        m["reply_rate"] = round(m["replied"] / m["total"] * 100, 1) if m["total"] else 0
+        result.append(m)
     return result
 
 
@@ -584,7 +731,11 @@ async def _generate_insights_with_ai(
   "ai_summary": "100字以内的年度总结，专业且有温度",
   "personality_type": "从以下选一个：口碑王者 / 品质之选 / 人气热店 / 潜力新星 / 稳扎稳打",
   "recommendations": ["建议1", "建议2", "建议3"],  // 最多3条具体建议
-  "year_over_year_growth": 0  // 暂无同比数据时填0
+  "year_over_year": {{
+    "review_growth": 0,     // 评论总数同比增长率(%)
+    "rating_change": 0,     // 平均评分同比变化(分)
+    "reply_rate_change": 0  // 回复率同比变化(%)
+  }}
 }}
 ```"""
 
@@ -609,8 +760,19 @@ async def _generate_insights_with_ai(
             else:
                 raise ValueError("无法解析AI返回的JSON")
 
+        # AI 返回的 year_over_year 可能是 dict 或旧格式的 growth_rate
+        yoy = result.get("year_over_year", {})
+        if isinstance(yoy, dict):
+            year_over_year = {
+                "review_growth": yoy.get("review_growth", 0),
+                "rating_change": yoy.get("rating_change", 0),
+                "reply_rate_change": yoy.get("reply_rate_change", 0),
+            }
+        else:
+            year_over_year = {"review_growth": result.get("year_over_year_growth", 0), "rating_change": 0, "reply_rate_change": 0}
+
         return {
-            "year_over_year": {"growth_rate": result.get("year_over_year_growth", 0)},
+            "year_over_year": year_over_year,
             "highlights": result.get("highlights", [])[:3],
             "improvements": result.get("improvements", [])[:3],
             "ai_summary": result.get("ai_summary", ""),
@@ -650,7 +812,7 @@ def _fallback_insights(
         personality_type = "人气热店"
 
     return {
-        "year_over_year": {"growth_rate": 0},
+        "year_over_year": {"review_growth": 0, "rating_change": 0, "reply_rate_change": 0},
         "highlights": highlights[:3],
         "improvements": improvements[:3],
         "ai_summary": f"{year}年度共收到{total_reviews}条评论，整体表现{'优秀' if avg_rating >= 4.0 else '中等' if avg_rating >= 3.0 else '有待提升'}。",

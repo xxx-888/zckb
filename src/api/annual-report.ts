@@ -42,6 +42,33 @@ export interface YearlyData {
   };
   competitorAvgRating?: number;
   marketShare?: number;
+  // 新增丰富数据项
+  ratingDistribution: {
+    1: number; 2: number; 3: number; 4: number; 5: number;
+    avg: number;
+    total: number;
+  };
+  platformDistribution: Record<string, number>;
+  replySentiment: {
+    positive: number;
+    negative: number;
+    neutral: number;
+    total: number;
+  };
+  peakMonth: {
+    month: number;
+    count: number;
+  };
+  activeDays: number;
+  monthlySentiment: Array<{
+    month: number;
+    positive: number;
+    negative: number;
+    neutral: number;
+    replied: number;
+    total: number;
+    replyRate: number;
+  }>;
 }
 
 export interface ReportInsights {
@@ -66,75 +93,6 @@ export interface HistoricalTrends {
 
 import { api } from '@/lib/api';
 
-// 测试数据
-const MOCK_ANNUAL_REPORT = {
-  yearlyData: {
-    '2024': {
-      year: 2024,
-      totalReviews: 568,
-      averageRating: 4.2,
-      sentiment: { positive: 342, negative: 85, neutral: 141 },
-      replyStats: { replyRate: 85.5, avgReplyTime: 3.2, repliedCount: 485, unrepliedCount: 83, replySentiment: { positive: 308, negative: 8, neutral: 42 } },
-      monthlyData: Array.from({ length: 12 }, (_, i) => ({ month: i + 1, count: Math.floor(Math.random() * 50) + 20, avgRating: 4.0 + Math.random() * 0.5, replyCount: Math.floor(Math.random() * 40) + 15 })),
-      topKeywords: [
-        { word: '服务态度', count: 199, sentiment: 'positive' },
-        { word: '菜品口味', count: 159, sentiment: 'positive' },
-        { word: '上菜速度', count: 85, sentiment: 'negative' },
-        { word: '环境卫生', count: 68, sentiment: 'neutral' },
-        { word: '性价比', count: 57, sentiment: 'positive' },
-      ],
-      categoryScores: { service: 4.4, food: 4.2, environment: 4.1, price: 3.9, speed: 4.0 },
-    },
-    '2023': {
-      year: 2023,
-      totalReviews: 423,
-      averageRating: 4.0,
-      sentiment: { positive: 248, negative: 102, neutral: 73 },
-      replyStats: { replyRate: 78.2, avgReplyTime: 4.1, repliedCount: 331, unrepliedCount: 92, replySentiment: { positive: 223, negative: 10, neutral: 37 } },
-      monthlyData: Array.from({ length: 12 }, (_, i) => ({ month: i + 1, count: Math.floor(Math.random() * 40) + 15, avgRating: 3.8 + Math.random() * 0.5, replyCount: Math.floor(Math.random() * 30) + 10 })),
-      topKeywords: [
-        { word: '服务态度', count: 148, sentiment: 'positive' },
-        { word: '菜品口味', count: 118, sentiment: 'positive' },
-        { word: '上菜速度', count: 102, sentiment: 'negative' },
-        { word: '环境卫生', count: 53, sentiment: 'neutral' },
-        { word: '性价比', count: 42, sentiment: 'positive' },
-      ],
-      categoryScores: { service: 4.2, food: 4.0, environment: 3.9, price: 3.7, speed: 3.8 },
-    },
-  },
-  insights: {
-    '2024': {
-      yearOverYear: { reviewGrowth: 34.3, ratingChange: 0.2, replyRateChange: 7.3 },
-      highlights: ['服务态度评价提升显著', '回复率提升至85.5%，超过行业平均水平', '负面评价同比下降15%'],
-      improvements: ['上菜速度仍需优化', '性价比评分有提升空间'],
-      aiSummary: '2024年整体表现优秀，好评率持续上升。建议重点关注上菜速度和性价比反馈，进一步提升客户满意度。',
-      personalityType: '品质追求型',
-      recommendations: ['建议优化厨房出餐流程，缩短上菜时间', '可考虑推出性价比套餐，提升竞争力', '继续保持服务优势，加强员工培训'],
-    },
-  },
-  historicalTrends: {
-    bestYear: 2024,
-    worstYear: 2022,
-    averageRating3Years: 4.1,
-    totalReviews3Years: 1256,
-  },
-};
-
-async function fetchAPI<T>(endpoint: string, opts?: { suppress404?: boolean }): Promise<T> {
-  try {
-    const res = await api.get<any>(endpoint);
-    if (res?.code === 200 && res?.data) return res.data;
-    if (res?.data) return res.data;
-    return res as T;
-  } catch (err: any) {
-    // 404（报告不存在）不报错，让调用方处理
-    if (opts?.suppress404 && err?.status === 404) {
-      return null as T;
-    }
-    throw err;
-  }
-}
-
 /** 将后端 snake_case 的年度数据转换为前端 camelCase */
 function transformYearlyData(d: any): YearlyData {
   if (!d) return null as any;
@@ -150,28 +108,47 @@ function transformYearlyData(d: any): YearlyData {
     replyStats: {
       replyRate: d.reply_stats?.reply_rate || 0,
       avgReplyTime: d.reply_stats?.avg_reply_time_hours || 0,
-      repliedCount: 0,
-      unrepliedCount: 0,
-      replySentiment: { positive: 0, negative: 0, neutral: 0 },
+      repliedCount: d.reply_stats?.replied_count || 0,
+      unrepliedCount: d.reply_stats?.unreplied_count || 0,
+      replySentiment: {
+        positive: d.reply_stats?.reply_sentiment_positive || 0,
+        negative: d.reply_stats?.reply_sentiment_negative || 0,
+        neutral: d.reply_stats?.reply_sentiment_neutral || 0,
+      },
     },
     monthlyData: (d.monthly_data || []).map((m: any) => ({
       month: m.month,
       count: m.total || 0,
       avgRating: m.avg_rating || 0,
-      replyCount: 0,
+      replyCount: m.replied || 0,
     })),
     topKeywords: (d.top_keywords || []).map((kw: any) => ({
       word: kw.word,
       count: kw.count,
-      sentiment: 'neutral',
+      sentiment: kw.sentiment || 'neutral',
     })),
     categoryScores: {
       service: d.category_scores?.service || 0,
       food: d.category_scores?.taste || 0,
       environment: d.category_scores?.environment || 0,
       price: d.category_scores?.value || 0,
-      speed: 0,
+      speed: d.category_scores?.speed || 0,
     },
+    // 新增字段映射
+    ratingDistribution: d.rating_distribution || { 1:0, 2:0, 3:0, 4:0, 5:0, avg:0, total:0 },
+    platformDistribution: d.platform_distribution || {},
+    replySentiment: d.reply_sentiment || { positive:0, negative:0, neutral:0, total:0 },
+    peakMonth: d.peak_month || { month:0, count:0 },
+    activeDays: d.active_days || 0,
+    monthlySentiment: (d.monthly_sentiment || []).map((m: any) => ({
+      month: m.month,
+      positive: m.positive || 0,
+      negative: m.negative || 0,
+      neutral: m.neutral || 0,
+      replied: m.replied || 0,
+      total: m.total || 0,
+      replyRate: m.reply_rate || 0,
+    })),
   };
 }
 
@@ -180,9 +157,9 @@ function transformInsights(d: any): ReportInsights {
   if (!d) return null as any;
   return {
     yearOverYear: {
-      reviewGrowth: d.year_over_year?.growth_rate || 0,
-      ratingChange: 0,
-      replyRateChange: 0,
+      reviewGrowth: d.year_over_year?.review_growth ?? d.year_over_year?.growth_rate ?? 0,
+      ratingChange: d.year_over_year?.rating_change ?? 0,
+      replyRateChange: d.year_over_year?.reply_rate_change ?? 0,
     },
     highlights: d.highlights || [],
     improvements: d.improvements || [],
@@ -199,51 +176,63 @@ export async function fetchAnnualReport(storeId: string, year: number): Promise<
   historicalTrends: HistoricalTrends | null;
 }> {
   if (!storeId) {
-    return {
-      yearlyData: null,
-      insights: null,
-      historicalTrends: null,
-    };
+    return { yearlyData: null, insights: null, historicalTrends: null };
   }
-  const response = await fetchAPI<any>(`/v1/reports/annual?store_id=${storeId}&year=${year}`, { suppress404: true });
-  if (!response) {
+  try {
+    const res = await api.get<any>(`/v1/reports/annual?store_id=${storeId}&year=${year}`);
+    const response = res?.data || res;
+    if (!response) return { yearlyData: null, insights: null, historicalTrends: null };
+
+    const yearlyData = transformYearlyData(response.data);
+    const insights = transformInsights(response.insights);
+    const ht = response.historical_trends || null;
+
     return {
-      yearlyData: null,
-      insights: null,
-      historicalTrends: null,
+      yearlyData,
+      insights: insights || {
+        yearOverYear: { reviewGrowth: 0, ratingChange: 0, replyRateChange: 0 },
+        highlights: [],
+        improvements: [],
+        aiSummary: '',
+        personalityType: '',
+        recommendations: [],
+      },
+      historicalTrends: ht ? {
+        bestYear: ht.best_year,
+        worstYear: ht.worst_year,
+        averageRating3Years: ht.average_rating_3_years,
+        totalReviews3Years: ht.total_reviews_3_years,
+      } : null,
     };
+  } catch (err: any) {
+    if (err?.status === 404) {
+      return { yearlyData: null, insights: null, historicalTrends: null };
+    }
+    throw err;
   }
-  
-  // 后端返回结构: { id, store_id, year, data: {...}, insights: {...}, generated_at }
-  const yearlyData = transformYearlyData(response.data);
-  const insights = transformInsights(response.insights);
-  
-  return {
-    yearlyData,
-    insights: insights || {
-      yearOverYear: { reviewGrowth: 0, ratingChange: 0, replyRateChange: 0 },
-      highlights: [],
-      improvements: [],
-      aiSummary: '',
-      personalityType: '',
-      recommendations: [],
-    },
-    historicalTrends: response.historicalTrends || null,
-  };
 }
 
-/** 获取所有年份数据 GET /v1/reports/annual */
+/** 获取所有年份数据 GET /v1/reports/annual (无 year 参数) */
 export async function fetchAllYearlyData(storeId?: string): Promise<Record<number, YearlyData>> {
   const endpoint = storeId ? `/v1/reports/annual?store_id=${storeId}` : '/v1/reports/annual';
-  const data = await fetchAPI<any>(endpoint);
-  return data?.yearlyData || data || {};
+  try {
+    const res = await api.get<any>(endpoint);
+    const data = res?.data || res || {};
+    const result: Record<number, YearlyData> = {};
+    for (const [k, v] of Object.entries(data)) {
+      const yd = transformYearlyData((v as any).data || v);
+      if (yd) result[parseInt(k)] = yd;
+    }
+    return result;
+  } catch {
+    return {};
+  }
 }
 
 /** 生成年度报告 POST /v1/reports/annual/generate */
 export async function generateAnnualReport(year: number, storeId?: string): Promise<{success: boolean; message: string; data?: any}> {
   try {
     const response = await api.post<any, any>('/v1/reports/annual/generate', { year, store_id: storeId });
-    // api 拦截器返回 response.data，后端返回 { code: 200, data: {...}, message: '...' }
     const result = response?.data || response;
     return {
       success: true,

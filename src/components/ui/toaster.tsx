@@ -89,7 +89,11 @@ function ToastItem({ toast, removeToast, index }: { toast: Toast; removeToast: (
       <div className="flex-1 min-w-0 pt-0.5">
         <p className="text-[13px] font-semibold text-white leading-snug">{toast.title}</p>
         {toast.description && (
-          <p className="text-[12px] text-white/50 mt-0.5 leading-relaxed line-clamp-2">{toast.description}</p>
+          <p className="text-[12px] text-white/50 mt-0.5 leading-relaxed line-clamp-2">
+            {typeof toast.description === 'object'
+              ? (toast.description as any)?.description || String(toast.description)
+              : toast.description}
+          </p>
         )}
       </div>
 

@@ -21,6 +21,13 @@ class YearlyDataResponse(BaseModel):
     monthly_data: list[dict] = Field(default_factory=list, description="月度数据")
     top_keywords: list[dict] = Field(default_factory=list, description="热门关键词")
     category_scores: dict = Field(default_factory=dict, description="分类评分")
+    # 新增丰富数据项
+    rating_distribution: dict = Field(default_factory=dict, description="评分分布(1-5星各多少条)")
+    platform_distribution: dict = Field(default_factory=dict, description="平台来源分布")
+    reply_sentiment: dict = Field(default_factory=dict, description="回复情感分布")
+    peak_month: dict = Field(default_factory=dict, description="峰值月份")
+    active_days: int = Field(0, description="活跃天数(有评论的天数)")
+    monthly_sentiment: list[dict] = Field(default_factory=list, description="月度情感/回复率趋势")
 
 
 class ReportInsightsResponse(BaseModel):

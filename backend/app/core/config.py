@@ -16,12 +16,23 @@ class Settings(BaseSettings):
     API_V1_PREFIX: str = "/api/v1"
 
     # ---- 数据库配置 ----
-    # 强制使用 SQLite（开发环境，忽略环境变量）
+    # 从环境变量读取，支持 PostgreSQL / SQLite 切换
+    # 格式: postgresql+asyncpg://user:pwd@host:5432/dbname
     DATABASE_URL: str = "sqlite+aiosqlite:///./cpa_review.db"
     DATABASE_URL_SYNC: str = "sqlite:///./cpa_review.db"
 
     # ---- Redis 配置 ----
-    REDIS_URL: str = "redis://localhost:6379/0"
+    REDIS_HOST: str = "localhost"
+    REDIS_PORT: int = 6379
+    REDIS_DB: int = 0
+    REDIS_PASSWORD: str = ""
+
+    @property
+    def REDIS_URL(self) -> str:
+        """构造 Redis URL"""
+        if self.REDIS_PASSWORD:
+            return f"redis://:{self.REDIS_PASSWORD}@{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
+        return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
 
     # ---- JWT 配置 ----
     JWT_SECRET_KEY: str = "your-secret-key-change-in-production"

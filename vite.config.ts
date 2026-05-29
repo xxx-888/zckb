@@ -18,12 +18,17 @@ export default defineConfig({
         target: 'http://localhost:8000',
         changeOrigin: true,
       },
+      '/v1': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/v1/, '/api/v1'),
+      },
     },
-    // SPA fallback: 所有非静态资源请求都返回 index.html
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
         const url = req.url || '';
-        if (url.startsWith('/api') || /\.\w+$/.test(url.split('?')[0])) {
+        // 必须放行 /api 和 /v1 前缀（代理路径），否则会被 SPA fallback 拦截
+        if (url.startsWith('/api') || url.startsWith('/v1') || /\.\w+$/.test(url.split('?')[0])) {
           return next();
         }
         const indexHtml = fs.readFileSync(

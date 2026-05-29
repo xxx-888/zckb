@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 from uuid import UUID
 
-from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Integer, JSON, String
+from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import BaseModel, GUID
@@ -99,6 +99,49 @@ class Store(BaseModel):
     )
 
 
+class PlatformAccount(BaseModel):
+    """用户平台账号表。存储用户登录的平台账号凭证。"""
+
+    __tablename__ = "platform_accounts"
+
+    user_id: Mapped[UUID] = mapped_column(
+        GUID(),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="用户ID",
+    )
+    platform: Mapped[str] = mapped_column(
+        Enum(
+            "meituan", "dianping", "douyin", "taobao", "jd",
+            name="platform_name",
+        ),
+        nullable=False,
+        comment="平台名称",
+    )
+    platform_username: Mapped[str] = mapped_column(
+        String(255), nullable=False, comment="平台用户名/账号"
+    )
+    cookies_encrypted: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True, comment="加密后的cookies"
+    )
+    cookies_status: Mapped[Optional[str]] = mapped_column(
+        String(50), nullable=True, default="unknown", comment="cookies状态: valid/expired/unknown"
+    )
+    last_sync_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=False), nullable=True, comment="最后同步时间"
+    )
+    error_msg: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True, comment="错误信息"
+    )
+
+    # -- 关系 --
+    user: Mapped[User] = relationship("User", back_populates="platform_accounts")
+    store_bindings: Mapped[list[StorePlatform]] = relationship(
+        "StorePlatform", back_populates="account", lazy="selectin"
+    )
+
+
 class StorePlatform(BaseModel):
     """门店-平台关联表。"""
 
@@ -110,6 +153,13 @@ class StorePlatform(BaseModel):
         nullable=False,
         index=True,
         comment="门店ID",
+    )
+    account_id: Mapped[Optional[UUID]] = mapped_column(
+        GUID(),
+        ForeignKey("platform_accounts.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        comment="平台账号ID",
     )
     platform: Mapped[str] = mapped_column(
         Enum(
@@ -140,3 +190,6 @@ class StorePlatform(BaseModel):
 
     # -- 关系 --
     store: Mapped[Store] = relationship("Store", back_populates="platforms")
+    account: Mapped[Optional[PlatformAccount]] = relationship(
+        "PlatformAccount", back_populates="store_bindings"
+    )

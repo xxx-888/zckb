@@ -56,6 +56,24 @@ class AnnualReport(BaseModel):
         nullable=True,
         comment="洞察(JSON): year_over_year/highlights/improvements/ai_summary",
     )
+    rating_distribution: Mapped[Optional[dict]] = mapped_column(
+        JSON, nullable=True, comment="评分分布(JSON)"
+    )
+    platform_distribution: Mapped[Optional[dict]] = mapped_column(
+        JSON, nullable=True, comment="平台来源分布(JSON)"
+    )
+    reply_sentiment: Mapped[Optional[dict]] = mapped_column(
+        JSON, nullable=True, comment="回复情感分布(JSON)"
+    )
+    peak_month: Mapped[Optional[dict]] = mapped_column(
+        JSON, nullable=True, comment="峰值月份(JSON)"
+    )
+    active_days: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True, comment="活跃天数"
+    )
+    monthly_sentiment: Mapped[Optional[dict]] = mapped_column(
+        JSON, nullable=True, comment="月度情感/回复率趋势(JSON)"
+    )
     generated_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=False), nullable=True, comment="生成时间"
     )

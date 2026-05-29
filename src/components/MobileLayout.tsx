@@ -1,4 +1,4 @@
-import React, { useState, type ReactNode } from 'react';
+import React, { useState, useEffect, type ReactNode } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -18,6 +18,8 @@ import { storesApi } from '../api/stores';
 import { authApi } from '../api/auth';
 import type { Store } from '../api/stores';
 import { useStore as useGlobalStore } from '../context/StoreContext';
+import { useSubscription } from '../hooks/use-subscription-check';
+import { platformsApi } from '../api/platforms';
 
 // ===== 兼容旧 API 的 useStore =====
 interface StoreContextValue {
@@ -73,24 +75,57 @@ export const MobileLayout: React.FC<MobileLayoutProps> = ({ children, title }) =
     refresh,
   } = useGlobalStore();
 
-  const noStore = stores.length === 0;
+  // 订阅状态
+  const { hasValidSubscription, loading: subLoading } = useSubscription();
 
-  // 模拟绑定店铺（自动创建测试数据）
-  const handleMockBind = async () => {
-    try {
-      const mockStores = [
-        { name: '王府井总店', type: 'restaurant', status: 'active' as const, platform_count: 2, review_count: 586 },
-        { name: '国贸分店', type: 'restaurant', status: 'active' as const, platform_count: 1, review_count: 423 },
-        { name: '三里屯旗舰店', type: 'restaurant', status: 'pending' as const, platform_count: 0, review_count: 0 },
-      ];
-      await Promise.all(
-        mockStores.map(s => storesApi.createStore(s))
-      );
-      // 刷新全局店铺列表
-      refresh();
-    } catch (err) {
-      console.error('[MobileLayout] 模拟绑定失败:', err);
+  // 平台账号绑定状态
+  const [hasPlatformAccount, setHasPlatformAccount] = useState(false);
+  const [accountCheckDone, setAccountCheckDone] = useState(false);
+
+  const noStore = stores.length === 0;
+  const isBindPage = location.pathname === '/mobile/platform-connection';
+
+  // 获取平台账号状态
+  useEffect(() => {
+    if (!hasValidSubscription) {
+      setHasPlatformAccount(false);
+      setAccountCheckDone(true);
+      return;
     }
+    // 订阅有效时，先重置为未完成，再发起异步检查
+    // 必须同步重置，否则重定向 useEffect 会用旧的 accountCheckDone=true 抢跑
+    setAccountCheckDone(false);
+    const checkPlatformAccounts = async () => {
+      try {
+        const data = await platformsApi.getAccounts();
+        console.log('[MobileLayout] getAccounts 返回:', data);
+        setHasPlatformAccount(data.length > 0);
+      } catch (err: any) {
+        console.error('[MobileLayout] getAccounts 失败:', err);
+        setHasPlatformAccount(false);
+      } finally {
+        setAccountCheckDone(true);
+      }
+    };
+    checkPlatformAccounts();
+  }, [hasValidSubscription]);
+
+  // 有订阅但无平台账号且不在绑定页 → 重定向
+  // 只要绑定了平台账号，无论是否有门店，都允许访问
+  // 必须用 accountCheckDone 保证账号检查完成后再判断，避免竞态
+  useEffect(() => {
+    console.log('[MobileLayout] 重定向检查:', {
+      subLoading, accountCheckDone, hasValidSubscription, hasPlatformAccount, isBindPage
+    });
+    if (!subLoading && accountCheckDone && hasValidSubscription && !hasPlatformAccount && !isBindPage) {
+      console.log('[MobileLayout] 重定向到绑定页');
+      navigate('/mobile/platform-connection', { replace: true });
+    }
+  }, [subLoading, accountCheckDone, hasValidSubscription, hasPlatformAccount, isBindPage]);
+
+  // 未绑定店铺 → 跳转绑定页
+  const handleNoStore = () => {
+    navigate('/mobile/platform-connection');
   };
 
   // 判断当前路由是否属于某个导航项
@@ -125,7 +160,7 @@ export const MobileLayout: React.FC<MobileLayoutProps> = ({ children, title }) =
 
             {noStore ? (
               <button
-                onClick={handleMockBind}
+                onClick={handleNoStore}
                 className="text-amber-500 font-medium text-sm leading-none hover:underline"
               >
                 未绑定店铺

@@ -263,6 +263,8 @@ export const ReviewManagement: React.FC = () => {
                   <th className="text-left p-3">评论内容</th>
                   <th className="text-center p-3">评分</th>
                   <th className="text-center p-3">情感</th>
+                  <th className="text-center p-3">入库时间</th>
+                  <th className="text-center p-3">评论时间</th>
                   <th className="text-center p-3">回复</th>
                   <th className="text-right p-3">操作</th>
                 </tr>
@@ -282,6 +284,8 @@ export const ReviewManagement: React.FC = () => {
                     <td className="p-3 max-w-[300px]"><p className="text-xs text-slate-700 line-clamp-2">{r.content}</p></td>
                     <td className="p-3 text-center text-amber-500 text-xs">{starRating(r.rating)}</td>
                     <td className="p-3 text-center">{sentimentBadge(r.sentiment)}</td>
+                    <td className="p-3 text-center text-xs text-slate-500">{r.created_at ? new Date(r.created_at).toLocaleDateString('zh-CN') : '-'}</td>
+                    <td className="p-3 text-center text-xs text-slate-500">{r.platform_created_at ? new Date(r.platform_created_at).toLocaleDateString('zh-CN') : '-'}</td>
                     <td className="p-3 text-center">{r.replied ? <Badge className="bg-blue-100 text-blue-700 text-xs">已回复</Badge> : <span className="text-xs text-slate-400">未回复</span>}</td>
                     <td className="p-3 text-right">
                       <div className="flex items-center justify-end gap-1">
@@ -362,6 +366,8 @@ export const ReviewManagement: React.FC = () => {
                 <div><span className="text-slate-400">评分:</span> <span className="text-amber-500">{starRating(viewingReview.rating)}</span></div>
                 <div><span className="text-slate-400">情感:</span> {sentimentBadge(viewingReview.sentiment)}</div>
                 <div><span className="text-slate-400">状态:</span> {viewingReview.replied ? <Badge className="bg-blue-100 text-blue-700 text-xs">已回复</Badge> : <span className="text-xs text-slate-400">未回复</span>}</div>
+                <div><span className="text-slate-400">入库时间:</span> <span className="font-medium">{viewingReview.created_at ? new Date(viewingReview.created_at).toLocaleString('zh-CN') : '-'}</span></div>
+                <div><span className="text-slate-400">评论时间:</span> <span className="font-medium">{viewingReview.platform_created_at ? new Date(viewingReview.platform_created_at).toLocaleString('zh-CN') : '-'}</span></div>
               </div>
               <div className="bg-slate-50 rounded-xl p-4">
                 <p className="text-xs text-slate-400 mb-1">评论内容</p>

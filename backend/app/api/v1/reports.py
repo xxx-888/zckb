@@ -38,6 +38,57 @@ async def get_annual_report(
     """
     report = await report_service.get_annual_report(db, store_id, year)
 
+    # 查询上一年报告用于同比计算
+    prev_report = None
+    try:
+        prev_report = await report_service.get_annual_report(db, store_id, year - 1)
+    except Exception:
+        pass
+
+    # 查询所有年份数据用于 historical_trends
+    all_years_data = await report_service.get_all_years_data(db, store_id)
+
+    # 计算 year_over_year（基于实际报告数据，不依赖AI）
+    yoy = report.insights.get("year_over_year", {}) if report.insights else {}
+    if prev_report:
+        prev_total = prev_report.total_reviews
+        curr_total = report.total_reviews
+        if prev_total > 0:
+            yoy["review_growth"] = round((curr_total - prev_total) / prev_total * 100, 1)
+
+        prev_rating = prev_report.average_rating or 0
+        curr_rating = report.average_rating or 0
+        yoy["rating_change"] = round(curr_rating - prev_rating, 1)
+
+        prev_reply_rate = (prev_report.reply_stats or {}).get("reply_rate", 0)
+        curr_reply_rate = (report.reply_stats or {}).get("reply_rate", 0)
+        yoy["reply_rate_change"] = round(curr_reply_rate - prev_reply_rate, 1)
+    else:
+        # 无上一年报告，若AI未给出有效值则补零
+        yoy.setdefault("review_growth", 0)
+        yoy.setdefault("rating_change", 0)
+        yoy.setdefault("reply_rate_change", 0)
+
+    # 计算 historical_trends
+    total_3y = sum(d.get("total_reviews", 0) for d in all_years_data)
+    avg_rating_3y = 0.0
+    if all_years_data:
+        avg_rating_3y = round(
+            sum(d.get("average_rating", 0) for d in all_years_data) / len(all_years_data), 1
+        )
+    best_year = year
+    worst_year = year
+    if all_years_data:
+        best_year = max(all_years_data, key=lambda x: x.get("average_rating", 0))["year"]
+        worst_year = min(all_years_data, key=lambda x: x.get("average_rating", 0))["year"]
+
+    historical_trends = {
+        "best_year": best_year,
+        "worst_year": worst_year,
+        "average_rating_3_years": avg_rating_3y,
+        "total_reviews_3_years": total_3y,
+    }
+
     # 构建响应数据
     data = YearlyDataResponse(
         year=report.year,
@@ -48,10 +99,16 @@ async def get_annual_report(
         monthly_data=report.monthly_data or [],
         top_keywords=report.top_keywords or [],
         category_scores=report.category_scores or {},
+        rating_distribution=report.rating_distribution or {},
+        platform_distribution=report.platform_distribution or {},
+        reply_sentiment=report.reply_sentiment or {},
+        peak_month=report.peak_month or {},
+        active_days=report.active_days or 0,
+        monthly_sentiment=report.monthly_sentiment or [],
     )
 
     insights = ReportInsightsResponse(
-        year_over_year=report.insights.get("year_over_year", {}) if report.insights else {},
+        year_over_year=yoy,
         highlights=report.insights.get("highlights", []) if report.insights else [],
         improvements=report.insights.get("improvements", []) if report.insights else [],
         ai_summary=report.insights.get("ai_summary", "") if report.insights else "",
@@ -68,7 +125,10 @@ async def get_annual_report(
         generated_at=report.generated_at,
     )
 
-    return success(data=response.model_dump(mode="json"))
+    return success(data={
+        **response.model_dump(mode="json"),
+        "historical_trends": historical_trends,
+    })
 
 
 @router.get("/annual/all-years", summary="获取所有年份数据")
@@ -107,6 +167,57 @@ async def generate_annual_report(
         db, request.store_id, request.year
     )
 
+    # 查询上一年报告用于同比计算
+    prev_report = None
+    try:
+        prev_report = await report_service.get_annual_report(db, request.store_id, request.year - 1)
+    except Exception:
+        pass
+
+    # 查询所有年份数据用于 historical_trends
+    all_years_data = await report_service.get_all_years_data(db, request.store_id)
+
+    # 计算 year_over_year（基于实际报告数据，不依赖AI）
+    yoy = report.insights.get("year_over_year", {}) if report.insights else {}
+    if prev_report:
+        prev_total = prev_report.total_reviews
+        curr_total = report.total_reviews
+        if prev_total > 0:
+            yoy["review_growth"] = round((curr_total - prev_total) / prev_total * 100, 1)
+
+        prev_rating = prev_report.average_rating or 0
+        curr_rating = report.average_rating or 0
+        yoy["rating_change"] = round(curr_rating - prev_rating, 1)
+
+        prev_reply_rate = (prev_report.reply_stats or {}).get("reply_rate", 0)
+        curr_reply_rate = (report.reply_stats or {}).get("reply_rate", 0)
+        yoy["reply_rate_change"] = round(curr_reply_rate - prev_reply_rate, 1)
+    else:
+        # 无上一年报告，若AI未给出有效值则补零
+        yoy.setdefault("review_growth", 0)
+        yoy.setdefault("rating_change", 0)
+        yoy.setdefault("reply_rate_change", 0)
+
+    # 计算 historical_trends
+    total_3y = sum(d.get("total_reviews", 0) for d in all_years_data)
+    avg_rating_3y = 0.0
+    if all_years_data:
+        avg_rating_3y = round(
+            sum(d.get("average_rating", 0) for d in all_years_data) / len(all_years_data), 1
+        )
+    best_year = request.year
+    worst_year = request.year
+    if all_years_data:
+        best_year = max(all_years_data, key=lambda x: x.get("average_rating", 0))["year"]
+        worst_year = min(all_years_data, key=lambda x: x.get("average_rating", 0))["year"]
+
+    historical_trends = {
+        "best_year": best_year,
+        "worst_year": worst_year,
+        "average_rating_3_years": avg_rating_3y,
+        "total_reviews_3_years": total_3y,
+    }
+
     # 构建响应数据
     data = YearlyDataResponse(
         year=report.year,
@@ -117,10 +228,16 @@ async def generate_annual_report(
         monthly_data=report.monthly_data or [],
         top_keywords=report.top_keywords or [],
         category_scores=report.category_scores or {},
+        rating_distribution=report.rating_distribution or {},
+        platform_distribution=report.platform_distribution or {},
+        reply_sentiment=report.reply_sentiment or {},
+        peak_month=report.peak_month or {},
+        active_days=report.active_days or 0,
+        monthly_sentiment=report.monthly_sentiment or [],
     )
 
     insights = ReportInsightsResponse(
-        year_over_year=report.insights.get("year_over_year", {}) if report.insights else {},
+        year_over_year=yoy,
         highlights=report.insights.get("highlights", []) if report.insights else [],
         improvements=report.insights.get("improvements", []) if report.insights else [],
         ai_summary=report.insights.get("ai_summary", "") if report.insights else "",
@@ -138,7 +255,10 @@ async def generate_annual_report(
     )
 
     return success(
-        data=response.model_dump(mode="json"),
+        data={
+            **response.model_dump(mode="json"),
+            "historical_trends": historical_trends,
+        },
         message=f"{request.year}年度报告生成成功",
     )
 

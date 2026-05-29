@@ -34,7 +34,7 @@ class UserInfo(BaseModel):
     """用户信息"""
 
     id: UUID
-    phone: str
+    phone: Optional[str] = None
     email: Optional[str] = None
     username: str
     role: str
