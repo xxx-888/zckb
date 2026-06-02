@@ -14,7 +14,6 @@ import { storesApi, Store } from '../../api/stores';
 const SUPPORTED_PLATFORMS = [
   { value: 'meituan', label: '美团开店宝', icon: '🍜', color: 'from-amber-400 to-orange-500', desc: '使用美团App扫码登录开店宝' },
   { value: 'douyin', label: '抖音来客', icon: '🎵', color: 'from-slate-900 to-slate-700', desc: '使用抖音App扫码登录来客' },
-  { value: 'taobao', label: '淘宝闪购', icon: '🛒', color: 'from-orange-400 to-red-500', desc: '使用淘宝App扫码登录' },
 ];
 
 export default function PlatformConnection() {

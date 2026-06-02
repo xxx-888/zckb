@@ -9,29 +9,97 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Optional
+from urllib.parse import quote, urlencode
 from uuid import UUID, uuid4
 
 from playwright.async_api import Browser, BrowserContext, Page, async_playwright
 
 logger = logging.getLogger(__name__)
 
+
+def _get_meituan_login_url() -> str:
+    """构造美团开店宝登录 URL（含 epassportParams，支持二维码登录）"""
+    ts = int(time.time() * 1000)
+    passport_params = {
+        "bg_source": "1",
+        "service": "com.sankuai.meishi.fe.ecom",
+        "part_type": "0",
+        "feconfig": "bssoify",
+        "biz_line": "1",
+        "continue": (
+            f"https://ecom.meituan.com/bizaccount/biz-choice.html?"
+            f"redirect_uri=https%3A%2F%2Fecom.meituan.com%2Fmeishi%2F"
+            f"&_t={ts}"
+            f"&target=https%3A%2F%2Fecom.meituan.com%2Fmeishi%2F"
+            f"&leftBottomLink="
+            f"&signUpTarget=self"
+        ),
+    }
+    return (
+        f"https://ecom.meituan.com/bizaccount/login.html"
+        f"?loginByPhoneNumber=true&isProduction=true"
+        f"&epassportParams={quote(urlencode(passport_params), safe='')}"
+    )
+
+
+# 反检测 JS（隐藏 Playwright 自动化特征）
+STEALTH_JS = """
+// 1. 隐藏 webdriver 标记（最关键）
+Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+
+// 2. 伪装 Chrome 对象
+if (!window.chrome) window.chrome = {};
+window.chrome.runtime = { connect: function(){}, sendMessage: function(){} };
+
+// 3. 覆盖 permissions query
+const originalQuery = window.navigator.permissions.query;
+window.navigator.permissions.query = (parameters) =>
+    parameters.name === 'notifications'
+        ? Promise.resolve({ state: Notification.permission })
+        : originalQuery(parameters);
+
+// 4. 伪装 plugins
+Object.defineProperty(navigator, 'plugins', {
+    get: () => {
+        const plugins = [
+            { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
+            { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: '' },
+            { name: 'Native Client', filename: 'internal-nacl-plugin', description: '' },
+        ];
+        plugins.length = 3;
+        return plugins;
+    },
+});
+
+// 5. 伪装 languages
+Object.defineProperty(navigator, 'languages', { get: () => ['zh-CN', 'zh', 'en'] });
+
+// 6. 修复 platform（Playwright 有时会暴露 Linux）
+Object.defineProperty(navigator, 'platform', { get: () => 'Win32' });
+
+// 7. 隐藏 Playwright 特有属性
+delete window.__playwright;
+delete window.__pw_manual;
+"""
+
+
 # 平台登录页配置
 PLATFORM_CONFIG = {
     "meituan": {
-        "login_url": "https://e.waimai.meituan.com/#/login",
+        "login_url": _get_meituan_login_url,  # 动态生成（含时间戳）
         "qr_selector": ".qrcode-img img, .qr-code img, canvas, [class*='qrcode'], img[src*='qrcode']",
-        "success_url_pattern": "/#/comment",
+        "success_url_pattern": "ecom.meituan.com",
         "check_logged_in": ".user-info, .merchant-name, [class*='header'] [class*='name']",
         "cookie_domain": ".meituan.com",
-        "viewport": {"width": 390, "height": 844},
+        "viewport": {"width": 1280, "height": 800},
     },
     "douyin": {
-        "login_url": "https://life.douyin.com/login",
+        "login_url": "https://life.douyin.com/p/login",
         "qr_selector": ".qrcode-img img, .qr-code img, canvas, [class*='qrcode'], img[src*='qrcode']",
-        "success_url_pattern": "/comment",
+        "success_url_pattern": "life.douyin.com",
         "check_logged_in": ".merchant-name, .user-avatar, [class*='header'] [class*='name']",
         "cookie_domain": ".douyin.com",
-        "viewport": {"width": 390, "height": 844},
+        "viewport": {"width": 1280, "height": 800},
     },
 }
 
@@ -112,35 +180,55 @@ class QRLoginService:
         try:
             task.playwright_instance = await async_playwright().start()
 
-            # 使用 Chrome headless，设置移动端 viewport
+            config = PLATFORM_CONFIG[platform]
+            # 登录 URL：支持动态生成（如美团的 epassportParams）
+            login_url = config["login_url"]() if callable(config["login_url"]) else config["login_url"]
+
+            # 使用 Chrome channel，带反检测启动参数
             browser_type = task.playwright_instance.chromium
             task.browser = await browser_type.launch(
                 headless=True,
+                channel="chrome",
                 args=[
+                    "--disable-blink-features=AutomationControlled",
+                    "--disable-infobars",
+                    "--no-first-run",
+                    "--no-default-browser-check",
+                    "--disable-extensions",
+                    "--disable-component-extensions-with-background-pages",
+                    "--disable-default-apps",
                     "--no-sandbox",
                     "--disable-setuid-sandbox",
                     "--disable-dev-shm-usage",
                     "--disable-gpu",
+                    "--lang=zh-CN",
                 ],
             )
 
             task.context = await task.browser.new_context(
                 viewport=config["viewport"],
                 user_agent=(
-                    "Mozilla/5.0 (Linux; Android 14; Pixel 7) "
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                     "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/120.0.0.0 Mobile Safari/537.36"
+                    "Chrome/131.0.0.0 Safari/537.36"
                 ),
                 locale="zh-CN",
+                timezone_id="Asia/Shanghai",
+                extra_http_headers={
+                    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+                },
             )
+
+            # 注入反检测脚本（对所有新页面生效）
+            await task.context.add_init_script(STEALTH_JS)
 
             task.page = await task.context.new_page()
 
             # 打开登录页
-            logger.info(f"[QR Login] Opening {platform} login page: {config['login_url']}")
-            await task.page.goto(config["login_url"], wait_until="networkidle", timeout=30000)
+            logger.info(f"[QR Login] Opening {platform} login page: {login_url}")
+            await task.page.goto(login_url, wait_until="domcontentloaded", timeout=30000)
 
-            # 等待页面加载后截取二维码
+            # 等待二维码等动态内容加载
             await asyncio.sleep(2)
 
             # 尝试多种选择器找到二维码
@@ -256,16 +344,21 @@ class QRLoginService:
                 if logged_in:
                     logger.info(f"[QR Login] Task {task.task_id} login detected!")
 
-                    # 等待页面完全加载
-                    await asyncio.sleep(2)
+                    # 等待页面完全加载，确保 cookie 完整
+                    await asyncio.sleep(3)
 
-                    # 提取 cookies
-                    cookies_list = await task.context.cookies()
+                    # 使用 storage_state 导出完整登录态（与 CPA export_auth_state 一致）
+                    storage_state = await task.context.storage_state(indexed_db=True)
+                    cookies_list = storage_state.get("cookies", [])
+
                     task.cookies = {
                         c["name"]: c["value"]
                         for c in cookies_list
                         if config["cookie_domain"] in c.get("domain", "")
                     }
+
+                    # 同时保存完整 storage_state 到 cookies 字段的 _storage_state 键（供爬虫使用）
+                    task.cookies["_storage_state"] = storage_state
 
                     if task.cookies:
                         # 尝试提取用户名
