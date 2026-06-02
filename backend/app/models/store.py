@@ -83,19 +83,19 @@ class Store(BaseModel):
         "UserStore", back_populates="store", lazy="selectin"
     )
     reviews: Mapped[list[Review]] = relationship(
-        "Review", back_populates="store", lazy="selectin"
+        "Review", back_populates="store", lazy="noload"
     )
     auto_reply_config: Mapped[Optional[AutoReplyConfig]] = relationship(
-        "AutoReplyConfig", back_populates="store", uselist=False, lazy="selectin"
+        "AutoReplyConfig", back_populates="store", uselist=False, lazy="noload"
     )
     annual_reports: Mapped[list[AnnualReport]] = relationship(
-        "AnnualReport", back_populates="store", lazy="selectin"
+        "AnnualReport", back_populates="store", lazy="noload"
     )
     weekly_briefs: Mapped[list[WeeklyBrief]] = relationship(
-        "WeeklyBrief", back_populates="store", lazy="selectin"
+        "WeeklyBrief", back_populates="store", lazy="noload"
     )
     competitors: Mapped[list[Competitor]] = relationship(
-        "Competitor", back_populates="store", lazy="selectin"
+        "Competitor", back_populates="store", lazy="noload"
     )
 
 
