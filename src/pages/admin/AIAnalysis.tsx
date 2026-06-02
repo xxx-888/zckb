@@ -113,7 +113,7 @@ export const AIAnalysis: React.FC = () => {
 
   const filteredAppeals = appealSuggestions.filter(appeal => {
     if (searchKeyword) {
-      return appeal.user.includes(searchKeyword) ||
+      return (appeal.user || '').includes(searchKeyword) ||
              appeal.content.includes(searchKeyword);
     }
     return true;
@@ -444,13 +444,13 @@ export const AIAnalysis: React.FC = () => {
                       <Button
                         variant="outline"
                         className="flex-1 h-10 rounded-xl text-xs"
-                        onClick={() => handleIgnoreAppeal(item.id)}
+                        onClick={() => handleIgnoreAppeal(item.id!)}
                       >
                         忽略
                       </Button>
                       <Button
                         className="flex-[2] h-10 rounded-xl text-xs bg-orange-500 hover:bg-orange-600 text-white"
-                        onClick={() => handleSubmitAppeal(item.id)}
+                        onClick={() => handleSubmitAppeal(item.id!)}
                       >
                         一键提交申诉
                       </Button>

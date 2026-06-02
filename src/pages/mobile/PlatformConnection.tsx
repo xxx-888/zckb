@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Link2, Unlink, CheckCircle2, AlertCircle, Plus,
-  Loader2, RefreshCw, ChevronDown, X, Eye, EyeOff, Pencil
+  Loader2, RefreshCw, ChevronDown, X, Eye, EyeOff, Pencil,
+  QrCode, Clock, Smartphone, ShieldCheck
 } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { useToast } from '../../hooks/use-toast';
@@ -11,9 +12,9 @@ import { storesApi, Store } from '../../api/stores';
 
 // 支持的平台列表
 const SUPPORTED_PLATFORMS = [
-  { value: 'meituan', label: '美团开店宝', icon: '🍜', color: 'from-amber-400 to-orange-500' },
-  { value: 'douyin', label: '抖音来客', icon: '🎵', color: 'from-slate-900 to-slate-700' },
-  { value: 'taobao', label: '淘宝闪购', icon: '🛒', color: 'from-orange-400 to-red-500' },
+  { value: 'meituan', label: '美团开店宝', icon: '🍜', color: 'from-amber-400 to-orange-500', desc: '使用美团App扫码登录开店宝' },
+  { value: 'douyin', label: '抖音来客', icon: '🎵', color: 'from-slate-900 to-slate-700', desc: '使用抖音App扫码登录来客' },
+  { value: 'taobao', label: '淘宝闪购', icon: '🛒', color: 'from-orange-400 to-red-500', desc: '使用淘宝App扫码登录' },
 ];
 
 export default function PlatformConnection() {
@@ -43,6 +44,18 @@ export default function PlatformConnection() {
   const [editLoading, setEditLoading] = useState(false);
   const [editError, setEditError] = useState('');
 
+  // 二维码扫码登录状态
+  const [showQRModal, setShowQRModal] = useState(false);
+  const [qrPlatform, setQrPlatform] = useState('');
+  const [qrTaskId, setQrTaskId] = useState('');
+  const [qrImage, setQrImage] = useState('');
+  const [qrStatus, setQrStatus] = useState(''); // waiting_scan | success | expired | failed
+  const [qrRemaining, setQrRemaining] = useState(120);
+  const [qrErrorMessage, setQrErrorMessage] = useState('');
+  const [qrInitLoading, setQrInitLoading] = useState(false);
+  const qrPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const qrCountdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   // 店铺列表弹窗
   const [showStoresModal, setShowStoresModal] = useState(false);
   const [platformStores, setPlatformStores] = useState<PlatformStoreInfo[]>([]);
@@ -67,9 +80,102 @@ export default function PlatformConnection() {
   const fetchSystemStores = useCallback(async () => {
     try {
       const data = await storesApi.getStores();
-      setSystemStores(data);
+      setSystemStores(data.items || (Array.isArray(data) ? data : []));
     } catch {}
   }, []);
+
+  // 启动二维码扫码登录
+  const handleStartQRLogin = async (platform: string) => {
+    setQrPlatform(platform);
+    setQrInitLoading(true);
+    setQrStatus('');
+    setQrImage('');
+    setQrErrorMessage('');
+    setQrRemaining(120);
+    setShowQRModal(true);
+
+    try {
+      const result = await platformsApi.startQRLogin(platform);
+      setQrTaskId(result.task_id);
+      setQrImage(result.qr_image);
+      setQrStatus('waiting_scan');
+      setQrRemaining(result.expires_in);
+    } catch (err: any) {
+      setQrErrorMessage(err.message || '获取二维码失败');
+      setQrStatus('failed');
+    } finally {
+      setQrInitLoading(false);
+    }
+  };
+
+  // 轮询二维码登录状态
+  useEffect(() => {
+    if (qrStatus !== 'waiting_scan' || !qrTaskId) return;
+
+    qrPollRef.current = setInterval(async () => {
+      try {
+        const result = await platformsApi.getQRLoginStatus(qrTaskId);
+        setQrStatus(result.status);
+        setQrRemaining(result.remaining_seconds || 0);
+
+        if (result.status === 'success') {
+          success('绑定成功', `${result.platform_username || '账号'} 已连接`);
+          setShowQRModal(false);
+          await fetchAccounts();
+          cleanupQR();
+        } else if (result.status === 'expired' || result.status === 'failed') {
+          setQrErrorMessage(result.error_message || (result.status === 'expired' ? '二维码已过期' : '登录失败'));
+          cleanupQR();
+        }
+      } catch (err: any) {
+        // 网络错误不中断轮询
+      }
+    }, 3000);
+
+    return () => { if (qrPollRef.current) clearInterval(qrPollRef.current); };
+  }, [qrStatus, qrTaskId]);
+
+  // 倒计时
+  useEffect(() => {
+    if (qrStatus !== 'waiting_scan') return;
+    qrCountdownRef.current = setInterval(() => {
+      setQrRemaining(prev => {
+        if (prev <= 1) {
+          setQrStatus('expired');
+          setQrErrorMessage('二维码已过期，请重新获取');
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => { if (qrCountdownRef.current) clearInterval(qrCountdownRef.current); };
+  }, [qrStatus]);
+
+  // 清理二维码轮询
+  const cleanupQR = () => {
+    if (qrPollRef.current) { clearInterval(qrPollRef.current); qrPollRef.current = null; }
+    if (qrCountdownRef.current) { clearInterval(qrCountdownRef.current); qrCountdownRef.current = null; }
+  };
+
+  // 关闭二维码弹窗
+  const handleCloseQRModal = async () => {
+    cleanupQR();
+    if (qrTaskId) {
+      try { await platformsApi.cancelQRLogin(qrTaskId); } catch {}
+    }
+    setShowQRModal(false);
+    setQrStatus('');
+    setQrImage('');
+    setQrTaskId('');
+  };
+
+  // 重新获取二维码
+  const handleRefreshQR = () => {
+    cleanupQR();
+    if (qrPlatform) {
+      handleStartQRLogin(qrPlatform);
+    }
+  };
 
   useEffect(() => {
     fetchAccounts();
@@ -152,7 +258,7 @@ export default function PlatformConnection() {
   const handleBindStore = async (platformStoreId: string, systemStoreId: string) => {
     try {
       setActionLoading(true);
-      await platformsApi.bindStore(bindAccountId, platformStoreId, systemStoreId);
+      await platformsApi.bindPlatformStore(platformStoreId, systemStoreId);
       success('店铺绑定成功');
       await fetchAccounts();
       setShowStoresModal(false);
@@ -252,7 +358,7 @@ export default function PlatformConnection() {
                           {syncingId === account.id ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5 mr-1" />}
                           {syncingId === account.id ? '同步中' : '同步状态'}
                         </Button>
-                        <Button size="sm" variant="destructive" onClick={() => handleUnbind(account.id)} disabled={actionLoading}>
+                        <Button size="sm" variant="outline" className="border-red-200 text-red-600 hover:bg-red-50" onClick={() => handleUnbind(account.id)} disabled={actionLoading}>
                           <Unlink className="w-3.5 h-3.5" />
                         </Button>
                       </div>
@@ -262,9 +368,28 @@ export default function PlatformConnection() {
               </div>
             )}
 
-            {/* 绑定新账号 */}
-            <Button onClick={() => { setBindPlatform(''); setBindError(''); setShowBindModal(true); }} className="w-full">
-              <Plus className="w-4 h-4 mr-2" />绑定新平台账号
+            {/* 绑定新账号 — 二维码扫码方式 */}
+            <div className="mb-6">
+              <h2 className="text-sm font-medium text-slate-700 mb-3">扫码绑定（推荐）</h2>
+              <div className="space-y-3">
+                {SUPPORTED_PLATFORMS.filter(p => !accounts.some(a => a.platform === p.value && a.cookies_status === 'valid')).map(p => (
+                  <button key={p.value} onClick={() => handleStartQRLogin(p.value)}
+                    className="w-full flex items-center gap-3 p-4 bg-white rounded-xl border border-slate-200 hover:border-indigo-300 hover:shadow-sm transition-all active:scale-[0.98]">
+                    <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${p.color} flex items-center justify-center text-lg text-white shadow-sm shrink-0`}>
+                      {p.icon}
+                    </div>
+                    <div className="text-left flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-slate-900">{p.label}</p>
+                      <p className="text-xs text-slate-500 truncate">{p.desc}</p>
+                    </div>
+                    <QrCode className="w-5 h-5 text-slate-400 shrink-0" />
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <Button variant="outline" onClick={() => { setBindPlatform(''); setBindError(''); setShowBindModal(true); }} className="w-full">
+              <Pencil className="w-4 h-4 mr-2" />手动填写账号密码绑定
             </Button>
           </>
         )}
@@ -429,6 +554,78 @@ export default function PlatformConnection() {
                 ))}
               </div>
             )}
+          </div>
+        </div>
+      )}
+      {/* 二维码扫码登录弹窗 */}
+      {showQRModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-end justify-center" onClick={handleCloseQRModal}>
+          <div className="bg-white w-full max-w-lg rounded-t-2xl p-6" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${getPlatformInfo(qrPlatform).color} flex items-center justify-center text-sm text-white`}>
+                  {getPlatformInfo(qrPlatform).icon}
+                </div>
+                <h3 className="text-lg font-semibold text-slate-900">扫码登录 - {getPlatformInfo(qrPlatform).label}</h3>
+              </div>
+              <button onClick={handleCloseQRModal} className="p-1"><X className="w-5 h-5 text-slate-400" /></button>
+            </div>
+
+            {qrInitLoading ? (
+              <div className="flex flex-col items-center justify-center py-16">
+                <Loader2 className="w-8 h-8 animate-spin text-indigo-500 mb-3" />
+                <p className="text-sm text-slate-500">正在获取二维码...</p>
+              </div>
+            ) : qrStatus === 'waiting_scan' ? (
+              <div className="flex flex-col items-center py-6">
+                {qrImage && (
+                  <div className="bg-white border-2 border-slate-100 rounded-2xl p-4 mb-4 shadow-sm">
+                    <img
+                      src={`data:image/png;base64,${qrImage}`}
+                      alt="登录二维码"
+                      className="w-48 h-48 object-contain"
+                    />
+                  </div>
+                )}
+                <div className="flex items-center gap-2 text-sm text-slate-600 mb-3">
+                  <Smartphone className="w-4 h-4" />
+                  <span>请打开{getPlatformInfo(qrPlatform).label}App扫码登录</span>
+                </div>
+                <div className="flex items-center gap-2 text-xs text-slate-400">
+                  <Clock className="w-3.5 h-3.5" />
+                  <span>{Math.ceil(qrRemaining / 60)}:{String(qrRemaining % 60).padStart(2, '0')} 后过期</span>
+                </div>
+                <Button variant="outline" size="sm" onClick={handleRefreshQR} className="mt-4">
+                  <RefreshCw className="w-3.5 h-3.5 mr-1" />刷新二维码
+                </Button>
+              </div>
+            ) : qrStatus === 'success' ? (
+              <div className="flex flex-col items-center py-12">
+                <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center mb-4">
+                  <CheckCircle2 className="w-8 h-8 text-emerald-600" />
+                </div>
+                <p className="text-base font-semibold text-slate-900">登录成功</p>
+                <p className="text-sm text-slate-500 mt-1">账号已自动绑定</p>
+              </div>
+            ) : (qrStatus === 'expired' || qrStatus === 'failed') ? (
+              <div className="flex flex-col items-center py-12">
+                <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center mb-4">
+                  <AlertCircle className="w-8 h-8 text-red-500" />
+                </div>
+                <p className="text-base font-semibold text-slate-900">
+                  {qrStatus === 'expired' ? '二维码已过期' : '登录失败'}
+                </p>
+                <p className="text-sm text-slate-500 mt-1 mb-4">{qrErrorMessage || '请重试'}</p>
+                <Button onClick={handleRefreshQR}>
+                  <RefreshCw className="w-4 h-4 mr-2" />重新获取
+                </Button>
+              </div>
+            ) : null}
+
+            <div className="flex items-center justify-center gap-1.5 mt-4 pt-4 border-t border-slate-100">
+              <ShieldCheck className="w-3.5 h-3.5 text-slate-400" />
+              <p className="text-xs text-slate-400">扫码信息仅用于评论数据采集，不会泄露</p>
+            </div>
           </div>
         </div>
       )}

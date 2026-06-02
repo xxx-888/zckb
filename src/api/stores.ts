@@ -9,6 +9,8 @@ export interface Store {
   owner_name?: string;
   owner_id?: string;
   phone?: string;
+  email?: string;
+  description?: string;
   status: 'active' | 'pending' | 'inactive';
   health_score?: number;
   platform_count: number;

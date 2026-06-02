@@ -63,7 +63,7 @@ export default function PlatformBindManage() {
       return <Badge variant="default" className="bg-emerald-50 text-emerald-700 border-emerald-200">已连接</Badge>;
     }
     if (status === 'expired') {
-      return <Badge variant="destructive">已过期</Badge>;
+      return <Badge variant="secondary" className="bg-red-50 text-red-700 border-red-200">已过期</Badge>;
     }
     return <Badge variant="secondary">未知</Badge>;
   };

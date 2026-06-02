@@ -100,7 +100,7 @@ export const ReviewDetail: React.FC = () => {
           <div className="flex items-start justify-between mb-4">
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 rounded-xl overflow-hidden bg-slate-100">
-                <img src={review.avatar} alt={review.user} className="w-full h-full object-cover" />
+                <img src={review.user_avatar} alt={review.user} className="w-full h-full object-cover" />
               </div>
               <div>
                 <h4 className="text-sm font-bold text-slate-800">{review.user}</h4>
@@ -198,7 +198,7 @@ export const ReviewDetail: React.FC = () => {
 
           <div className="flex items-center gap-2 text-[10px] text-slate-400 mb-4">
             <CheckCircle className="w-3 h-3 text-emerald-500" />
-            <span>AI 生成 · {review.replyTime}</span>
+            <span>AI 生成 · {review.reply_time}</span>
           </div>
 
           <div className="flex gap-2">

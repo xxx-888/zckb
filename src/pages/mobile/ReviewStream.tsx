@@ -358,12 +358,12 @@ export const ReviewStream: React.FC = () => {
             <Card 
               key={review.id} 
               className="p-4 border-none shadow-sm bg-white active:bg-slate-50 cursor-pointer hover:shadow-md transition-all"
-              onClick={() => handleReviewClick(review.id)}
+              onClick={() => handleReviewClick(Number(review.id))}
             >
               <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl overflow-hidden bg-slate-100 shadow-sm border border-slate-50">
-                    <img src={review.avatar} alt={review.user} className="w-full h-full object-cover" />
+                    <img src={review.user_avatar} alt={review.user} className="w-full h-full object-cover" />
                   </div>
                   <div>
                     <h4 className="text-sm font-bold text-slate-800">{review.user}</h4>
@@ -409,14 +409,14 @@ export const ReviewStream: React.FC = () => {
                 <div className="flex gap-6">
                   <button 
                     className="flex items-center gap-1.5 text-slate-300 hover:text-orange-500 transition-colors"
-                    onClick={(e) => handleLike(review.id, e)}
+                    onClick={(e) => handleLike(Number(review.id), e)}
                   >
                     <ThumbsUp className="w-3.5 h-3.5" />
                     <span className="text-[9px] font-bold">赞同</span>
                   </button>
                   <button 
                     className="flex items-center gap-1.5 text-slate-300 hover:text-orange-500 transition-colors"
-                    onClick={(e) => handleQuickReply(review.id, e)}
+                    onClick={(e) => handleQuickReply(Number(review.id), e)}
                   >
                     <MessageSquare className="w-3.5 h-3.5" />
                     <span className="text-[9px] font-bold">快速回复</span>
@@ -426,7 +426,7 @@ export const ReviewStream: React.FC = () => {
                   variant="ghost" 
                   size="icon" 
                   className="h-8 w-8 text-slate-300"
-                  onClick={(e) => handleMoreActions(review.id, e)}
+                  onClick={(e) => handleMoreActions(Number(review.id), e)}
                 >
                   <MoreVertical className="w-4 h-4" />
                 </Button>

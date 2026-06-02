@@ -166,8 +166,8 @@ export const Subscription: React.FC = () => {
     
     try {
       setActionLoading(true);
-      const updated = await subscriptionApi.cancelSubscription();
-      setCurrentSubscription(updated);
+      await subscriptionApi.cancelSubscription();
+      setCurrentSubscription(null);
       success('取消成功', '订阅已取消');
       loadData();
     } catch (err: any) {

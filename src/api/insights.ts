@@ -82,7 +82,7 @@ export async function fetchTopDish(period?: string, storeId?: string): Promise<D
     if (period) params.append('period', period);
     if (storeId) params.append('store_id', storeId);
     const query = params.toString();
-    const res = await api.get<any[]>(`/v1/insights/top-dishes${query ? `?${query}` : ''}`);
+    const res = await api.get<any>(`/v1/insights/top-dishes${query ? `?${query}` : ''}`);
     const data = res.data || res;
     return data.map((d: any) => ({
       id: d.id,
@@ -122,7 +122,7 @@ export async function fetchDishElimination(storeId?: string): Promise<DishElimin
     const params = new URLSearchParams();
     if (storeId) params.append('store_id', storeId);
     const query = params.toString();
-    const res = await api.get<any[]>(`/v1/insights/dish-elimination${query ? `?${query}` : ''}`);
+    const res = await api.get<any>(`/v1/insights/dish-elimination${query ? `?${query}` : ''}`);
     const data = res.data || res;
     return data.map((d: any) => ({
       id: d.id,
@@ -144,7 +144,7 @@ export async function fetchServiceCases(caseType?: string, storeId?: string): Pr
     if (caseType) params.append('case_type', caseType);
     if (storeId) params.append('store_id', storeId);
     const query = params.toString();
-    const res = await api.get<any[]>(`/v1/insights/service-cases${query ? `?${query}` : ''}`);
+    const res = await api.get<any>(`/v1/insights/service-cases${query ? `?${query}` : ''}`);
     const data = res.data || res;
     return data.map((c: any) => ({
       id: c.id,
@@ -164,7 +164,7 @@ export async function fetchCompetitorOpportunities(storeId?: string): Promise<Co
     const params = new URLSearchParams();
     if (storeId) params.append('store_id', storeId);
     const query = params.toString();
-    const res = await api.get<any[]>(`/v1/insights/competitor-opportunities${query ? `?${query}` : ''}`);
+    const res = await api.get<any>(`/v1/insights/competitor-opportunities${query ? `?${query}` : ''}`);
     const data = res.data || res;
     return data.map((o: any) => ({
       id: o.id,

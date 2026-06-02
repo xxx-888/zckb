@@ -3,18 +3,18 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Plus, Trash2, MessageSquare, Check, Loader2 } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { useToast } from '../../hooks/use-toast';
-import { settingsApi, ReplyTemplate } from '../../api/settings';
+import { settingsApi, ReplyTemplate as ReplyTemplateType } from '../../api/settings';
 
 export const ReplyTemplate: React.FC = () => {
   const navigate = useNavigate();
   const { success, error } = useToast();
-  
-  const [templates, setTemplates] = useState<ReplyTemplate[]>([]);
+
+  const [templates, setTemplates] = useState<ReplyTemplateType[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   
   const [showAddModal, setShowAddModal] = useState(false);
-  const [editingTemplate, setEditingTemplate] = useState<ReplyTemplate | null>(null);
+  const [editingTemplate, setEditingTemplate] = useState<ReplyTemplateType | null>(null);
   const [formData, setFormData] = useState({
     name: '',
     content: '',
@@ -89,7 +89,7 @@ export const ReplyTemplate: React.FC = () => {
     }
   };
 
-  const handleEdit = (template: ReplyTemplate) => {
+  const handleEdit = (template: ReplyTemplateType) => {
     setEditingTemplate(template);
     setFormData({
       name: template.name,
@@ -110,7 +110,7 @@ export const ReplyTemplate: React.FC = () => {
     }
   };
 
-  const handleToggleEnabled = async (template: ReplyTemplate) => {
+  const handleToggleEnabled = async (template: ReplyTemplateType) => {
     try {
       const updated = await settingsApi.updateReplyTemplate(template.id, {
         is_active: !template.is_active

@@ -91,7 +91,7 @@ export const PositiveActivation: React.FC = () => {
   // 筛选和搜索
   const filteredReviews = reviews.filter(review => {
     if (searchKeyword) {
-      return review.user.includes(searchKeyword) ||
+      return (review.user || '').includes(searchKeyword) ||
              review.content.includes(searchKeyword);
     }
     return true;
@@ -272,10 +272,10 @@ export const PositiveActivation: React.FC = () => {
                             size="sm"
                             variant="ghost"
                             className="h-8 w-8 p-0"
-                            onClick={() => handleCopyScript(review.id, review.suggestedScript)}
+                            onClick={() => handleCopyScript(Number(review.id), review.suggestedScript || '')}
                             title="复制话术"
                           >
-                            {copiedId === review.id ? (
+                            {copiedId === Number(review.id) ? (
                               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
                             ) : (
                               <Copy className="w-3.5 h-3.5" />
@@ -284,7 +284,7 @@ export const PositiveActivation: React.FC = () => {
                           <Button
                             size="sm"
                             className="h-8 bg-orange-500 hover:bg-orange-600 text-white gap-1"
-                            onClick={() => handleSendAuthorization(review.id)}
+                            onClick={() => handleSendAuthorization(Number(review.id))}
                           >
                             <Gift className="w-3.5 h-3.5" />
                             发起授权

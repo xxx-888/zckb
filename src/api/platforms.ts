@@ -14,6 +14,7 @@ export interface PlatformStoreInfo {
   platform: string;
   rating: number;
   review_count: number;
+  binded?: boolean;
 }
 
 export interface PlatformAccount {
@@ -25,6 +26,7 @@ export interface PlatformAccount {
   last_sync_at?: string;
   error_msg?: string;
   created_at?: string;
+  stores_count?: number;
 }
 
 export interface UpdatePlatformAccountDto {
@@ -122,5 +124,35 @@ export const platformsApi = {
   // 更新平台账号（修改用户名/密码）
   updateAccount: async (accountId: string, data: UpdatePlatformAccountDto): Promise<void> => {
     await api.put(`/v1/platforms/account/${accountId}`, data);
+  },
+
+  // ============ 二维码扫码登录 ============
+
+  // 启动二维码登录，返回 {task_id, qr_image, status, expires_in}
+  startQRLogin: async (platform: string): Promise<{
+    task_id: string;
+    qr_image: string;
+    status: string;
+    expires_in: number;
+  }> => {
+    const response = await api.post<any, any>('/v1/platforms/qr-login/start', { platform });
+    return response.data || response;
+  },
+
+  // 查询二维码登录状态
+  getQRLoginStatus: async (taskId: string): Promise<{
+    status: string;
+    platform?: string;
+    platform_username?: string;
+    remaining_seconds?: number;
+    error_message?: string;
+  }> => {
+    const response = await api.get<any>(`/v1/platforms/qr-login/status/${taskId}`);
+    return response.data || response;
+  },
+
+  // 取消二维码登录
+  cancelQRLogin: async (taskId: string): Promise<void> => {
+    await api.post(`/v1/platforms/qr-login/cancel/${taskId}`);
   },
 };

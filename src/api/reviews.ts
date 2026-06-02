@@ -9,6 +9,7 @@ export interface Review {
   platform_review_id?: string;
   user_name?: string;
   user_avatar?: string;
+  avatar?: string;
   user?: string;
   rating: number;
   content: string;
@@ -17,6 +18,7 @@ export interface Review {
   tags?: string[];
   reply?: string;
   reply_time?: string;
+  replyTime?: string;
   ai_generated?: boolean;
   ai_reply_draft?: string;
   risk_level?: 'high' | 'medium' | 'low';
@@ -27,6 +29,8 @@ export interface Review {
   hasImage?: boolean;
   has_image?: boolean;
   replied?: boolean;
+  likeCount?: number;
+  suggestedScript?: string;
 }
 
 export interface ReviewFilter {

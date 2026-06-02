@@ -173,9 +173,9 @@ export const ReviewDetail: React.FC = () => {
               <div className="flex items-start justify-between mb-5">
                 <div className="flex items-center gap-3">
                   <div className="w-11 h-11 rounded-xl bg-slate-100 flex items-center justify-center overflow-hidden">
-                    {review.user_avatar || review.avatar ? (
+                    {review.user_avatar ? (
                       <img
-                        src={review.user_avatar || review.avatar}
+                        src={review.user_avatar}
                         alt={review.user_name || review.user || '用户'}
                         className="w-full h-full object-cover"
                       />

@@ -19,7 +19,7 @@ import {
 import { Card } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
-import { MobileLayout } from '../../components/MobileLayout';
+import { MobileLayout, useStore } from '../../components/MobileLayout';
 import { cn } from '../../lib/utils';
 import { useToast } from '../../hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
@@ -36,6 +36,7 @@ export const PositiveActivation: React.FC = () => {
   const fetchedRef = React.useRef(false);
 
   const { success } = useToast();
+  const { selectedStore } = useStore();
   const navigate = useNavigate();
 
   const loadData = async () => {
@@ -191,9 +192,9 @@ export const PositiveActivation: React.FC = () => {
                       variant="ghost" 
                       size="icon" 
                       className="w-6 h-6 text-slate-300 hover:text-orange-500"
-                      onClick={() => handleCopyScript(review.id, review.suggestedScript)}
+                      onClick={() => handleCopyScript(Number(review.id), review.suggestedScript || '')}
                     >
-                      {copiedId === review.id ? (
+                      {copiedId === Number(review.id) ? (
                         <CheckCircle2 className="w-3 h-3 text-emerald-500" />
                       ) : (
                         <Copy className="w-3 h-3" />
@@ -205,7 +206,7 @@ export const PositiveActivation: React.FC = () => {
                   </div>
                   <Button 
                     className="w-full bg-orange-500 hover:bg-orange-600 text-white rounded-xl h-10 font-bold text-xs shadow-md shadow-orange-100"
-                    onClick={() => handleSendAuthorization(review.id)}
+                    onClick={() => handleSendAuthorization(Number(review.id))}
                   >
                     私信用户发起授权
                   </Button>
@@ -224,7 +225,7 @@ export const PositiveActivation: React.FC = () => {
                   <div className="flex justify-between items-center">
                     <div className="flex items-center gap-2">
                       <div className="w-8 h-8 rounded-lg bg-orange-50 flex items-center justify-center text-orange-500 font-bold text-xs">
-                        {script.tag[0]}
+                        {(script.tag || '')[0]}
                       </div>
                       <span className="font-bold text-slate-700 text-sm">{script.tag}风格</span>
                     </div>

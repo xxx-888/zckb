@@ -579,7 +579,7 @@ export const Dashboard: React.FC = () => {
               <Card
                 key={`review-${review.id}-${index}`}
                 className="p-4 border-slate-100 shadow-sm active:bg-slate-50 transition-colors bg-white relative cursor-pointer hover:shadow-md transition-all"
-                onClick={() => handleReviewClick(review.id)}
+                onClick={() => handleReviewClick(Number(review.id))}
               >
               <div className="flex justify-between items-start">
                 <div className="flex gap-3 flex-1">
@@ -634,7 +634,7 @@ export const Dashboard: React.FC = () => {
                   className="w-8 h-8 rounded-full flex-shrink-0"
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleReviewClick(review.id);
+                    handleReviewClick(Number(review.id));
                   }}
                 >
                   <ChevronRight className="w-4 h-4 text-slate-300" />

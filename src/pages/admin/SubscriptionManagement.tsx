@@ -107,7 +107,7 @@ export const SubscriptionManagement: React.FC = () => {
       price_yearly: plan.price_yearly,
       features: plan.features || [],
       max_stores: plan.max_stores,
-      max_reviews_per_month: plan.max_reviews_per_month,
+      max_reviews_per_month: plan.max_reviews_per_month ?? undefined,
       is_active: plan.is_active,
     });
     setShowModal(true);

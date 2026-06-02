@@ -31,8 +31,12 @@ from app.schemas.platform import (
     PlatformDisconnectRequest,
 )
 from app.services.platform_service import PlatformService
+from app.services.qr_login_service import QRLoginService
 
 router = APIRouter(prefix="/platforms", tags=["平台关联"])
+
+# 二维码登录服务实例
+qr_login_service = QRLoginService.get_instance()
 
 
 @router.post("/connect", summary="连接平台账号")
@@ -381,6 +385,117 @@ async def get_platform_statistics(
         data=result,
         message="获取成功",
     )
+
+
+# ============ 二维码扫码登录接口 ============
+
+@router.post("/qr-login/start", summary="启动二维码扫码登录")
+async def start_qr_login(
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_valid_subscription),
+) -> dict:
+    """
+    启动二维码扫码登录
+    - 后端打开平台登录页，截取二维码图片返回给前端
+    - 用户用手机 App 扫码后，后端自动检测登录状态
+    """
+    platform = body.get("platform", "")
+    result = await qr_login_service.start_login(
+        user_id=str(current_user.id),
+        platform=platform,
+    )
+
+    if not result.get("success"):
+        return error(message=result.get("error", "启动登录失败"))
+
+    return success(
+        data={
+            "task_id": result["task_id"],
+            "qr_image": result["qr_image"],
+            "status": result["status"],
+            "expires_in": result["expires_in"],
+        },
+        message="二维码已生成，请使用手机App扫码",
+    )
+
+
+@router.get("/qr-login/status/{task_id}", summary="查询二维码登录状态")
+async def get_qr_login_status(
+    task_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_valid_subscription),
+) -> dict:
+    """
+    查询二维码登录状态（前端轮询）
+    - waiting_scan: 等待扫码
+    - success: 登录成功（返回 cookies）
+    - expired: 二维码过期
+    - failed: 登录失败
+    """
+    status_result = await qr_login_service.get_status(task_id)
+
+    if status_result["status"] == "success":
+        # 登录成功 → 自动创建/更新 PlatformAccount
+        platform_service = PlatformService(db)
+        cookies = status_result["cookies"]
+        platform = status_result["platform"]
+        platform_username = status_result.get("platform_username", "")
+
+        encrypted = await platform_service._encrypt_credentials({
+            "username": platform_username,
+            "cookies": cookies,
+        })
+
+        # 查找已有账号或创建新账号
+        from sqlalchemy import select
+        stmt = select(PlatformAccount).where(
+            PlatformAccount.user_id == current_user.id,
+            PlatformAccount.platform == platform,
+        )
+        result = await db.execute(stmt)
+        existing = result.scalar_one_or_none()
+
+        if existing:
+            existing.cookies_encrypted = encrypted
+            existing.cookies_status = "valid"
+            existing.platform_username = platform_username
+            existing.last_sync_at = datetime.utcnow()
+            existing.error_msg = None
+        else:
+            new_account = PlatformAccount(
+                user_id=current_user.id,
+                platform=platform,
+                platform_username=platform_username,
+                cookies_encrypted=encrypted,
+                cookies_status="valid",
+                last_sync_at=datetime.utcnow(),
+            )
+            db.add(new_account)
+
+        await db.commit()
+
+        return success(
+            data={
+                "status": "success",
+                "platform": platform,
+                "platform_username": platform_username,
+            },
+            message="登录成功，账号已绑定",
+        )
+
+    return success(data=status_result)
+
+
+@router.post("/qr-login/cancel/{task_id}", summary="取消二维码登录")
+async def cancel_qr_login(
+    task_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_valid_subscription),
+) -> dict:
+    """取消二维码登录任务"""
+    result = await qr_login_service.cancel_login(task_id)
+    return success(message="已取消" if result.get("success") else result.get("error", "取消失败"))
 
 
 # ============ 管理员接口 ============

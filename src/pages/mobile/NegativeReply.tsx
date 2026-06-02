@@ -171,7 +171,7 @@ export const NegativeReply: React.FC = () => {
               <Card 
                 key={task.id} 
                 className="p-0 border-none shadow-md overflow-hidden bg-white cursor-pointer hover:shadow-lg transition-all"
-                onClick={() => handleViewTask(task.id, task.review_id || task.id)}
+                onClick={() => handleViewTask(Number(task.id), String(task.review_id || task.id))}
               >
                 <div className="p-4 border-b border-slate-50">
                   <div className="flex justify-between items-start mb-2">
@@ -250,7 +250,7 @@ export const NegativeReply: React.FC = () => {
                       className="flex-1 h-10 rounded-xl text-xs border-slate-200 bg-white"
                       onClick={(e) => {
                         e.stopPropagation();
-                        handleEditReply(task.id);
+                        handleEditReply(Number(task.id));
                       }}
                     >
                       重新生成
@@ -259,7 +259,7 @@ export const NegativeReply: React.FC = () => {
                       className="flex-[2] h-10 rounded-xl text-xs bg-orange-500 hover:bg-orange-600 text-white gap-2 shadow-md shadow-orange-100"
                       onClick={(e) => {
                         e.stopPropagation();
-                        handleApproveReply(task.id);
+                        handleApproveReply(Number(task.id));
                       }}
                     >
                       立即发送 <Send className="w-3 h-3" />

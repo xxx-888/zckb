@@ -205,7 +205,7 @@ export const fetchReplyHistory = async (page = 1, pageSize = 20): Promise<ReplyR
 
 export const fetchReplyStats = async (): Promise<ReplyStats> => {
   const response = await aiAnalysisApi.getReplyStats();
-  const hasData = response && (response.total > 0 || response.success_rate > 0);
+  const hasData = response && ((response.total ?? 0) > 0 || (response.success_rate ?? 0) > 0);
   if (hasData) {
     return {
       todayCount: response.total || 0,
