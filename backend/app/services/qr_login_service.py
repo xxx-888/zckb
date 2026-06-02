@@ -1,87 +1,31 @@
 """
 二维码登录服务
-管理 Playwright 浏览器实例，处理平台扫码登录的完整生命周期
+使用 sync_playwright 在独立线程中运行，避免 Windows 下
+uvicorn asyncio 事件循环不支持 subprocess 的问题。
 
-关键：Windows 下 uvicorn 的事件循环可能不支持 subprocess，
-Playwright 需要创建子进程启动浏览器，因此所有 Playwright 操作
-都在独立线程的专属事件循环中执行（通过 _PlaywrightBridge 桥接）。
+架构：
+  asyncio.to_thread → _sync_start_login（启动浏览器+截图，立即返回）
+                   → threading.Thread → _sync_poll_login（后台轮询，阻塞）
 """
 import asyncio
 import base64
 import logging
+import os
 import threading
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
-from typing import Any, Optional
+from typing import Optional
 from urllib.parse import quote, urlencode
-from uuid import UUID, uuid4
+from uuid import uuid4
 
-from playwright.async_api import Browser, BrowserContext, Page, async_playwright
+from playwright.sync_api import (
+    Browser, BrowserContext, Page, sync_playwright,
+)
 
 logger = logging.getLogger(__name__)
 
-
-# ═══════════════════════════════════════════════════════════════
-# Playwright 跨线程桥接（解决 Windows subprocess NotImplementedError）
-# ═══════════════════════════════════════════════════════════════
-
-class _PlaywrightBridge:
-    """
-    在独立线程中运行一个专属 asyncio 事件循环，
-    所有 Playwright 子进程 I/O 都在这个循环上完成。
-    主线程通过 run_coroutine_threadsafe + wrap_future 桥接。
-    """
-
-    _loop: Optional[asyncio.AbstractEventLoop] = None
-    _thread: Optional[threading.Thread] = None
-    _ready = threading.Event()
-
-    # ── 生命周期 ──
-
-    @classmethod
-    def ensure(cls):
-        """确保后台线程已启动"""
-        if cls._thread is not None and cls._thread.is_alive():
-            return
-        cls._ready.clear()
-        cls._thread = threading.Thread(target=cls._run, daemon=True, name="pw-bridge")
-        cls._thread.start()
-        cls._ready.wait(timeout=10)
-
-    @classmethod
-    def _run(cls):
-        cls._loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(cls._loop)
-        cls._ready.set()
-        cls._loop.run_forever()
-
-    @classmethod
-    def stop(cls):
-        if cls._loop and cls._loop.is_running():
-            cls._loop.call_soon_threadsafe(cls._loop.stop)
-        if cls._thread:
-            cls._thread.join(timeout=5)
-        cls._loop = None
-        cls._thread = None
-
-    # ── 调用接口 ──
-
-    @classmethod
-    async def call(cls, coro):
-        """
-        在 Playwright 线程上执行协程，返回结果。
-        用法:  await _PlaywrightBridge.call(page.goto(url, ...))
-        """
-        cls.ensure()
-        future = asyncio.run_coroutine_threadsafe(coro, cls._loop)
-        return await asyncio.wrap_future(future)
-
-    @classmethod
-    def call_later(cls, coro):
-        """在 Playwright 线程上调度协程（fire-and-forget，用于后台轮询）"""
-        cls.ensure()
-        asyncio.run_coroutine_threadsafe(coro, cls._loop)
+# 是否 headless（设环境变量 HEADLESS=false 可弹出浏览器调试）
+HEADLESS = os.getenv("QR_HEADLESS", "true").lower() in ("true", "1", "yes")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -113,23 +57,15 @@ def _get_meituan_login_url() -> str:
     )
 
 
-# 反检测 JS（隐藏 Playwright 自动化特征，与 CPA export_auth_state 一致）
 STEALTH_JS = """
-// 1. 隐藏 webdriver 标记（最关键）
 Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-
-// 2. 伪装 Chrome 对象
 if (!window.chrome) window.chrome = {};
 window.chrome.runtime = { connect: function(){}, sendMessage: function(){} };
-
-// 3. 覆盖 permissions query
 const originalQuery = window.navigator.permissions.query;
 window.navigator.permissions.query = (parameters) =>
     parameters.name === 'notifications'
         ? Promise.resolve({ state: Notification.permission })
         : originalQuery(parameters);
-
-// 4. 伪装 plugins
 Object.defineProperty(navigator, 'plugins', {
     get: () => {
         const plugins = [
@@ -141,21 +77,15 @@ Object.defineProperty(navigator, 'plugins', {
         return plugins;
     },
 });
-
-// 5. 伪装 languages
 Object.defineProperty(navigator, 'languages', { get: () => ['zh-CN', 'zh', 'en'] });
-
-// 6. 修复 platform（Playwright 有时会暴露 Linux）
 Object.defineProperty(navigator, 'platform', { get: () => 'Win32' });
-
-// 7. 隐藏 Playwright 特有属性
 delete window.__playwright;
 delete window.__pw_manual;
 """
 
 PLATFORM_CONFIG = {
     "meituan": {
-        "login_url": _get_meituan_login_url,  # 动态生成（含时间戳）
+        "login_url": _get_meituan_login_url,
         "qr_selector": ".qrcode-img img, .qr-code img, canvas, [class*='qrcode'], img[src*='qrcode']",
         "success_url_pattern": "ecom.meituan.com",
         "check_logged_in": ".user-info, .merchant-name, [class*='header'] [class*='name']",
@@ -186,17 +116,13 @@ class QRLoginTask:
     task_id: str = field(default_factory=lambda: str(uuid4()))
     user_id: str = ""
     platform: str = ""
-    status: str = "pending"  # pending, waiting_scan, scanning, success, failed, expired, cancelled
+    status: str = "pending"
     qr_image_base64: str = ""
     cookies: dict = field(default_factory=dict)
     platform_username: str = ""
     error_message: str = ""
     created_at: float = field(default_factory=time.time)
     expires_at: float = 0
-    browser: Optional[Browser] = None
-    context: Optional[BrowserContext] = None
-    page: Optional[Page] = None
-    playwright_instance: Any = None
 
     def __post_init__(self):
         self.expires_at = self.created_at + QR_LOGIN_TIMEOUT
@@ -207,10 +133,7 @@ class QRLoginTask:
 # ═══════════════════════════════════════════════════════════════
 
 class QRLoginService:
-    """
-    二维码登录服务（单例）
-    管理所有活跃的二维码登录任务
-    """
+    """二维码登录服务（单例）"""
 
     _instance = None
     _tasks: dict[str, QRLoginTask] = {}
@@ -226,128 +149,58 @@ class QRLoginService:
         return cls()
 
     def _cleanup_expired(self):
-        """清理过期任务"""
         now = time.time()
-        expired = [tid for tid, task in self._tasks.items() if task.expires_at < now]
+        expired = [tid for tid, t in self._tasks.items() if t.expires_at < now]
         for tid in expired:
-            self._schedule_cancel(tid)
+            task = self._tasks.pop(tid, None)
+            if task:
+                task.status = "expired"
+                task.error_message = "二维码已过期"
 
-    def _schedule_cancel(self, task_id: str):
-        """在主线程调度取消任务（后台轮询也需要从主线程发起到 pw 线程）"""
-        asyncio.create_task(self._cancel_task(task_id))
-
-    # ── 公开接口 ──
+    # ── 公开接口（async，内部用 to_thread 调用 sync） ──
 
     async def start_login(self, user_id: str, platform: str) -> dict:
-        """
-        启动二维码登录流程。
-        所有 Playwright 操作通过 _PlaywrightBridge 在独立线程执行。
-        """
         self._cleanup_expired()
 
         if platform not in PLATFORM_CONFIG:
             return {"success": False, "error": f"不支持的平台: {platform}"}
 
         task = QRLoginTask(user_id=user_id, platform=platform)
-        config = PLATFORM_CONFIG[platform]
+        self._tasks[task.task_id] = task
 
         try:
-            # ── 所有 Playwright I/O 通过 bridge 执行 ──
-            task.playwright_instance = await _PlaywrightBridge.call(
-                async_playwright().start()
+            # 第一步：在线程中启动浏览器+截图（阻塞但快速，约 10-15 秒）
+            result = await asyncio.to_thread(
+                self._sync_start_login, task, platform
             )
+            if not result.get("success"):
+                self._tasks.pop(task.task_id, None)
+                return result
 
-            login_url = config["login_url"]() if callable(config["login_url"]) else config["login_url"]
-
-            browser_type = task.playwright_instance.chromium
-            task.browser = await _PlaywrightBridge.call(
-                browser_type.launch(
-                    headless=True,
-                    channel="chrome",
-                    args=[
-                        "--disable-blink-features=AutomationControlled",
-                        "--disable-infobars",
-                        "--no-first-run",
-                        "--no-default-browser-check",
-                        "--disable-extensions",
-                        "--disable-component-extensions-with-background-pages",
-                        "--disable-default-apps",
-                        "--no-sandbox",
-                        "--disable-setuid-sandbox",
-                        "--disable-dev-shm-usage",
-                        "--disable-gpu",
-                        "--lang=zh-CN",
-                    ],
-                )
+            # 第二步：截图成功后，启动后台线程轮询登录状态（不阻塞当前请求）
+            poll_thread = threading.Thread(
+                target=self._sync_poll_login,
+                args=(task,),
+                daemon=True,
+                name=f"qr-poll-{task.task_id[:8]}",
             )
+            task._poll_thread = poll_thread  # type: ignore
+            poll_thread.start()
 
-            task.context = await _PlaywrightBridge.call(
-                task.browser.new_context(
-                    viewport=config["viewport"],
-                    user_agent=(
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                        "AppleWebKit/537.36 (KHTML, like Gecko) "
-                        "Chrome/131.0.0.0 Safari/537.36"
-                    ),
-                    locale="zh-CN",
-                    timezone_id="Asia/Shanghai",
-                    extra_http_headers={
-                        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-                    },
-                )
-            )
-
-            await _PlaywrightBridge.call(task.context.add_init_script(STEALTH_JS))
-            task.page = await _PlaywrightBridge.call(task.context.new_page())
-
-            logger.info(f"[QR Login] Opening {platform} login page: {login_url}")
-            await _PlaywrightBridge.call(
-                task.page.goto(login_url, wait_until="domcontentloaded", timeout=30000)
-            )
-
-            # 等待二维码等动态内容加载
-            await asyncio.sleep(2)
-
-            # 截取二维码
-            qr_image = await _PlaywrightBridge.call(
-                self._capture_qr_code(task.page, config["qr_selector"])
-            )
-            if not qr_image:
-                qr_image = await _PlaywrightBridge.call(
-                    self._capture_login_area(task.page)
-                )
-
-            task.qr_image_base64 = qr_image
-            task.status = "waiting_scan"
-            self._tasks[task.task_id] = task
-
-            # 启动后台轮询（在 pw 线程上执行，避免跨线程 Playwright 调用）
-            _PlaywrightBridge.call_later(self._poll_login_status(task))
-
-            logger.info(f"[QR Login] Task {task.task_id} started for {platform}")
-
-            return {
-                "success": True,
-                "task_id": task.task_id,
-                "qr_image": task.qr_image_base64,
-                "status": "waiting_scan",
-                "expires_in": QR_LOGIN_TIMEOUT,
-            }
+            return result
 
         except Exception as e:
-            logger.error(f"[QR Login] Failed to start: {e}")
-            await self._cleanup_task_resources(task)
-            return {"success": False, "error": f"启动登录失败: {str(e)}"}
+            logger.error(f"[QR Login] start_login error: {e}")
+            self._tasks.pop(task.task_id, None)
+            return {"success": False, "error": str(e)}
 
     async def get_status(self, task_id: str) -> dict:
-        """查询登录状态（供前端轮询）"""
         task = self._tasks.get(task_id)
         if not task:
             return {"status": "not_found", "error": "任务不存在或已过期"}
 
         result = {
             "status": task.status,
-            "task_id": task.task_id,
             "platform": task.platform,
             "remaining_seconds": max(0, int(task.expires_at - time.time())),
         }
@@ -355,51 +208,161 @@ class QRLoginService:
         if task.status == "success":
             result["cookies"] = task.cookies
             result["platform_username"] = task.platform_username
-            await self._cleanup_task_resources(task)
+            self._tasks.pop(task_id, None)
         elif task.status in ("failed", "expired"):
             result["error_message"] = task.error_message
-            await self._cleanup_task_resources(task)
+            self._tasks.pop(task_id, None)
 
         return result
 
     async def cancel_login(self, task_id: str) -> dict:
-        """取消登录任务"""
-        task = self._tasks.get(task_id)
-        if not task:
-            return {"success": False, "error": "任务不存在"}
-        await self._cancel_task(task_id)
+        task = self._tasks.pop(task_id, None)
+        if task:
+            task.status = "cancelled"
+            task._stop_event = True  # type: ignore
         return {"success": True, "message": "已取消"}
 
-    # ── 后台轮询（在 Playwright 线程的事件循环中执行）──
+    # ── Sync Playwright 实现（在线程池中运行） ──
 
-    async def _poll_login_status(self, task: QRLoginTask):
-        """后台轮询检测登录状态，运行在 pw 线程"""
+    def _sync_start_login(self, task: QRLoginTask, platform: str) -> dict:
+        """在独立线程中用 sync_playwright 启动浏览器并截取二维码"""
+        # 添加停止事件供 cancel 使用
+        task._stop_event = False  # type: ignore
+        task._browser = None  # type: ignore
+        task._context = None  # type: ignore
+        task._page = None  # type: ignore
+
+        try:
+            pw = sync_playwright().start()
+
+            config = PLATFORM_CONFIG[platform]
+            login_url = config["login_url"]() if callable(config["login_url"]) else config["login_url"]
+
+            logger.info(f"[QR Login] Launching browser (headless={HEADLESS}) for {platform}")
+
+            # 尝试使用系统 Chrome，失败则回退到 Chromium
+            browser = None
+            try:
+                browser = pw.chromium.launch(
+                    headless=HEADLESS,
+                    channel="chrome",
+                    args=[
+                        "--disable-blink-features=AutomationControlled",
+                        "--disable-infobars",
+                        "--no-first-run",
+                        "--no-default-browser-check",
+                        "--disable-extensions",
+                        "--no-sandbox",
+                        "--disable-setuid-sandbox",
+                        "--disable-dev-shm-usage",
+                        "--disable-gpu",
+                        "--lang=zh-CN",
+                    ],
+                )
+                logger.info("[QR Login] Using system Chrome")
+            except Exception as e:
+                logger.warning(f"[QR Login] Chrome channel failed ({e}), falling back to Chromium")
+                browser = pw.chromium.launch(
+                    headless=HEADLESS,
+                    args=[
+                        "--disable-blink-features=AutomationControlled",
+                        "--disable-infobars",
+                        "--no-first-run",
+                        "--no-default-browser-check",
+                        "--disable-extensions",
+                        "--no-sandbox",
+                        "--disable-setuid-sandbox",
+                        "--disable-dev-shm-usage",
+                        "--disable-gpu",
+                        "--lang=zh-CN",
+                    ],
+                )
+
+            context = browser.new_context(
+                viewport=config["viewport"],
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/131.0.0.0 Safari/537.36"
+                ),
+                locale="zh-CN",
+                timezone_id="Asia/Shanghai",
+                extra_http_headers={
+                    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+                },
+            )
+            context.add_init_script(STEALTH_JS)
+
+            page = context.new_page()
+
+            # 保存引用供 cancel 清理
+            task._browser = browser  # type: ignore
+            task._context = context  # type: ignore
+            task._page = page  # type: ignore
+            task._pw = pw  # type: ignore
+
+            logger.info(f"[QR Login] Opening {platform}: {login_url[:80]}...")
+            page.goto(login_url, wait_until="domcontentloaded", timeout=30000)
+
+            # 等待页面加载
+            page.wait_for_timeout(3000)
+
+            # 截取二维码
+            qr_image = self._sync_capture_qr_code(page, config["qr_selector"])
+            if not qr_image:
+                logger.info("[QR Login] No QR element found, capturing full page")
+                qr_image = self._sync_capture_login_area(page)
+
+            task.qr_image_base64 = qr_image
+            task.status = "waiting_scan"
+
+            logger.info(f"[QR Login] Task {task.task_id} waiting for scan, qr_image len={len(qr_image)}")
+
+            # 注意：不在这里调 _sync_poll_login！轮询由 start_login 启动的独立线程执行
+            return {
+                "success": True,
+                "task_id": task.task_id,
+                "qr_image": task.qr_image_base64,
+                "status": task.status,
+                "expires_in": QR_LOGIN_TIMEOUT,
+            }
+
+        except Exception as e:
+            logger.error(f"[QR Login] _sync_start_login error: {e}")
+            self._sync_cleanup(task)
+            return {"success": False, "error": str(e)}
+
+    def _sync_poll_login(self, task: QRLoginTask):
+        """Sync 轮询登录状态（阻塞在线程中，配合 to_thread）"""
         config = PLATFORM_CONFIG[task.platform]
-        check_interval = 2
+        check_interval = 3
         max_checks = QR_LOGIN_TIMEOUT // check_interval
 
+        page = getattr(task, '_page', None)
+        context = getattr(task, '_context', None)
+
         for i in range(max_checks):
-            if task.status in ("success", "failed", "cancelled", "expired"):
+            # 检查取消
+            if getattr(task, '_stop_event', False):
                 return
 
             try:
-                if not task.page or task.page.is_closed():
+                if not page or page.is_closed():
                     task.status = "failed"
                     task.error_message = "浏览器页面已关闭"
                     return
 
-                current_url = task.page.url
-
+                current_url = page.url
                 logged_in = False
 
-                # 方式1：URL 跳转检测
-                if config["success_url_pattern"] in current_url:
+                # URL 跳转检测
+                if config["success_url_pattern"] in current_url and "login" not in current_url:
                     logged_in = True
 
-                # 方式2：DOM 元素检测
+                # DOM 元素检测
                 if not logged_in:
                     try:
-                        indicator = await task.page.wait_for_selector(
+                        indicator = page.wait_for_selector(
                             config["check_logged_in"], timeout=1000
                         )
                         if indicator:
@@ -409,10 +372,10 @@ class QRLoginService:
 
                 if logged_in:
                     logger.info(f"[QR Login] Task {task.task_id} login detected!")
-                    await asyncio.sleep(3)  # 等待 cookie 完整加载
+                    page.wait_for_timeout(3000)
 
                     # 导出 storage_state
-                    storage_state = await task.context.storage_state(indexed_db=True)
+                    storage_state = context.storage_state(indexed_db=True)
                     cookies_list = storage_state.get("cookies", [])
 
                     task.cookies = {
@@ -423,87 +386,77 @@ class QRLoginService:
                     task.cookies["_storage_state"] = storage_state
 
                     if task.cookies:
-                        task.platform_username = await self._extract_username(task.page)
+                        task.platform_username = self._sync_extract_username(page)
                         task.status = "success"
                         logger.info(
                             f"[QR Login] Task {task.task_id} success! "
-                            f"Got {len(task.cookies)} cookies, username: {task.platform_username}"
+                            f"Cookies: {len(task.cookies)}, user: {task.platform_username}"
                         )
                     else:
                         task.status = "failed"
                         task.error_message = "登录成功但未获取到 cookies"
                     return
 
-                # 超时检查
                 if time.time() > task.expires_at:
                     task.status = "expired"
                     task.error_message = "二维码已过期"
                     logger.info(f"[QR Login] Task {task.task_id} expired")
-                    await self._cleanup_task_resources(task)
                     return
 
             except Exception as e:
-                logger.warning(f"[QR Login] Poll error for {task.task_id}: {e}")
-                if i % 10 == 0:
+                logger.warning(f"[QR Login] Poll error: {e}")
+                if i % 10 == 0 and page and not page.is_closed():
                     try:
-                        if task.page and not task.page.is_closed():
-                            await task.page.reload(timeout=15000)
+                        page.reload(timeout=15000)
                     except Exception:
                         task.status = "failed"
                         task.error_message = "浏览器连接异常"
                         return
 
-            await asyncio.sleep(check_interval)
+            time.sleep(check_interval)
 
         task.status = "expired"
-        task.error_message = "二维码已过期，请重新获取"
-        await self._cleanup_task_resources(task)
+        task.error_message = "二维码已过期"
 
-    # ── Playwright 辅助方法（也在 pw 线程上下文中调用）──
-
-    async def _capture_qr_code(self, page: Page, selectors: str) -> str:
-        """尝试多种选择器截取二维码图片"""
-        selector_list = [s.strip() for s in selectors.split(",")]
-
-        for selector in selector_list:
+    def _sync_capture_qr_code(self, page: Page, selectors: str) -> str:
+        """尝试多种选择器截取二维码"""
+        for selector in [s.strip() for s in selectors.split(",")]:
             try:
-                element = await page.wait_for_selector(selector, timeout=5000)
+                element = page.wait_for_selector(selector, timeout=5000)
                 if element:
-                    tag_name = await element.evaluate("el => el.tagName.toLowerCase()")
+                    tag_name = element.evaluate("el => el.tagName.toLowerCase()")
 
                     if tag_name == "img":
-                        src = await element.get_attribute("src")
+                        src = element.get_attribute("src")
                         if src:
                             if src.startswith("data:image"):
                                 return src.split(",", 1)[1] if "," in src else src
-                            screenshot = await element.screenshot(type="png")
+                            screenshot = element.screenshot(type="png")
                             return base64.b64encode(screenshot).decode()
 
                     if tag_name == "canvas":
-                        data_url = await element.evaluate("el => el.toDataURL('image/png')")
+                        data_url = element.evaluate("el => el.toDataURL('image/png')")
                         if data_url and "," in data_url:
                             return data_url.split(",", 1)[1]
 
-                    screenshot = await element.screenshot(type="png")
+                    screenshot = element.screenshot(type="png")
                     return base64.b64encode(screenshot).decode()
-
             except Exception:
                 continue
-
         return ""
 
-    async def _capture_login_area(self, page: Page) -> str:
+    def _sync_capture_login_area(self, page: Page) -> str:
         """兜底：截取整个登录页面"""
         try:
-            await page.wait_for_load_state("domcontentloaded")
-            await asyncio.sleep(1)
-            screenshot = await page.screenshot(type="png", full_page=False)
+            page.wait_for_load_state("domcontentloaded")
+            page.wait_for_timeout(1000)
+            screenshot = page.screenshot(type="png", full_page=False)
             return base64.b64encode(screenshot).decode()
         except Exception as e:
-            logger.error(f"Failed to capture login area: {e}")
+            logger.error(f"[QR Login] capture_login_area error: {e}")
             return ""
 
-    async def _extract_username(self, page: Page) -> str:
+    def _sync_extract_username(self, page: Page) -> str:
         """尝试从页面提取用户名"""
         selectors = [
             ".user-name", ".merchant-name", ".nickname",
@@ -511,37 +464,34 @@ class QRLoginService:
         ]
         for sel in selectors:
             try:
-                element = await page.wait_for_selector(sel, timeout=2000)
+                element = page.wait_for_selector(sel, timeout=2000)
                 if element:
-                    text = (await element.text_content() or "").strip()
+                    text = (element.text_content() or "").strip()
                     if text:
                         return text[:50]
             except Exception:
                 continue
         return ""
 
-    # ── 资源清理 ──
-
-    async def _cancel_task(self, task_id: str):
-        """取消并清理任务"""
-        task = self._tasks.pop(task_id, None)
-        if task:
-            task.status = "cancelled"
-            await self._cleanup_task_resources(task)
-
-    async def _cleanup_task_resources(self, task: QRLoginTask):
-        """清理浏览器资源（通过 bridge 在 pw 线程执行）"""
+    def _sync_cleanup(self, task: QRLoginTask):
+        """清理浏览器资源"""
         try:
-            if task.context:
-                await _PlaywrightBridge.call(task.context.close())
-            if task.browser:
-                await _PlaywrightBridge.call(task.browser.close())
-            if task.playwright_instance:
-                await _PlaywrightBridge.call(task.playwright_instance.stop())
+            page = getattr(task, '_page', None)
+            context = getattr(task, '_context', None)
+            browser = getattr(task, '_browser', None)
+            pw = getattr(task, '_pw', None)
+            if page and not page.is_closed():
+                page.close()
+            if context:
+                context.close()
+            if browser:
+                browser.close()
+            if pw:
+                pw.stop()
         except Exception as e:
-            logger.warning(f"Error cleaning up task {task.task_id}: {e}")
+            logger.warning(f"[QR Login] cleanup error: {e}")
 
-        task.context = None
-        task.browser = None
-        task.playwright_instance = None
-        task.page = None
+        task._page = None  # type: ignore
+        task._context = None  # type: ignore
+        task._browser = None  # type: ignore
+        task._pw = None  # type: ignore
