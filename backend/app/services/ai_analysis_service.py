@@ -268,10 +268,10 @@ async def get_sentiment_summary(db: AsyncSession, user: User) -> dict:
         total = row.total
         score = (positive / total) * 100 if total > 0 else 50.0
     else:
-        positive = 245
-        negative = 45
-        total = 290
-        score = 84.5
+        positive = 0
+        negative = 0
+        total = 0
+        score = 0
 
     positive_pct = round((positive / total) * 100) if total > 0 else 0
     negative_pct = round((negative / total) * 100) if total > 0 else 0
@@ -309,7 +309,7 @@ async def get_risk_levels(db: AsyncSession, user: User) -> dict:
             risk_counts[row.risk_level] = row.count
 
     if sum(risk_counts.values()) == 0:
-        risk_counts = {"high": 12, "medium": 28, "low": 156}
+        pass  # 无数据时返回全零
 
     return {
         "high_count": risk_counts["high"],
@@ -348,26 +348,17 @@ async def get_reply_history(
 
     history = []
     for audit in audits:
+        review = audit.review
         history.append({
-            "id": audit.id,
-            "review_id": audit.review_id,
-            "content": audit.ai_reply_content or "",
-            "ai_generated": True,
+            "id": str(audit.id),
+            "review_id": str(audit.review_id),
+            "user_name": review.user_name if review else "",
+            "rating": review.rating if review else 0,
+            "content": review.content if review else "",
+            "reply": audit.ai_reply_content or "",
             "status": audit.status,
-            "created_at": audit.created_at,
+            "created_at": audit.created_at.isoformat() if audit.created_at else "",
         })
-
-    if not history:
-        for i in range(min(page_size, 5)):
-            history.append({
-                "id": UUID(int=i),
-                "review_id": UUID(int=i + 1000),
-                "content": "感谢您的评价，我们会持续改进服务质量。",
-                "ai_generated": True,
-                "status": random.choice(["approved", "sent", "rejected"]),
-                "created_at": datetime.now() - timedelta(hours=i * 2),
-            })
-        total = 25
 
     return history, total
 
@@ -386,18 +377,18 @@ async def get_reply_stats(db: AsyncSession, user: User) -> dict:
     result = await db.execute(stmt)
     row = result.one_or_none()
 
-    if row and row.total > 0:
+    if row and row.total and row.total > 0:
         total = row.total
         sent = row.sent or 0
         success_rate = (sent / total) * 100 if total > 0 else 0
     else:
-        total = 156
-        success_rate = 94.2
+        total = 0
+        success_rate = 0
 
     return {
         "total": total,
-        "ai_generated": int(total * 0.85),
-        "manual": int(total * 0.15),
+        "ai_generated": 0,
+        "manual": 0,
         "success_rate": round(success_rate, 1),
     }
 

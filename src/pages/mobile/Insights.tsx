@@ -4,9 +4,7 @@ import {
   TrendingUp,
   Target,
   BarChart3,
-  PieChart,
   Users,
-  MapPin,
   ChevronRight,
   ArrowUpRight,
   Lightbulb,
@@ -26,14 +24,23 @@ import { Skeleton } from '../../components/ui/skeleton';
 import { MobileLayout, useStore } from '../../components/MobileLayout';
 import { cn } from '../../lib/utils';
 import { useToast } from '../../hooks/use-toast';
-import { fetchTopDish, fetchThreeGoodThreeBad } from '../../api/insights';
-import type { Dish } from '../../api/insights';
+import {
+  fetchTopDish,
+  fetchThreeGoodThreeBad,
+  fetchDishElimination,
+  fetchServiceCases,
+  fetchCompetitorOpportunities,
+} from '../../api/insights';
+import type { Dish, DishElimination, ServiceCase, CompetitorOpportunity } from '../../api/insights';
 import { useSubscription, SubscriptionPrompt } from '../../hooks/use-subscription-check';
 
 export const Insights: React.FC = () => {
   const [reportType, setReportType] = useState<'week' | 'month'>('week');
   const [topDish, setTopDish] = useState<Dish[]>([]);
   const [threeGoodThreeBad, setThreeGoodThreeBad] = useState<{goods: string[], bads: string[]}>({goods: [], bads: []});
+  const [dishElimination, setDishElimination] = useState<DishElimination[]>([]);
+  const [serviceCases, setServiceCases] = useState<ServiceCase[]>([]);
+  const [competitorOpportunities, setCompetitorOpportunities] = useState<CompetitorOpportunity[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -58,12 +65,18 @@ export const Insights: React.FC = () => {
       setLoading(true);
       setError(null);
       const period = reportType === 'week' ? '7d' : '30d';
-      const [dishData, threeData] = await Promise.all([
+      const [dishData, threeData, eliminationData, casesData, opportunityData] = await Promise.all([
         fetchTopDish(period, selectedStore.id),
         fetchThreeGoodThreeBad(period, selectedStore.id),
+        fetchDishElimination(selectedStore.id),
+        fetchServiceCases(undefined, selectedStore.id),
+        fetchCompetitorOpportunities(selectedStore.id),
       ]);
       setTopDish(dishData);
       setThreeGoodThreeBad(threeData);
+      setDishElimination(eliminationData);
+      setServiceCases(casesData);
+      setCompetitorOpportunities(opportunityData);
     } catch (err) {
       setError(err instanceof Error ? err.message : '获取数据失败');
     } finally {
@@ -86,10 +99,6 @@ export const Insights: React.FC = () => {
 
   const handleEliminationClick = () => {
     navigate('/mobile/dish-elimination');
-  };
-
-  const handleExportReport = () => {
-    success('导出报告', '正在导出完整洞察报告为 PDF...');
   };
 
   // ===== 条件渲染 =====
@@ -161,7 +170,10 @@ export const Insights: React.FC = () => {
     );
   }
 
-  // 6. 正常内容
+  // 统计服务案例数量
+  const praiseCount = serviceCases.filter(c => c.type === 'praise').length;
+  const complaintCount = serviceCases.filter(c => c.type === 'complaint').length;
+
   return (
     <MobileLayout title="经营洞察">
       <div className="space-y-6 pb-20 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -201,29 +213,43 @@ export const Insights: React.FC = () => {
             </div>
           </h3>
           <Card className="p-5 border-none shadow-sm bg-white space-y-4">
-            <div className="space-y-3">
-              <p className="text-[10px] font-bold text-emerald-600 flex items-center gap-1"><ThumbsUp className="w-3 h-3" /> 表现优异 (三好)</p>
-              <div className="flex flex-wrap gap-2">
-                {threeGoodThreeBad.goods.map((item, i) => (
-                  <Badge key={i} className="bg-emerald-50 text-emerald-600 border-none font-medium text-[10px]">{item}</Badge>
-                ))}
+            {threeGoodThreeBad.goods.length === 0 && threeGoodThreeBad.bads.length === 0 ? (
+              <div className="text-center py-6">
+                <BarChart3 className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                <p className="text-sm text-slate-500">暂无分析数据</p>
+                <p className="text-xs text-slate-400 mt-1">采集评论后将自动生成月报</p>
               </div>
-            </div>
-            <div className="space-y-3 pt-4 border-t border-slate-50">
-              <p className="text-[10px] font-bold text-rose-500 flex items-center gap-1"><ThumbsDown className="w-3 h-3" /> 急需改进 (三差)</p>
-              <div className="flex flex-wrap gap-2">
-                {threeGoodThreeBad.bads.map((item, i) => (
-                  <Badge key={i} className="bg-rose-50 text-rose-600 border-none font-medium text-[10px]">{item}</Badge>
-                ))}
-              </div>
-            </div>
-            <Button
-              variant="ghost"
-              className="w-full h-8 text-orange-600 text-[10px] font-bold bg-orange-50/50 rounded-lg"
-              onClick={handleViewDetail}
-            >
-              查看溯源详情（从报告下钻到评价）
-            </Button>
+            ) : (
+              <>
+                <div className="space-y-3">
+                  <p className="text-[10px] font-bold text-emerald-600 flex items-center gap-1"><ThumbsUp className="w-3 h-3" /> 表现优异 (三好)</p>
+                  <div className="flex flex-wrap gap-2">
+                    {threeGoodThreeBad.goods.length > 0 ? threeGoodThreeBad.goods.map((item, i) => (
+                      <Badge key={i} className="bg-emerald-50 text-emerald-600 border-none font-medium text-[10px]">{item}</Badge>
+                    )) : (
+                      <span className="text-xs text-slate-400">暂无好评亮点</span>
+                    )}
+                  </div>
+                </div>
+                <div className="space-y-3 pt-4 border-t border-slate-50">
+                  <p className="text-[10px] font-bold text-rose-500 flex items-center gap-1"><ThumbsDown className="w-3 h-3" /> 急需改进 (三差)</p>
+                  <div className="flex flex-wrap gap-2">
+                    {threeGoodThreeBad.bads.length > 0 ? threeGoodThreeBad.bads.map((item, i) => (
+                      <Badge key={i} className="bg-rose-50 text-rose-600 border-none font-medium text-[10px]">{item}</Badge>
+                    )) : (
+                      <span className="text-xs text-slate-400">暂无差评要点</span>
+                    )}
+                  </div>
+                </div>
+                <Button
+                  variant="ghost"
+                  className="w-full h-8 text-orange-600 text-[10px] font-bold bg-orange-50/50 rounded-lg"
+                  onClick={handleViewDetail}
+                >
+                  查看溯源详情（从报告下钻到评价）
+                </Button>
+              </>
+            )}
           </Card>
         </div>
 
@@ -232,55 +258,69 @@ export const Insights: React.FC = () => {
           <h3 className="font-bold text-slate-800 text-sm px-1 flex items-center gap-2">
             <Utensils className="w-4 h-4 text-orange-500" /> 菜品口碑排行榜
           </h3>
-          <div className="space-y-2">
-            {topDish.map((dish, i) => (
-              <Card
-                key={i}
-                className="p-4 border-none shadow-sm flex items-center justify-between bg-white cursor-pointer hover:shadow-md transition-all"
-                onClick={() => handleDishClick(dish.name)}
-              >
-                <div className="flex items-center gap-3">
-                  <div className={cn(
-                    "w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs",
-                    dish.type === 'recommended' ? "bg-emerald-50 text-emerald-600" :
-                    dish.type === 'potential' ? "bg-orange-50 text-orange-600" : "bg-rose-50 text-rose-600"
-                  )}>
-                    {dish.type === 'recommended' ? '荐' : dish.type === 'potential' ? '潜' : '问'}
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-bold text-slate-800">{dish.name}</h4>
-                    <div className="flex items-center gap-2 text-[10px] text-slate-400">
-                      <span>好评 {dish.positive}</span>
-                      <span className="w-1 h-1 bg-slate-200 rounded-full"></span>
-                      <span>差评 {dish.negative}</span>
+          {topDish.length === 0 ? (
+            <Card className="p-8 text-center">
+              <Utensils className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+              <p className="text-sm text-slate-500">暂无菜品数据</p>
+              <p className="text-xs text-slate-400 mt-1">采集评论后将自动分析菜品口碑</p>
+            </Card>
+          ) : (
+            <div className="space-y-2">
+              {topDish.map((dish, i) => (
+                <Card
+                  key={i}
+                  className="p-4 border-none shadow-sm flex items-center justify-between bg-white cursor-pointer hover:shadow-md transition-all"
+                  onClick={() => handleDishClick(dish.name)}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={cn(
+                      "w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs",
+                      dish.type === 'recommended' ? "bg-emerald-50 text-emerald-600" :
+                      dish.type === 'potential' ? "bg-orange-50 text-orange-600" : "bg-rose-50 text-rose-600"
+                    )}>
+                      {dish.type === 'recommended' ? '荐' : dish.type === 'potential' ? '潜' : '问'}
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-800">{dish.name}</h4>
+                      <div className="flex items-center gap-2 text-[10px] text-slate-400">
+                        <span>好评 {dish.positive}</span>
+                        <span className="w-1 h-1 bg-slate-200 rounded-full"></span>
+                        <span>差评 {dish.negative}</span>
+                      </div>
                     </div>
                   </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-sm font-black text-slate-900">{dish.score}</div>
-                  <div className="text-[8px] text-slate-400">星级评分</div>
-                </div>
-              </Card>
-            ))}
-          </div>
+                  <div className="text-right">
+                    <div className="text-sm font-black text-slate-900">{dish.score}</div>
+                    <div className="text-[8px] text-slate-400">星级评分</div>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Last-place Elimination Advice */}
-        <Card
-          className="p-5 border-none shadow-sm bg-slate-900 text-white relative overflow-hidden cursor-pointer hover:shadow-lg transition-all"
-          onClick={handleEliminationClick}
-        >
-          <Trash2 className="absolute -right-2 -bottom-2 w-20 h-20 text-white/5" />
-          <div className="relative z-10 space-y-4">
-            <div className="flex items-center gap-2">
-              <Zap className="w-4 h-4 text-amber-400" />
-              <h4 className="text-sm font-bold">"末位淘汰"建议</h4>
-            </div>
-            <p className="text-[11px] text-slate-300 leading-relaxed">
-              基于近 30 天评价，菜品 <span className="text-amber-400 font-bold underline">"麻辣烫"</span> 差评率持续高于 20%，且近期销量表现一般。
-            </p>
-            <div className="bg-white/5 p-3 rounded-xl border border-white/10 space-y-2">
-              <p className="text-[10px] text-slate-400">主要问题：口感过咸、食材种类单一</p>
+        {dishElimination.length > 0 ? (
+          <Card
+            className="p-5 border-none shadow-sm bg-slate-900 text-white relative overflow-hidden cursor-pointer hover:shadow-lg transition-all"
+            onClick={handleEliminationClick}
+          >
+            <Trash2 className="absolute -right-2 -bottom-2 w-20 h-20 text-white/5" />
+            <div className="relative z-10 space-y-4">
+              <div className="flex items-center gap-2">
+                <Zap className="w-4 h-4 text-amber-400" />
+                <h4 className="text-sm font-bold">"末位淘汰"建议</h4>
+              </div>
+              {dishElimination.slice(0, 2).map((item, i) => (
+                <div key={i} className="space-y-2">
+                  <p className="text-[11px] text-slate-300 leading-relaxed">
+                    基于近 30 天评价，菜品 <span className="text-amber-400 font-bold underline">"{item.name}"</span> {item.reason}
+                  </p>
+                  <div className="bg-white/5 p-3 rounded-xl border border-white/10 space-y-2">
+                    <p className="text-[10px] text-slate-400">建议：{item.suggestion}</p>
+                  </div>
+                </div>
+              ))}
               <Button
                 className="w-full bg-amber-500 hover:bg-amber-600 text-white h-8 text-[10px] font-bold border-none"
                 onClick={(e) => {
@@ -291,8 +331,19 @@ export const Insights: React.FC = () => {
                 查看详细改进方案
               </Button>
             </div>
-          </div>
-        </Card>
+          </Card>
+        ) : (
+          <Card className="p-5 border-none shadow-sm bg-slate-900 text-white relative overflow-hidden">
+            <Trash2 className="absolute -right-2 -bottom-2 w-20 h-20 text-white/5" />
+            <div className="relative z-10 flex items-center gap-3">
+              <Zap className="w-4 h-4 text-amber-400" />
+              <div>
+                <h4 className="text-sm font-bold">"末位淘汰"建议</h4>
+                <p className="text-[11px] text-slate-400 mt-1">暂无需要改进的菜品，整体表现良好</p>
+              </div>
+            </div>
+          </Card>
+        )}
 
         {/* Service Standard & Case Library */}
         <div className="space-y-3">
@@ -304,12 +355,15 @@ export const Insights: React.FC = () => {
               </div>
               <div>
                 <h4 className="text-[11px] font-bold text-slate-800">金牌服务案例库</h4>
-                <p className="text-[9px] text-slate-400 mt-1">已沉淀 42 条优秀案例</p>
+                <p className="text-[9px] text-slate-400 mt-1">
+                  {praiseCount > 0 ? `已沉淀 ${praiseCount} 条优秀案例` : '暂无优秀案例'}
+                </p>
               </div>
               <Button
                 variant="outline"
                 className="w-full h-8 text-[9px] font-bold border-slate-100"
                 onClick={() => success('查看案例', '正在加载金牌服务案例库...')}
+                disabled={praiseCount === 0}
               >
                 查看
               </Button>
@@ -320,12 +374,15 @@ export const Insights: React.FC = () => {
               </div>
               <div>
                 <h4 className="text-[11px] font-bold text-slate-800">反面教材修正工单</h4>
-                <p className="text-[9px] text-slate-400 mt-1">3 条工单正在整改中</p>
+                <p className="text-[9px] text-slate-400 mt-1">
+                  {complaintCount > 0 ? `${complaintCount} 条工单正在整改中` : '暂无待处理工单'}
+                </p>
               </div>
               <Button
                 variant="outline"
                 className="w-full h-8 text-[9px] font-bold border-slate-100"
                 onClick={() => success('处理工单', '正在加载反面教材修正工单...')}
+                disabled={complaintCount === 0}
               >
                 去处理
               </Button>
@@ -336,24 +393,29 @@ export const Insights: React.FC = () => {
         {/* 同行机会洞察 */}
         <div className="space-y-3">
           <h3 className="font-bold text-slate-800 text-sm px-1">同行机会洞察</h3>
-          <Card className="p-5 border-none shadow-sm bg-white space-y-3">
-            <div className="flex items-center gap-2">
-              <Lightbulb className="w-4 h-4 text-orange-500" />
-              <p className="text-xs font-bold text-slate-700">商圈竞品对比</p>
-            </div>
-            <p className="text-[11px] text-slate-500 leading-relaxed">
-              您的竞品 A 近期"上菜慢"的差评增多，建议您本店主推"30分钟未上齐免单"服务。
-            </p>
-            <div className="pt-2">
-               <div className="flex justify-between text-[10px] mb-1">
-                 <span className="text-slate-400">本店好评率</span>
-                 <span className="font-bold text-orange-600">94.2%</span>
-               </div>
-               <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                 <div className="bg-orange-500 h-full w-[94%]"></div>
-               </div>
-            </div>
-          </Card>
+          {competitorOpportunities.length === 0 ? (
+            <Card className="p-5 border-none shadow-sm bg-white text-center">
+              <Lightbulb className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+              <p className="text-sm text-slate-500">暂无竞品分析数据</p>
+              <p className="text-xs text-slate-400 mt-1">采集更多评论后将自动生成机会洞察</p>
+            </Card>
+          ) : (
+            competitorOpportunities.map((opp, i) => (
+              <Card key={i} className="p-5 border-none shadow-sm bg-white space-y-3">
+                <div className="flex items-center gap-2">
+                  <Lightbulb className="w-4 h-4 text-orange-500" />
+                  <p className="text-xs font-bold text-slate-700">{opp.title}</p>
+                </div>
+                <p className="text-[11px] text-slate-500 leading-relaxed">{opp.description}</p>
+                <Button
+                  variant="outline"
+                  className="w-full h-8 text-[10px] font-bold border-orange-200 text-orange-600 hover:bg-orange-50"
+                >
+                  {opp.action}
+                </Button>
+              </Card>
+            ))
+          )}
         </div>
       </div>
     </MobileLayout>

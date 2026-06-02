@@ -198,84 +198,80 @@ export const AIAnalysis: React.FC = () => {
             </Card>
 
             {/* Sentiment Summary */}
-            {sentimentSummary && (
-              <Card className="p-6 border-none shadow-md bg-white overflow-hidden relative">
-                <div className="flex justify-between items-start mb-6">
-                  <div>
-                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">今日情感指数</h3>
-                    <div className="flex items-baseline gap-2 mt-1">
-                      <span className="text-4xl font-black text-slate-900">{sentimentSummary.score}</span>
-                      <span className="text-emerald-500 text-sm font-bold">{sentimentSummary.trend}</span>
-                    </div>
-                  </div>
-                  <div className="flex flex-col items-end">
-                    <div className="w-10 h-10 bg-orange-50 rounded-2xl flex items-center justify-center text-orange-600 mb-2">
-                      <Brain className="w-5 h-5" />
-                    </div>
-                    <div className="flex items-center gap-1 text-[10px] text-slate-400">
-                      <CheckCircle2 className="w-3 h-3 text-emerald-500" /> AI识别率: <span className="text-slate-900 font-bold">{sentimentSummary.aiAccuracy}%</span>
-                    </div>
+            <Card className="p-6 border-none shadow-md bg-white overflow-hidden relative">
+              <div className="flex justify-between items-start mb-6">
+                <div>
+                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">情感指数</h3>
+                  <div className="flex items-baseline gap-2 mt-1">
+                    <span className="text-4xl font-black text-slate-900">{sentimentSummary?.score || 0}</span>
+                    <span className="text-emerald-500 text-sm font-bold">{sentimentSummary?.trend || '-'}</span>
                   </div>
                 </div>
-
-                <div className="space-y-4">
-                  <div className="flex items-center gap-4">
-                    <div className="flex-1 h-3 bg-slate-100 rounded-full overflow-hidden flex">
-                      <div className="bg-emerald-500 h-full" style={{ width: `${sentimentSummary.positive}%` }}></div>
-                      <div className="bg-rose-500 h-full" style={{ width: `${sentimentSummary.negative}%` }}></div>
-                    </div>
+                <div className="flex flex-col items-end">
+                  <div className="w-10 h-10 bg-orange-50 rounded-2xl flex items-center justify-center text-orange-600 mb-2">
+                    <Brain className="w-5 h-5" />
                   </div>
-                  <div className="flex justify-between text-[10px] font-bold">
-                    <div className="flex items-center gap-1.5 text-emerald-600 uppercase">
-                      <ThumbsUp className="w-3 h-3" /> 正面 {sentimentSummary.positive}%
-                    </div>
-                    <div className="flex items-center gap-1.5 text-rose-500 uppercase">
-                      <ThumbsDown className="w-3 h-3" /> 负面 {sentimentSummary.negative}%
-                    </div>
-                  </div>
-                </div>
-              </Card>
-            )}
-
-            {/* Risk Classification */}
-            {riskLevels && (
-              <div className="space-y-3">
-                <h3 className="font-bold text-slate-800 text-sm px-1 flex items-center gap-2">
-                  <ShieldAlert className="w-4 h-4 text-orange-500" /> 风险分级概览
-                </h3>
-                <div className="grid grid-cols-3 gap-2">
-                  <div className="p-3 bg-rose-50 border border-rose-100 rounded-2xl text-center">
-                    <p className="text-[10px] font-bold text-rose-400 uppercase mb-1">高风险</p>
-                    <p className="text-xl font-black text-rose-600">{riskLevels.high.count}</p>
-                    <p className="text-[8px] text-rose-400">{riskLevels.high.desc}</p>
-                  </div>
-                  <div className="p-3 bg-amber-50 border border-amber-100 rounded-2xl text-center">
-                    <p className="text-[10px] font-bold text-amber-500 uppercase mb-1">中风险</p>
-                    <p className="text-xl font-black text-amber-600">{riskLevels.medium.count}</p>
-                    <p className="text-[8px] text-amber-400">{riskLevels.medium.desc}</p>
-                  </div>
-                  <div className="p-3 bg-yellow-50 border border-yellow-100 rounded-2xl text-center">
-                    <p className="text-[10px] font-bold text-yellow-600 uppercase mb-1">低风险</p>
-                    <p className="text-xl font-black text-yellow-600">{riskLevels.low.count}</p>
-                    <p className="text-[8px] text-yellow-500">{riskLevels.low.desc}</p>
+                  <div className="flex items-center gap-1 text-[10px] text-slate-400">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-500" /> AI识别率: <span className="text-slate-900 font-bold">{sentimentSummary?.aiAccuracy || 0}%</span>
                   </div>
                 </div>
               </div>
-            )}
+
+              <div className="space-y-4">
+                <div className="flex items-center gap-4">
+                  <div className="flex-1 h-3 bg-slate-100 rounded-full overflow-hidden flex">
+                    <div className="bg-emerald-500 h-full" style={{ width: `${sentimentSummary?.positive || 0}%` }}></div>
+                    <div className="bg-rose-500 h-full" style={{ width: `${sentimentSummary?.negative || 0}%` }}></div>
+                  </div>
+                </div>
+                <div className="flex justify-between text-[10px] font-bold">
+                  <div className="flex items-center gap-1.5 text-emerald-600 uppercase">
+                    <ThumbsUp className="w-3 h-3" /> 正面 {sentimentSummary?.positive || 0}%
+                  </div>
+                  <div className="flex items-center gap-1.5 text-rose-500 uppercase">
+                    <ThumbsDown className="w-3 h-3" /> 负面 {sentimentSummary?.negative || 0}%
+                  </div>
+                </div>
+              </div>
+            </Card>
+
+            {/* Risk Classification */}
+            <div className="space-y-3">
+              <h3 className="font-bold text-slate-800 text-sm px-1 flex items-center gap-2">
+                <ShieldAlert className="w-4 h-4 text-orange-500" /> 风险分级概览
+              </h3>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="p-3 bg-rose-50 border border-rose-100 rounded-2xl text-center">
+                  <p className="text-[10px] font-bold text-rose-400 uppercase mb-1">高风险</p>
+                  <p className="text-xl font-black text-rose-600">{riskLevels?.high?.count || 0}</p>
+                  <p className="text-[8px] text-rose-400">{riskLevels?.high?.desc || '需立即处理'}</p>
+                </div>
+                <div className="p-3 bg-amber-50 border border-amber-100 rounded-2xl text-center">
+                  <p className="text-[10px] font-bold text-amber-500 uppercase mb-1">中风险</p>
+                  <p className="text-xl font-black text-amber-600">{riskLevels?.medium?.count || 0}</p>
+                  <p className="text-[8px] text-amber-400">{riskLevels?.medium?.desc || '建议24小时内回复'}</p>
+                </div>
+                <div className="p-3 bg-yellow-50 border border-yellow-100 rounded-2xl text-center">
+                  <p className="text-[10px] font-bold text-yellow-600 uppercase mb-1">低风险</p>
+                  <p className="text-xl font-black text-yellow-600">{riskLevels?.low?.count || 0}</p>
+                  <p className="text-[8px] text-yellow-500">{riskLevels?.low?.desc || '常规回复即可'}</p>
+                </div>
+              </div>
+            </div>
 
             {/* Tag Clustering */}
-            {tagClustering.length > 0 && (
-              <div className="space-y-3">
-                <h3 className="font-bold text-slate-800 text-sm px-1 flex justify-between items-center">
-                  差评标签聚类 (一级/二级)
-                  <span className="text-[10px] text-slate-400 font-normal">基于NLP自动聚合</span>
-                </h3>
+            <div className="space-y-3">
+              <h3 className="font-bold text-slate-800 text-sm px-1 flex justify-between items-center">
+                差评标签聚类 (一级/二级)
+                <span className="text-[10px] text-slate-400 font-normal">基于NLP自动聚合</span>
+              </h3>
+              {tagClustering.length > 0 ? (
                 <Card className="p-4 border-none shadow-sm space-y-4">
                   <div className="flex items-center gap-6">
                     <div className="relative w-24 h-24 rounded-full border-[12px] border-slate-100 flex items-center justify-center">
                       <div className="absolute inset-0 rounded-full border-[12px] border-orange-500" style={{ clipPath: 'polygon(50% 50%, 50% 0%, 100% 0%, 100% 100%, 50% 100%)' }}></div>
                       <div className="text-center">
-                        <p className="text-xs font-black text-slate-900">{tagClustering.reduce((sum, t) => sum + t.percentage, 0)}</p>
+                        <p className="text-xs font-black text-slate-900">{tagClustering.reduce((sum, t) => sum + t.percentage, 0).toFixed(1)}</p>
                         <p className="text-[8px] text-slate-400">总差评</p>
                       </div>
                     </div>
@@ -297,107 +293,123 @@ export const AIAnalysis: React.FC = () => {
                     </p>
                   </div>
                 </Card>
-              </div>
-            )}
+              ) : (
+                <Card className="p-8 text-center">
+                  <BarChart3 className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                  <p className="text-sm text-slate-500">暂无差评标签数据</p>
+                  <p className="text-xs text-slate-400 mt-1">采集差评后将自动分析</p>
+                </Card>
+              )}
+            </div>
 
             {/* AI Insights */}
-            {topics.length > 0 && (
-              <Card className="p-5 border-slate-100 shadow-sm bg-white">
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center">
-                    <Lightbulb className="w-4 h-4 text-amber-500" />
-                  </div>
-                  <h3 className="font-bold text-sm text-slate-700 tracking-wide">AI 诊断简报</h3>
+            <Card className="p-5 border-slate-100 shadow-sm bg-white">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center">
+                  <Lightbulb className="w-4 h-4 text-amber-500" />
                 </div>
-                {(() => {
-                  const negativeTopics = topics.filter(t => t.sentiment === 'negative');
-                  const topNegative = negativeTopics.length > 0 ? negativeTopics.reduce((a, b) => (a.count >= b.count) ? a : b) : null;
-                  if (topNegative) {
+                <h3 className="font-bold text-sm text-slate-700 tracking-wide">AI 诊断简报</h3>
+              </div>
+              {topics.length > 0 ? (
+                <>
+                  {(() => {
+                    const negativeTopics = topics.filter(t => t.sentiment === 'negative');
+                    const topNegative = negativeTopics.length > 0 ? negativeTopics.reduce((a, b) => (a.count >= b.count) ? a : b) : null;
+                    if (topNegative) {
+                      return (
+                        <p className="text-xs text-slate-500 leading-relaxed mb-4">
+                          本周"<span className="font-bold text-orange-600">{topNegative.label}</span>"相关的负面评价共 <span className="font-bold text-orange-600">{topNegative.count}条</span>，
+                          趋势{topNegative.trend === 'up' ? '正在上升' : topNegative.trend === 'down' ? '有所下降' : '保持稳定'}。
+                          建议相关部门跟进处理。
+                        </p>
+                      );
+                    }
                     return (
                       <p className="text-xs text-slate-500 leading-relaxed mb-4">
-                        本周"<span className="font-bold text-orange-600">{topNegative.label}</span>"相关的负面评价共 <span className="font-bold text-orange-600">{topNegative.count}条</span>，
-                        趋势{topNegative.trend === 'up' ? '正在上升' : topNegative.trend === 'down' ? '有所下降' : '保持稳定'}。
-                        建议相关部门跟进处理。
+                        本周数据无明显异常，整体评价偏正面。
                       </p>
                     );
-                  }
-                  return (
-                    <p className="text-xs text-slate-500 leading-relaxed mb-4">
-                      本周数据无明显异常，整体评价{topics.filter(t => t.sentiment === 'positive').length > 0 ? '偏正面' : '稳定'}。
-                    </p>
-                  );
-                })()}
-                <button
-                  className="w-full py-2.5 bg-orange-50 hover:bg-orange-100 text-orange-600 rounded-xl text-xs font-bold transition-all border border-orange-200"
-                  onClick={() => navigate('/mobile/annual-report')}
-                >
-                  查看详细报告
-                </button>
-              </Card>
-            )}
+                  })()}
+                  <button
+                    className="w-full py-2.5 bg-orange-50 hover:bg-orange-100 text-orange-600 rounded-xl text-xs font-bold transition-all border border-orange-200"
+                    onClick={() => navigate('/mobile/annual-report')}
+                  >
+                    查看详细报告
+                  </button>
+                </>
+              ) : (
+                <div className="text-center py-4">
+                  <p className="text-sm text-slate-500">暂无评论分析数据</p>
+                  <p className="text-xs text-slate-400 mt-1">同步评论后将自动进行语义分析</p>
+                </div>
+              )}
+            </Card>
           </>
         )}
 
         {activeTab === 'history' && (
           <div className="space-y-4">
             {/* Reply Stats */}
-            {replyStats && (
-              <div className="grid grid-cols-3 gap-2">
-                {[
-                  { label: '今日回复', val: replyStats.todayCount.toString(), icon: MessageCircle, color: 'text-orange-600', bg: 'bg-orange-50' },
-                  { label: '自动拦截', val: replyStats.autoBlocked.toString(), icon: Zap, color: 'text-amber-600', bg: 'bg-amber-50' },
-                  { label: '平均时长', val: replyStats.avgTime, icon: Clock, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-                ].map((s, i) => (
-                  <Card key={i} className="p-3 border-none shadow-sm text-center">
-                    <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center mx-auto mb-2", s.bg)}>
-                      <s.icon className={cn("w-4 h-4", s.color)} />
-                    </div>
-                    <div className="text-lg font-bold text-slate-800">{s.val}</div>
-                    <div className="text-[9px] text-slate-400 font-bold uppercase">{s.label}</div>
-                  </Card>
-                ))}
-              </div>
-            )}
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { label: '回复总数', val: (replyStats?.total ?? 0).toString(), icon: MessageCircle, color: 'text-orange-600', bg: 'bg-orange-50' },
+                { label: 'AI回复', val: (replyStats?.ai_generated ?? 0).toString(), icon: Zap, color: 'text-amber-600', bg: 'bg-amber-50' },
+                { label: '成功率', val: replyStats?.success_rate ? `${replyStats.success_rate}%` : '-', icon: Clock, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+              ].map((s, i) => (
+                <Card key={i} className="p-3 border-none shadow-sm text-center">
+                  <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center mx-auto mb-2", s.bg)}>
+                    <s.icon className={cn("w-4 h-4", s.color)} />
+                  </div>
+                  <div className="text-lg font-bold text-slate-800">{s.val}</div>
+                  <div className="text-[9px] text-slate-400 font-bold uppercase">{s.label}</div>
+                </Card>
+              ))}
+            </div>
 
             {/* History List */}
             <h3 className="font-bold text-slate-800 text-sm px-1 flex items-center justify-between">
               最近自动回复
-              <button
-                className="text-[10px] text-orange-600 font-bold"
-              >
-                全部记录
-              </button>
             </h3>
-            {replyHistory.map((item) => (
-              <Card key={item.id} className="p-4 border-none shadow-sm space-y-3 bg-white">
-                <div className="flex justify-between items-start">
-                  <div className="flex flex-col">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-bold text-slate-800">{item.user}</span>
-                      <div className="flex">
-                        {[...Array(5)].map((_, i) => (
-                          <Star key={i} className={cn("w-2 h-2", i < item.rating ? "text-amber-400 fill-amber-400" : "text-slate-200")} />
-                        ))}
+            {replyHistory.length > 0 ? (
+              replyHistory.map((item) => (
+                <Card key={item.id} className="p-4 border-none shadow-sm space-y-3 bg-white">
+                  <div className="flex justify-between items-start">
+                    <div className="flex flex-col">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold text-slate-800">{item.user}</span>
+                        <div className="flex">
+                          {[...Array(5)].map((_, i) => (
+                            <Star key={i} className={cn("w-2 h-2", i < item.rating ? "text-amber-400 fill-amber-400" : "text-slate-200")} />
+                          ))}
+                        </div>
                       </div>
+                      <span className="text-[10px] text-slate-400">{item.time}</span>
                     </div>
-                    <span className="text-[10px] text-slate-400">{item.time}</span>
+                    <Badge className={cn(
+                      "text-[10px] border-none",
+                      item.status === '自动已发' || item.status === '已审核' ? "bg-emerald-50 text-emerald-600" : "bg-orange-50 text-orange-600"
+                    )}>
+                      {item.status}
+                    </Badge>
                   </div>
-                  <Badge className={cn(
-                    "text-[10px] border-none",
-                    item.status === '自动已发' ? "bg-emerald-50 text-emerald-600" : "bg-orange-50 text-orange-600"
-                  )}>
-                    {item.status}
-                  </Badge>
-                </div>
-                <div className="text-xs text-slate-500 bg-slate-50 p-2 rounded-lg border border-slate-100">
-                  客户：{item.content}
-                </div>
-                <div className="text-xs text-orange-700 bg-orange-50 p-3 rounded-lg border border-orange-100 relative">
-                  <div className="absolute -top-2 left-4 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-b-[6px] border-b-orange-50"></div>
-                  AI：{item.reply}
-                </div>
+                  <div className="text-xs text-slate-500 bg-slate-50 p-2 rounded-lg border border-slate-100">
+                    客户：{item.content}
+                  </div>
+                  {item.reply && (
+                    <div className="text-xs text-orange-700 bg-orange-50 p-3 rounded-lg border border-orange-100 relative">
+                      <div className="absolute -top-2 left-4 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-b-[6px] border-b-orange-50"></div>
+                      AI：{item.reply}
+                    </div>
+                  )}
+                </Card>
+              ))
+            ) : (
+              <Card className="p-8 text-center">
+                <History className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                <p className="text-sm text-slate-500">暂无自动回复记录</p>
+                <p className="text-xs text-slate-400 mt-1">开启自动回复后将在此显示</p>
               </Card>
-            ))}
+            )}
           </div>
         )}
 

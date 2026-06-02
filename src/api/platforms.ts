@@ -9,19 +9,25 @@ export interface PlatformConnectRequest {
 }
 
 export interface PlatformStoreInfo {
+  id?: string;
   platform_store_id: string;
   platform_store_name: string;
   platform: string;
-  rating: number;
-  review_count: number;
+  rating?: number;
+  review_count?: number;
+  connected?: boolean;
+  sync_status?: string;
   binded?: boolean;
 }
 
 export interface PlatformAccount {
   id: string;
   user_id?: string;
+  user_email?: string;
+  user_name?: string;
   platform: string;
   platform_username: string;
+  platform_account_id?: string;
   cookies_status: string;
   last_sync_at?: string;
   error_msg?: string;
@@ -77,6 +83,12 @@ export const platformsApi = {
     return response.data;
   },
 
+  // 同步平台评论数据
+  syncAccountReviews: async (accountId: string): Promise<{ created: number; skipped: number; total: number }> => {
+    const response = await api.post<any>(`/v1/platforms/accounts/${accountId}/sync-reviews`);
+    return response.data || response;
+  },
+
   // 获取同步状态
   getSyncStatus: async (storePlatformId: string): Promise<any> => {
     const response = await api.get<any>(`/v1/platforms/sync-status/${storePlatformId}`);
@@ -98,6 +110,12 @@ export const platformsApi = {
     return response.data || response;
   },
 
+  // 获取账号下已同步的店铺列表（从 store_platforms 表查询）
+  getAccountStores: async (accountId: string): Promise<PlatformStoreInfo[]> => {
+    const response = await api.get<any>(`/v1/platforms/accounts/${accountId}/stores`);
+    return response.data || response;
+  },
+
   // 管理员：获取所有用户的平台绑定账号
   getAllAccounts: async (): Promise<PlatformAccount[]> => {
     const response = await api.get<any>('/v1/platforms/admin/accounts');
@@ -115,10 +133,17 @@ export const platformsApi = {
     return response.data || response;
   },
 
-  // 同步账号登录状态（普通用户）
-  syncAccountStatus: async (accountId: string): Promise<void> => {
-    const response = await api.post(`/v1/platforms/accounts/${accountId}/sync-status`);
-    return response.data || response;
+  // 同步账号登录状态（普通用户）— 验证登录态 + 同步店铺数据
+  syncAccountStatus: async (accountId: string): Promise<{
+    status: string;
+    platform_username?: string;
+    store_count?: number;
+    sync_error?: string;
+  }> => {
+    const response = await api.post(`/v1/platforms/accounts/${accountId}/sync-status`, null, {
+      timeout: 60000,  // 同步需要启动浏览器，给 60 秒
+    });
+    return response.data?.data || response.data || response;
   },
 
   // 更新平台账号（修改用户名/密码）
@@ -156,5 +181,42 @@ export const platformsApi = {
   // 取消二维码登录
   cancelQRLogin: async (taskId: string): Promise<void> => {
     await api.post(`/v1/platforms/qr-login/cancel/${taskId}`);
+  },
+
+  // ============ 短信验证码登录（抖音来客） ============
+
+  // 启动短信登录：发送验证码，返回 {task_id, status, code_sent}
+  startSMSLogin: async (platform: string, phone: string): Promise<{
+    success: boolean;
+    task_id?: string;
+    status?: string;
+    code_sent?: boolean;
+    error?: string;
+  }> => {
+    const response = await api.post<any, any>('/v1/platforms/sms-login/start', { platform, phone }, {
+      timeout: 30000,
+    });
+    return response.data || response;
+  },
+
+  // 提交验证码完成登录
+  verifySMSCode: async (taskId: string, platform: string, verifyCode: string): Promise<{
+    status: string;
+    platform?: string;
+    error?: string;
+  }> => {
+    const response = await api.post<any, any>('/v1/platforms/sms-login/verify', {
+      task_id: taskId,
+      platform,
+      verify_code: verifyCode,
+    }, {
+      timeout: 45000,
+    });
+    return response.data || response;
+  },
+
+  // 取消短信登录
+  cancelSMSLogin: async (taskId: string): Promise<void> => {
+    await api.post('/v1/platforms/sms-login/cancel', null, { params: { task_id: taskId } });
   },
 };

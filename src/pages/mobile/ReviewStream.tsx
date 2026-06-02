@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  Search, 
-  Filter, 
-  Star, 
-  MessageSquare, 
-  ThumbsUp, 
+import {
+  Search,
+  Filter,
+  Star,
+  MessageSquare,
+  ThumbsUp,
   MoreVertical,
   RefreshCw,
   CheckCircle2,
@@ -14,7 +14,8 @@ import {
   UtensilsCrossed,
   Zap,
   Flame,
-  MessageCircle
+  MessageCircle,
+  FileText,
 } from 'lucide-react';
 import { Card } from '../../components/ui/card';
 import { Skeleton } from '../../components/ui/skeleton';
@@ -27,6 +28,7 @@ import { cn } from '../../lib/utils';
 import { useToast } from '../../hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { fetchReviews } from '../../api/reviews';
+import { storesApi } from '../../api/stores';
 import type { Review } from '../../api/reviews';
 import type { Store } from '../../api/stores';
 import { useSubscription, SubscriptionPrompt } from '../../hooks/use-subscription-check';
@@ -37,6 +39,7 @@ export const ReviewStream: React.FC = () => {
   const { selectedStore } = useStore();
   const [activeTab, setActiveTab] = useState<'all' | 'positive' | 'negative'>('all');
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [syncingReviews, setSyncingReviews] = useState(false);
   const [searchKeyword, setSearchKeyword] = useState('');
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
@@ -168,10 +171,34 @@ export const ReviewStream: React.FC = () => {
     setIsRefreshing(true);
     setPage(1);
     setHasMore(true);
-    success('数据刷新', '正在从平台获取最新评论...');
     await loadReviews(undefined, false, activeTab);
     setIsRefreshing(false);
-    success('刷新完成', '已获取最新评论');
+    success('刷新完成', '已重新加载评论数据');
+  };
+
+  // 同步评论数据（调用平台 API）
+  const handleSyncReviews = async () => {
+    const effectiveStoreId = selectedStore?.id || localStorage.getItem('zc_selected_store_id');
+    if (!effectiveStoreId) {
+      toastError('请先选择店铺');
+      return;
+    }
+
+    setSyncingReviews(true);
+    try {
+      const result = await storesApi.syncStoreReviews(effectiveStoreId);
+      const created = result.created || 0;
+      const skipped = result.skipped || 0;
+      success('评论同步完成', `新增 ${created} 条评论${skipped > 0 ? `，跳过 ${skipped} 条重复` : ''}`);
+      // 刷新评论列表
+      await loadReviews(undefined, false, activeTab);
+      // 触发 StoreContext 刷新店铺数据（评论数会变）
+      window.dispatchEvent(new Event('visibilitychange'));
+    } catch (err: any) {
+      toastError('评论同步失败', err.message || '网络错误');
+    } finally {
+      setSyncingReviews(false);
+    }
   };
 
   const handleSearch = (value: string) => {
@@ -274,32 +301,51 @@ export const ReviewStream: React.FC = () => {
         <Card className="p-4 border-none shadow-sm bg-orange-50/50 border border-orange-100/50">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <RefreshCw className={cn("w-3.5 h-3.5 text-orange-600", isRefreshing && "animate-spin")} />
-              <span className="text-xs font-bold text-slate-800 uppercase tracking-tight">数据实时同步中...</span>
+              <RefreshCw className={cn("w-3.5 h-3.5 text-orange-600", syncingReviews && "animate-spin")} />
+              <span className="text-xs font-bold text-slate-800 uppercase tracking-tight">
+                {syncingReviews ? '正在同步评论...' : '评论数据管理'}
+              </span>
             </div>
-            <span className="text-[10px] text-slate-400">14:25</span>
           </div>
 
           <div className="flex gap-2">
-             {['美团', '点评', '抖音', '小红书'].map((p, i) => (
-                <div key={i} className="flex-1 h-1 bg-slate-100 rounded-full overflow-hidden">
-                   <div className={cn("h-full", i < 2 ? "bg-orange-500" : i === 2 ? "bg-orange-300" : "bg-slate-200")} style={{ width: i === 2 ? '60%' : '100%' }}></div>
-                </div>
-             ))}
-          </div>
-          <div className="flex justify-between items-center mt-2">
-             <div className="flex gap-1.5">
-                <span className="text-[8px] font-bold text-orange-600">MEITUAN √</span>
-                <span className="text-[8px] font-bold text-orange-600">DIANPING √</span>
-             </div>
-             <Button 
-                size="sm" 
-                variant="ghost" 
-                className="h-5 text-[9px] text-orange-600 p-0 font-bold"
-                onClick={handleRefresh}
-              >
-                刷新数据
-              </Button>
+            <Button
+              size="sm"
+              className="flex-1 h-8 bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold rounded-lg"
+              onClick={handleSyncReviews}
+              disabled={syncingReviews}
+            >
+              {syncingReviews ? (
+                <>
+                  <RefreshCw className="w-3 h-3 mr-1 animate-spin" />
+                  同步中...
+                </>
+              ) : (
+                <>
+                  <FileText className="w-3 h-3 mr-1" />
+                  同步评论
+                </>
+              )}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="flex-1 h-8 border-orange-200 text-orange-600 hover:bg-orange-50 text-xs font-bold rounded-lg"
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+            >
+              {isRefreshing ? (
+                <>
+                  <RefreshCw className="w-3 h-3 mr-1 animate-spin" />
+                  刷新中...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="w-3 h-3 mr-1" />
+                  刷新列表
+                </>
+              )}
+            </Button>
           </div>
         </Card>
 

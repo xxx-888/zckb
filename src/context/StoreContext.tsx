@@ -36,6 +36,17 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     fetchStores();
   }, [fetchStores]);
 
+  // 页面从后台切回前台时自动刷新店铺列表
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (!document.hidden) {
+        fetchStores();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [fetchStores]);
+
   // 当店铺列表加载完成且没有选中店铺时，自动选中第一个（或 localStorage 中保存的）
   useEffect(() => {
     if (stores.length > 0 && !selectedStoreId) {

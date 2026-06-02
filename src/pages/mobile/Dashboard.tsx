@@ -273,26 +273,6 @@ export const Dashboard: React.FC = () => {
     );
   }
 
-  // ===== 无数据状态 =====
-  console.log('[Dashboard] 渲染前检查:', { coreStats, total_reviews: coreStats?.total_reviews, recentReviews: recentReviews.length, platformData: platformData.length, loading });
-  const hasNoData = !coreStats || !coreStats.total_reviews || (recentReviews.length === 0 && platformData.length === 0);
-  console.log('[Dashboard] hasNoData:', hasNoData);
-  if (hasNoData) {
-    return (
-      <MobileLayout title={isHQ ? "门店动态" : "数据概览"}>
-        <div className="flex-1 flex items-center justify-center p-4">
-          <div className="text-center">
-            <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4">
-              <BarChart3 className="w-8 h-8 text-slate-300" />
-            </div>
-            <p className="text-base font-semibold text-slate-400 mb-2">暂无数据</p>
-            <p className="text-sm text-slate-400">当前筛选条件下没有数据</p>
-          </div>
-        </div>
-      </MobileLayout>
-    );
-  }
-
   return (
     <MobileLayout title={isHQ ? "门店动态" : "数据概览"}>
       <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">

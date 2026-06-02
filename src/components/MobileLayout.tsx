@@ -128,6 +128,13 @@ export const MobileLayout: React.FC<MobileLayoutProps> = ({ children, title }) =
     navigate('/mobile/platform-connection');
   };
 
+  // 切换回首页时自动刷新店铺列表
+  useEffect(() => {
+    if (location.pathname === '/mobile' || location.pathname === '/mobile/dashboard') {
+      refresh();
+    }
+  }, [location.pathname, refresh]);
+
   // 判断当前路由是否属于某个导航项
   const isRouteActive = (path: string): boolean => {
     const routes = routeGroups[path];
@@ -155,26 +162,28 @@ export const MobileLayout: React.FC<MobileLayoutProps> = ({ children, title }) =
           <div className="w-9 h-9 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-100">
             <Brain className="text-white w-5 h-5" />
           </div>
-          <div className="flex flex-col">
+          <div className="flex flex-col min-w-0">
             <h1 className="font-bold text-sm tracking-tight text-slate-400 leading-none mb-1">智策口碑</h1>
 
             {noStore ? (
               <button
                 onClick={handleNoStore}
-                className="text-amber-500 font-medium text-sm leading-none hover:underline"
+                className="text-amber-500 font-medium text-sm leading-none hover:underline truncate max-w-[180px]"
               >
                 未绑定店铺
               </button>
             ) : stores.length > 1 ? (
               <button
                 onClick={() => setIsStoreMenuOpen(!isStoreMenuOpen)}
-                className="flex items-center gap-1 text-slate-900 font-bold text-base leading-none group"
+                className="flex items-center gap-1 text-slate-900 font-bold text-base leading-none group min-w-0"
               >
-                {currentStore?.name || (storeLoading ? '加载中...' : '请选择店铺')}
-                <ChevronDown className={cn("w-4 h-4 text-slate-400 transition-transform", isStoreMenuOpen && "rotate-180")} />
+                <span className="truncate max-w-[180px]">
+                  {currentStore?.name || (storeLoading ? '加载中...' : '请选择店铺')}
+                </span>
+                <ChevronDown className={cn("w-4 h-4 text-slate-400 transition-transform flex-shrink-0", isStoreMenuOpen && "rotate-180")} />
               </button>
             ) : (
-              <span className="text-slate-900 font-bold text-base leading-none">
+              <span className="text-slate-900 font-bold text-base leading-none truncate max-w-[180px]">
                 {currentStore?.name || '加载中...'}
               </span>
             )}

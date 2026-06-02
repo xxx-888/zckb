@@ -243,7 +243,6 @@ async def check_subscription_limit(
         from sqlalchemy import func
 
         from app.models.review import Review
-        from app.models.store import Store
         from app.models.user import UserStore
 
         if not plan.max_reviews_per_month:
@@ -264,7 +263,7 @@ async def check_subscription_limit(
         month_start = datetime(now.year, now.month, 1)
 
         result = await db.execute(
-            select(func.count(Review.id)).where(
+            select(func.count()).select_from(Review).where(
                 Review.store_id.in_(store_ids),
                 Review.created_at >= month_start,
             )

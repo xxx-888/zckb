@@ -122,6 +122,9 @@ class PlatformAccount(BaseModel):
     platform_username: Mapped[str] = mapped_column(
         String(255), nullable=False, comment="平台用户名/账号"
     )
+    platform_account_id: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True, comment="平台原始账号ID（如美团accountId，同步店铺时需要）"
+    )
     cookies_encrypted: Mapped[Optional[str]] = mapped_column(
         Text, nullable=True, comment="加密后的cookies"
     )
@@ -147,12 +150,12 @@ class StorePlatform(BaseModel):
 
     __tablename__ = "store_platforms"
 
-    store_id: Mapped[UUID] = mapped_column(
+    store_id: Mapped[Optional[UUID]] = mapped_column(
         GUID(),
         ForeignKey("stores.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
         index=True,
-        comment="门店ID",
+        comment="门店ID（同步时可为空，用户手动绑定后填入）",
     )
     account_id: Mapped[Optional[UUID]] = mapped_column(
         GUID(),

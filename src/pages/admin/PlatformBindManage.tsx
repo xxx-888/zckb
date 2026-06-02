@@ -72,7 +72,8 @@ export default function PlatformBindManage() {
     ? accounts.filter(a =>
         a.platform_username?.toLowerCase().includes(search.toLowerCase()) ||
         a.user_id?.toLowerCase().includes(search.toLowerCase()) ||
-        a.platform?.toLowerCase().includes(search.toLowerCase())
+        a.platform?.toLowerCase().includes(search.toLowerCase()) ||
+        a.platform_account_id?.includes(search)
       )
     : accounts;
 
@@ -135,6 +136,7 @@ export default function PlatformBindManage() {
                 <th className="text-left px-4 py-3 text-xs font-medium text-slate-600 uppercase">用户ID</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-slate-600 uppercase">平台</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-slate-600 uppercase">平台用户名</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-slate-600 uppercase">账号ID</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-slate-600 uppercase">Cookies状态</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-slate-600 uppercase">绑定店铺数</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-slate-600 uppercase">最后同步</th>
@@ -161,6 +163,9 @@ export default function PlatformBindManage() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-sm text-slate-900">{account.platform_username}</td>
+                  <td className="px-4 py-3 text-sm text-slate-600 font-mono">
+                    {account.platform_account_id || '-'}
+                  </td>
                   <td className="px-4 py-3">{getStatusBadge(account)}</td>
                   <td className="px-4 py-3 text-sm text-slate-700">
                     {account.stores_count || 0} 个

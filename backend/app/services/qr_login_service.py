@@ -23,7 +23,6 @@ import multiprocessing
 import os
 import time
 from typing import Optional
-from urllib.parse import quote, urlencode
 from uuid import uuid4
 
 logger = logging.getLogger(__name__)
@@ -41,27 +40,21 @@ _RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".qr_res
 # ═══════════════════════════════════════════════════════════════
 
 def _get_meituan_login_url() -> str:
-    """构造美团开店宝登录 URL（含 epassportParams，支持二维码登录）"""
+    """构造美团开店宝登录 URL（直接访问 epassport，跳过 ecom 重定向）"""
     ts = int(time.time() * 1000)
-    passport_params = {
-        "bg_source": "1",
-        "service": "com.sankuai.meishi.fe.ecom",
-        "part_type": "0",
-        "feconfig": "bssoify",
-        "biz_line": "1",
-        "continue": (
-            f"https://ecom.meituan.com/bizaccount/biz-choice.html?"
-            f"redirect_uri=https%3A%2F%2Fecom.meituan.com%2Fmeishi%2F"
-            f"&_t={ts}"
-            f"&target=https%3A%2F%2Fecom.meituan.com%2Fmeishi%2F"
-            f"&leftBottomLink="
-            f"&signUpTarget=self"
-        ),
-    }
     return (
-        f"https://ecom.meituan.com/bizaccount/login.html"
-        f"?loginByPhoneNumber=true&isProduction=true"
-        f"&epassportParams={quote(urlencode(passport_params), safe='')}"
+        f"https://epassport.meituan.com/portal/login"
+        f"?bg_source=1"
+        f"&service=com.sankuai.meishi.fe.ecom"
+        f"&part_type=0"
+        f"&feconfig=bssoify"
+        f"&biz_line=1"
+        f"&continue=https://ecom.meituan.com/bizaccount/biz-choice.html"
+        f"?redirect_uri=https://ecom.meituan.com/meishi/"
+        f"&_t={ts}"
+        f"&target=https://ecom.meituan.com/meishi/"
+        f"&leftBottomLink="
+        f"&signUpTarget=self"
     )
 
 
@@ -94,15 +87,25 @@ delete window.__pw_manual;
 PLATFORM_CONFIG = {
     "meituan": {
         "login_url": _get_meituan_login_url,
-        "qr_selector": ".qrcode-img img, .qr-code img, canvas, [class*='qrcode'], img[src*='qrcode']",
+        # 美团 epassport 页面：点击右上角二维码图标后，二维码渲染在 canvas 上
+        "qr_selector": "canvas[width='240'][height='240'], canvas, [class*='qrcode'] canvas, .qrcode-img img",
         "success_url_pattern": "ecom.meituan.com",
-        "check_logged_in": ".user-info, .merchant-name, [class*='header'] [class*='name']",
+        # DOM 分析发现：用户名在 [class*='nav_infoLabel']，用户信息区在 [class*='nav_info']
+        "check_logged_in": "[class*='nav_infoLabel'], [class*='nav_info']",
+        "username_selector": "[class*='nav_infoLabel']",
         "cookie_domain": ".meituan.com",
         "viewport": {"width": 1280, "height": 800},
     },
     "douyin": {
         "login_url": "https://life.douyin.com/p/login",
         "qr_selector": ".qrcode-img img, .qr-code img, canvas, [class*='qrcode'], img[src*='qrcode']",
+        "qr_tab_selectors": [
+            "text=扫码登录",
+            "text=二维码登录",
+            "[class*='tab']:has-text('扫码')",
+            "[role='tab']:has-text('扫码')",
+        ],
+        "wait_for_response": None,
         "success_url_pattern": "life.douyin.com",
         "check_logged_in": ".merchant-name, .user-avatar, [class*='header'] [class*='name']",
         "cookie_domain": ".douyin.com",
@@ -140,6 +143,8 @@ def _worker_main(task_id: str, platform: str, headless: bool, results_dir: str):
 
     try:
         pw = sync_playwright().start()
+
+        logger.info(f"[QR Worker] {task_id} headless={headless}")
 
         # 尝试 Chrome，失败回退 Chromium
         try:
@@ -192,11 +197,19 @@ def _worker_main(task_id: str, platform: str, headless: bool, results_dir: str):
         context.add_init_script(STEALTH_JS)
 
         page = context.new_page()
-        page.goto(login_url, wait_until="domcontentloaded", timeout=30000)
-        page.wait_for_timeout(3000)
 
-        # ── 截取二维码 ──
+        logger.info(f"[QR Worker] {task_id} navigating to {login_url}")
+        page.goto(login_url, wait_until="domcontentloaded", timeout=30000)
+
+        # ── 平台特定：等待页面重定向并切换到二维码登录模式 ──
+        _switch_to_qr_mode(page, platform, config)
+
+        # ── 截取二维码（带内容验证）──
         qr_image = _capture_qr_code(page, config["qr_selector"])
+        if not qr_image:
+            # 兜底：等更久再试一次
+            page.wait_for_timeout(3000)
+            qr_image = _capture_qr_code(page, config["qr_selector"])
         if not qr_image:
             qr_image = _capture_login_area(page)
 
@@ -209,9 +222,12 @@ def _worker_main(task_id: str, platform: str, headless: bool, results_dir: str):
                 "expires_in": QR_LOGIN_TIMEOUT,
             }, f)
 
-        # ── 轮询登录状态 ──
+        # ── 轮询登录状态（快速检测） ──
         start_time = time.time()
-        check_interval = 3
+        check_interval = 0.5  # 快速轮询：0.5秒一次
+
+        # 记录初始 URL，用于检测跳转
+        initial_url = page.url
 
         while time.time() - start_time < QR_LOGIN_TIMEOUT:
             # 检查取消信号
@@ -225,23 +241,67 @@ def _worker_main(task_id: str, platform: str, headless: bool, results_dir: str):
                 return
 
             current_url = page.url
-            logged_in = False
+            url_redirected = False
+            scan_confirmed = False
 
-            # URL 跳转检测
-            if config["success_url_pattern"] in current_url and "login" not in current_url:
-                logged_in = True
+            # 检测1: URL 已自动跳转到目标域名
+            if (config["success_url_pattern"] in current_url
+                    and "login" not in current_url.lower()):
+                url_redirected = True
+                logger.info(f"[QR Worker] Auto redirect detected: {current_url[:80]}")
+            elif (current_url != initial_url
+                  and "login" not in current_url.lower()
+                  and ("ecom" in current_url or "biz-choice" in current_url)):
+                url_redirected = True
+                logger.info(f"[QR Worker] URL changed to target: {current_url[:80]}")
 
-            # DOM 元素检测
-            if not logged_in:
+            # 检测2: 页面出现扫码确认提示（关键改动：不等跳转，扫码确认即可）
+            if not url_redirected:
                 try:
-                    indicator = page.wait_for_selector(config["check_logged_in"], timeout=1000)
-                    if indicator:
-                        logged_in = True
+                    page_text = page.evaluate("""() => document.body?.innerText || ''""")
+                    scan_confirmed = any(kw in page_text for kw in [
+                        '扫码成功', '确认登录', '授权成功', '已确认',
+                        '正在跳转', '登录成功',
+                    ])
+                except Exception:
+                    pass
+                if not scan_confirmed and current_url != initial_url:
+                    # URL 变了但不在目标域名，也算扫码确认了
+                    scan_confirmed = True
+                    logger.info(f"[QR Worker] URL changed (non-target): {current_url[:80]}, treating as scan confirmed")
+
+            # ── 扫码确认 或 URL 已跳转 → 直接导航到 meishi 获取登录态 ──
+            if scan_confirmed or url_redirected:
+                # 写入 scanned 中间状态让前端及时反馈
+                try:
+                    with open(qr_file, "w", encoding="utf-8") as f:
+                        json.dump({
+                            "task_id": task_id,
+                            "qr_image": "",
+                            "status": "scanned",
+                            "expires_in": max(0, int(QR_LOGIN_TIMEOUT - (time.time() - start_time))),
+                        }, f)
                 except Exception:
                     pass
 
-            if logged_in:
-                page.wait_for_timeout(3000)
+                logger.info(f"[QR Worker] Scan confirmed (redirect={url_redirected}), navigating to ecom.meituan.com/meishi ...")
+                try:
+                    page.goto("https://ecom.meituan.com/meishi",
+                               wait_until="domcontentloaded", timeout=15000)
+                    page.wait_for_timeout(800)  # 等待页面渲染，获取完整 cookies
+                except Exception as nav_err:
+                    logger.warning(f"[QR Worker] Navigate to meishi failed: {nav_err}")
+
+                # 检查是否被重定向到登录页（说明 cookies 没拿到）
+                final_url = page.url
+                if "login" in final_url.lower() or "passport" in final_url.lower():
+                    logger.error(f"[QR Worker] Meishi redirected to login page, cookies not captured")
+                    _write_result(done_file, {
+                        "status": "failed",
+                        "platform": platform,
+                        "error": "登录态未生效，被重定向到登录页面，请重试",
+                    })
+                    return
 
                 # 导出完整登录态
                 storage_state = context.storage_state(indexed_db=True)
@@ -254,15 +314,20 @@ def _worker_main(task_id: str, platform: str, headless: bool, results_dir: str):
                 }
                 cookies["_storage_state"] = storage_state
 
-                # 提取用户名
-                username = _extract_username(page)
+                # 通过 getBizAccount API 提取账号信息（accountId、用户名、姓名）
+                biz_info = _extract_biz_account(page, platform)
+                username = biz_info.get("username", "")
+                account_id = biz_info.get("account_id", "")
+                logger.info(f"[QR Worker] BizAccount extracted: username={username}, accountId={account_id}")
 
                 _write_result(done_file, {
                     "status": "success",
                     "platform": platform,
                     "platform_username": username,
+                    "platform_account_id": account_id,
                     "cookies": cookies,
                 })
+                logger.info(f"[QR Worker] Login success! username={username}, accountId={account_id}, cookies={len(cookies_list)}")
                 return
 
             time.sleep(check_interval)
@@ -303,13 +368,83 @@ def _write_result(filepath: str, data: dict):
         logger.error(f"[QR Worker] Failed to write result to {filepath}: {e}")
 
 
+def _switch_to_qr_mode(page, platform: str, config: dict):
+    """在登录页面上切换到二维码登录模式"""
+    logger.info(f"[QR Worker] Switching to QR code mode for {platform}, URL: {page.url}")
+
+    if platform == "meituan":
+        page.wait_for_timeout(1500)
+
+        # 点击 logoMask 触发扫码登录弹窗
+        qr_selectors = [
+            "[class*='logoMask']",
+        ]
+
+        clicked = False
+        for sel in qr_selectors:
+            try:
+                el = page.wait_for_selector(sel, timeout=5000)
+                if el:
+                    el.click()
+                    clicked = True
+                    logger.info(f"[QR Worker] Clicked logoMask via: {sel}")
+                    break
+            except Exception:
+                continue
+
+        if not clicked:
+            logger.error("[QR Worker] logoMask element not found!")
+            return
+
+        logger.info("[QR Worker] QR switch clicked, waiting for qrcode to render...")
+
+        # 等待 getQrcodeUuid 网络请求完成（二维码绘制到 canvas 的关键信号）
+        try:
+            page.wait_for_response("**/qrcode/getQrcodeUuid**", timeout=15000)
+            logger.info("[QR Worker] getQrcodeUuid response received")
+        except Exception:
+            logger.warning("[QR Worker] Timeout waiting for getQrcodeUuid")
+
+        # 额外等待 canvas 绘制完成
+        page.wait_for_timeout(2000)
+
+        # 调试截图
+        try:
+            debug_img = os.path.join(_RESULTS_DIR, f"_debug_{platform}_qr_ready.png")
+            page.screenshot(path=debug_img)
+            logger.info(f"[QR Worker] QR ready screenshot: {debug_img}")
+        except Exception:
+            pass
+
+    elif platform == "douyin":
+        page.wait_for_timeout(2000)
+        # 抖音：尝试点击扫码登录选项卡
+        tab_clicked = False
+        for selector in config.get("qr_tab_selectors", []):
+            try:
+                el = page.wait_for_selector(selector, timeout=1000)
+                if el and el.is_visible():
+                    el.click()
+                    tab_clicked = True
+                    break
+            except Exception:
+                continue
+
+        if tab_clicked:
+            page.wait_for_timeout(2000)
+            logger.info("[QR Worker] Douyin QR tab clicked")
+        else:
+            logger.warning("[QR Worker] Douyin: no QR tab found")
+
+
 def _capture_qr_code(page, selectors: str) -> str:
-    """尝试多种选择器截取二维码"""
+    """尝试多种选择器截取二维码（含 canvas 内容验证）"""
     for selector in [s.strip() for s in selectors.split(",")]:
         try:
-            element = page.wait_for_selector(selector, timeout=5000)
+            element = page.wait_for_selector(selector, timeout=2000)
             if element:
                 tag_name = element.evaluate("el => el.tagName.toLowerCase()")
+                logger.info(f"[QR Worker] Found element: tag={tag_name}, selector={selector}")
 
                 if tag_name == "img":
                     src = element.get_attribute("src")
@@ -320,13 +455,32 @@ def _capture_qr_code(page, selectors: str) -> str:
                         return base64.b64encode(screenshot).decode()
 
                 if tag_name == "canvas":
+                    # 验证 canvas 有实际像素内容（不是空白）
+                    has_content = element.evaluate("""el => {
+                        try {
+                            const ctx = el.getContext('2d');
+                            if (!ctx) return false;
+                            const data = ctx.getImageData(0, 0, el.width, el.height).data;
+                            for (let i = 3; i < data.length; i += 4) {
+                                if (data[i] > 10) return true;
+                            }
+                            return false;
+                        } catch(e) { return false; }
+                    }""")
+
+                    if not has_content:
+                        logger.info(f"[QR Worker] Canvas is blank, skipping (selector={selector})")
+                        continue
+
+                    logger.info(f"[QR Worker] Canvas has content, capturing (selector={selector})")
                     data_url = element.evaluate("el => el.toDataURL('image/png')")
                     if data_url and "," in data_url:
                         return data_url.split(",", 1)[1]
 
+                # 其他元素直接截图
                 screenshot = element.screenshot(type="png")
                 return base64.b64encode(screenshot).decode()
-        except Exception:
+        except Exception as e:
             continue
     return ""
 
@@ -342,22 +496,74 @@ def _capture_login_area(page) -> str:
         return ""
 
 
-def _extract_username(page) -> str:
-    """尝试从页面提取用户名"""
-    selectors = [
-        ".user-name", ".merchant-name", ".nickname",
-        "[class*='user'] [class*='name']", ".header-name",
-    ]
-    for sel in selectors:
+def _extract_biz_account(page, platform: str) -> dict:
+    """
+    通过 getBizAccount API 提取平台账号信息。
+    返回: {"username": str, "account_id": str}
+    兜底: 如果 API 调用失败，回退到 DOM 提取用户名。
+    """
+    import time as _time
+    info = {"username": "", "account_id": ""}
+
+    if platform == "meituan":
         try:
-            element = page.wait_for_selector(sel, timeout=2000)
-            if element:
-                text = (element.text_content() or "").strip()
-                if text:
-                    return text[:50]
-        except Exception:
-            continue
-    return ""
+            result = page.evaluate("""async () => {
+                try {
+                    const timestamp = Date.now();
+                    const res = await fetch(
+                        'https://epassport.meituan.com/gw/login/getBizAccount',
+                        {
+                            method: 'POST',
+                            headers: {
+                                'accept': 'application/json, text/plain, */*',
+                                'content-type': 'application/json;charset=UTF-8',
+                                'x-requested-with': 'XMLHttpRequest',
+                            },
+                            body: JSON.stringify({ params: { _t: timestamp } }),
+                            credentials: 'include'
+                        }
+                    );
+                    const json = await res.json();
+                    const biz = json?.data?.bizAcct || {};
+                    return {
+                        account_id: biz.id ? String(biz.id) : '',
+                        username: biz.name || biz.login || '',
+                        login: biz.login || '',
+                        name: biz.name || '',
+                    };
+                } catch(e) {
+                    return { account_id: '', username: '', login: '', name: '', error: e.message };
+                }
+            }""")
+            if isinstance(result, dict):
+                info["account_id"] = result.get("account_id", "")
+                info["username"] = result.get("username", "")
+                if info["account_id"]:
+                    logger.info(f"[QR Worker] getBizAccount OK: id={result.get('account_id')}, login={result.get('login')}, name={result.get('name')}")
+                else:
+                    logger.warning(f"[QR Worker] getBizAccount returned empty id: {result}")
+        except Exception as e:
+            logger.warning(f"[QR Worker] getBizAccount fetch failed: {e}")
+
+    # 兜底: 从页面 DOM 提取用户名
+    if not info["username"]:
+        selectors = [
+            "[class*='nav_infoLabel']",
+            ".user-name", ".merchant-name", ".nickname",
+            "[class*='user'] [class*='name']", ".header-name",
+        ]
+        for sel in selectors:
+            try:
+                element = page.wait_for_selector(sel, timeout=2000)
+                if element:
+                    text = (element.text_content() or "").strip()
+                    if text:
+                        info["username"] = text[:50]
+                        break
+            except Exception:
+                continue
+
+    return info
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -437,9 +643,9 @@ class QRLoginService:
         self._processes[task_id] = process
         logger.info(f"[QR Login] Started worker process pid={process.pid} for {platform}")
 
-        # 轮询等待二维码文件（最多 30 秒）
+        # 轮询等待二维码文件（最多 60 秒）
         qr_file = self._task_file(task_id, "_qr.json")
-        for _ in range(30):
+        for _ in range(60):
             await asyncio.sleep(1)
 
             # 检查是否立即失败（done.json 会出现比 qr.json 更早的情况）
@@ -453,7 +659,7 @@ class QRLoginService:
             if qr_data and qr_data.get("qr_image"):
                 return {"success": True, **qr_data}
 
-        # 超时：30 秒内没拿到二维码
+        # 超时：60 秒内没拿到二维码
         self._cleanup_task(task_id)
         return {"success": False, "error": "获取二维码超时，请重试"}
 
@@ -471,13 +677,13 @@ class QRLoginService:
                 self._cleanup_task(task_id)
             return done_data
 
-        # 检查是否还在等待扫码
+        # 检查是否还在等待扫码 / 扫码已确认
         qr_data = self._read_json(self._task_file(task_id, "_qr.json"))
         if qr_data:
             elapsed = time.time() - os.path.getmtime(self._task_file(task_id, "_qr.json"))
             remaining = max(0, int(QR_LOGIN_TIMEOUT - elapsed))
             return {
-                "status": "waiting_scan",
+                "status": qr_data.get("status", "waiting_scan"),  # 可能是 waiting_scan 或 scanned
                 "remaining_seconds": remaining,
             }
 

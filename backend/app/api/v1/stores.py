@@ -223,3 +223,166 @@ async def get_store_recent_reviews(
         })
 
     return success(data=review_list)
+
+
+@router.post("/{store_id}/sync-reviews", summary="同步门店评论数据")
+async def sync_store_reviews(
+    store_id: UUID,
+    current_user: User = Depends(require_valid_subscription),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """
+    同步指定门店的平台评论数据
+    1. 查找该店铺绑定的所有平台账号（store_platforms）
+    2. 通过 Playwright 调用平台评论 API
+    3. 将评论数据导入 reviews 表（自动去重）
+    """
+    import json
+    from sqlalchemy import select
+    from app.models.store import StorePlatform, PlatformAccount
+    from app.models.review import Review
+    from app.services.review_sync_service import ReviewSyncService
+    from app.core.exceptions import NotFoundException
+
+    # 验证店铺归属
+    store = await store_service.get_store_by_id(db, store_id)
+
+    # 获取该店铺绑定的所有平台账号
+    stmt = select(StorePlatform).where(
+        StorePlatform.store_id == store_id,
+        StorePlatform.account_id.isnot(None),
+    )
+    result = await db.execute(stmt)
+    store_platforms = result.scalars().all()
+
+    if not store_platforms:
+        return success(data={"created": 0, "skipped": 0, "total": 0}, message="该店铺暂未绑定平台账号")
+
+    # 按 account_id 分组同步（每个账号同步一次，包含多个店铺）
+    total_created = 0
+    total_skipped = 0
+    synced_accounts = set()
+
+    review_service = ReviewSyncService.get_instance()
+
+    for sp in store_platforms:
+        if not sp.account_id or str(sp.account_id) in synced_accounts:
+            continue
+
+        # 获取平台账号信息
+        account_stmt = select(PlatformAccount).where(PlatformAccount.id == sp.account_id)
+        account_result = await db.execute(account_stmt)
+        account = account_result.scalar_one_or_none()
+
+        if not account or not account.storage_state:
+            continue
+
+        # 获取该账号下所有绑定到当前用户的店铺（不仅仅是当前 store_id）
+        # 这样一次同步可以拉取该账号下的所有店铺评论
+        all_sp_stmt = select(StorePlatform).where(
+            StorePlatform.account_id == account.id,
+            StorePlatform.store_id.isnot(None),
+        )
+        all_sp_result = await db.execute(all_sp_stmt)
+        all_store_platforms = all_sp_result.scalars().all()
+
+        stores = [
+            {
+                "platform_store_id": p.platform_store_id,
+                "platform_store_name": p.platform_store_name,
+                "store_id": str(p.store_id) if p.store_id else "",
+            }
+            for p in all_store_platforms
+            if p.platform_store_id
+        ]
+
+        if not stores:
+            continue
+
+        storage_state = account.storage_state if isinstance(account.storage_state, dict) else json.loads(account.storage_state)
+
+        # 调用评论同步服务
+        sync_result = await review_service.sync_reviews(
+            platform=account.platform,
+            storage_state=storage_state,
+            stores=stores,
+        )
+
+        if sync_result.get("status") != "success":
+            # 同步失败，继续下一个账号
+            continue
+
+        # 导入评论数据
+        raw_reviews = sync_result.get("reviews", [])
+        if not raw_reviews:
+            synced_accounts.add(str(sp.account_id))
+            continue
+
+        # 去重：批量查询已存在的 platform_review_id
+        platform_review_ids = [r.get("feedbackId") for r in raw_reviews if r.get("feedbackId")]
+        if platform_review_ids:
+            exist_stmt = select(Review.platform_review_id).where(
+                Review.platform == account.platform,
+                Review.platform_review_id.in_(platform_review_ids),
+            )
+            exist_result = await db.execute(exist_stmt)
+            existing_ids = set(exist_result.scalars().all())
+        else:
+            existing_ids = set()
+
+        # 批量创建评论
+        created_count = 0
+        for raw in raw_reviews:
+            feedback_id = raw.get("feedbackId")
+            if not feedback_id or feedback_id in existing_ids:
+                total_skipped += 1
+                continue
+
+            # 查找对应的 store_id
+            poi_id = raw.get("poiId")
+            store_id_for_review = None
+            for p in all_store_platforms:
+                if p.platform_store_id == poi_id:
+                    store_id_for_review = p.store_id
+                    break
+
+            if not store_id_for_review:
+                total_skipped += 1
+                continue
+
+            # 自动情感判断：rating >= 4 正面, <= 2 负面, 其他中性
+            rating = raw.get("score", 3)
+            if rating >= 4:
+                sentiment = "positive"
+            elif rating <= 2:
+                sentiment = "negative"
+            else:
+                sentiment = "neutral"
+
+            review = Review(
+                store_id=store_id_for_review,
+                platform=account.platform,
+                platform_review_id=feedback_id,
+                user_name=raw.get("userName", "匿名用户"),
+                user_avatar=raw.get("userAvatar"),
+                rating=rating,
+                content=raw.get("content", ""),
+                images=raw.get("images", []),
+                sentiment=sentiment,
+                platform_created_at=raw.get("addTime"),
+            )
+            db.add(review)
+            created_count += 1
+
+        await db.commit()
+        total_created += created_count
+        synced_accounts.add(str(sp.account_id))
+
+    return success(
+        data={
+            "created": total_created,
+            "skipped": total_skipped,
+            "total": total_created + total_skipped,
+        },
+        message=f"评论同步完成，新增 {total_created} 条",
+    )

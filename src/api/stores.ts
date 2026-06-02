@@ -156,4 +156,12 @@ export const storesApi = {
     const response = await api.delete(`/v1/stores/${storeId}/bind`);
     return response.data || response;
   },
+
+  // 同步店铺评论数据
+  syncStoreReviews: async (storeId: string): Promise<{ created: number; skipped: number; total: number }> => {
+    const response = await api.post<any>(`/v1/stores/${storeId}/sync-reviews`, null, {
+      timeout: 120000,  // 评论同步需要启动浏览器，给 120 秒
+    });
+    return response.data || response;
+  },
 };

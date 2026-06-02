@@ -125,6 +125,18 @@ async def get_reply_stats(
     return success(data=ReplyStatsResponse(**stats).model_dump(mode="json"))
 
 
+@router.get("/appeal-suggestions", summary="批量申诉建议列表")
+async def get_appeal_suggestions(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_valid_subscription),
+) -> dict:
+    """
+    获取疑似恶意差评的批量申诉建议列表
+    """
+    suggestions = await ai_analysis_service.get_appeal_suggestions(db, current_user)
+    return success(data=[AppealSuggestionResponse(**s).model_dump(mode="json") for s in suggestions])
+
+
 @router.get("/appeal-suggestions/{review_id}", summary="申诉建议")
 async def get_appeal_suggestion(
     review_id: UUID,

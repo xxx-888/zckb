@@ -675,20 +675,66 @@ class PlatformService:
         self,
         platform: str,
         credentials: dict,
-    ) -> bool:
+    ) -> dict:
         """
-        验证平台连接
+        验证平台连接是否仍然有效（通过 Playwright 使用已保存的 storage_state 验证）。
 
         Args:
             platform: 平台名称
-            credentials: 登录凭证
+            credentials: 登录凭证（包含 cookies 和 _storage_state）
 
         Returns:
-            bool: 是否验证成功
+            dict: {"valid": True/False, "username": "...", "storage_state": {...}, "error": "..."}
         """
-        # TODO: 实际应调用平台API验证
-        # 这里模拟验证
-        return True
+        from app.services.session_validation_service import SessionValidationService
+
+        storage_state = credentials.get("_storage_state") or credentials.get("cookies", {}).get("_storage_state")
+        if not storage_state:
+            return {"valid": False, "error": "未找到 storage_state，请重新登录"}
+
+        service = SessionValidationService.get_instance()
+        return await service.validate(platform, storage_state)
+
+    async def get_valid_storage_state(self, user_id: UUID, platform: str) -> dict:
+        """
+        获取用户指定平台的有效 storage_state，供爬虫模块直接使用。
+
+        Args:
+            user_id: 用户ID
+            platform: 平台名称（meituan / douyin 等）
+
+        Returns:
+            dict: {"storage_state": {...}, "platform_username": "...", "account_id": "..."}
+
+        Raises:
+            BusinessException: 无有效登录态时抛出
+        """
+        stmt = select(PlatformAccount).where(
+            PlatformAccount.user_id == user_id,
+            PlatformAccount.platform == platform,
+        )
+        result = await self.db.execute(stmt)
+        account = result.scalar_one_or_none()
+
+        if not account:
+            raise BusinessException(f"未绑定 {platform} 平台账号，请先扫码登录绑定")
+
+        if not account.cookies_encrypted:
+            raise BusinessException(f"{platform} 平台凭证为空，请重新扫码登录")
+
+        credentials = await self._decrypt_credentials(account.cookies_encrypted)
+        storage_state = credentials.get("cookies", {}).get("_storage_state")
+
+        if not storage_state:
+            raise BusinessException(
+                f"{platform} 平台登录态无效（无 storage_state），请重新扫码登录"
+            )
+
+        return {
+            "storage_state": storage_state,
+            "platform_username": account.platform_username or "",
+            "account_id": str(account.id),
+        }
 
     async def refresh_platform_token(
         self,

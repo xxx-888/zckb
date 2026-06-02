@@ -31,6 +31,13 @@ GOOD_KEYWORDS = ["好吃", "美味", "推荐", "满意", "赞", "棒", "好", "�
 BAD_KEYWORDS = ["难吃", "咸", "淡", "老", "腥", "失望", "差", "坏", "恶心", "投诉"]
 
 
+def _build_store_filter(user: User, store_id: str | None = None) -> list:
+    """构建门店过滤条件"""
+    if store_id:
+        return [store_id]
+    return [sa.store_id for sa in user.store_associations]
+
+
 def _guess_dish_from_content(content: str) -> str | None:
     """从评论内容中猜测菜品名"""
     if not content:
@@ -57,7 +64,7 @@ def _analyze_sentiment_from_content(content: str, rating: int) -> str:
 
 
 async def get_top_dishes(
-    db: AsyncSession, user: User, period: str = "30d"
+    db: AsyncSession, user: User, period: str = "30d", store_id: str | None = None
 ) -> list[dict]:
     """
     获取菜品口碑排行（真实数据）
@@ -69,12 +76,16 @@ async def get_top_dishes(
         period_days = 30
     since = datetime.utcnow() - timedelta(days=period_days)
 
+    store_ids = _build_store_filter(user, store_id)
+    if not store_ids:
+        return []
+
     stmt = (
         select(Review)
         .join(Review.store)
         .where(
             and_(
-                Review.store_id.in_([sa.store_id for sa in user.store_associations]),
+                Review.store_id.in_(store_ids),
                 Review.created_at >= since,
                 Review.status == "normal",
             )
@@ -135,7 +146,7 @@ async def get_top_dishes(
 
 
 async def get_three_good_three_bad(
-    db: AsyncSession, user: User, period: str = "30d"
+    db: AsyncSession, user: User, period: str = "30d", store_id: str | None = None
 ) -> dict:
     """
     获取三好三差报告（真实数据）
@@ -147,12 +158,16 @@ async def get_three_good_three_bad(
         period_days = 30
     since = datetime.utcnow() - timedelta(days=period_days)
 
+    store_ids = _build_store_filter(user, store_id)
+    if not store_ids:
+        return {"goods": [], "bads": []}
+
     stmt = (
         select(Review)
         .join(Review.store)
         .where(
             and_(
-                Review.store_id.in_([sa.store_id for sa in user.store_associations]),
+                Review.store_id.in_(store_ids),
                 Review.created_at >= since,
                 Review.status == "normal",
             )
@@ -164,10 +179,7 @@ async def get_three_good_three_bad(
     reviews = result.scalars().all()
 
     if not reviews:
-        return {
-            "goods": ["服务态度热情", "菜品口味好评", "用餐环境舒适"],
-            "bads": ["上菜速度需提升", "部分菜品需改进", "停车便利待改善"],
-        }
+        return {"goods": [], "bads": []}
 
     # 统计好评/差评关键词
     from collections import Counter
@@ -232,19 +244,23 @@ async def get_three_good_three_bad(
     return {"goods": goods[:3], "bads": bads[:3]}
 
 
-async def get_dish_elimination(db: AsyncSession, user: User) -> list[dict]:
+async def get_dish_elimination(db: AsyncSession, user: User, store_id: str | None = None) -> list[dict]:
     """
     获取末位淘汰建议（真实数据）
     基于评论评分和差评率给出建议
     """
     since = datetime.utcnow() - timedelta(days=30)
 
+    store_ids = _build_store_filter(user, store_id)
+    if not store_ids:
+        return []
+
     stmt = (
         select(Review)
         .join(Review.store)
         .where(
             and_(
-                Review.store_id.in_([sa.store_id for sa in user.store_associations]),
+                Review.store_id.in_(store_ids),
                 Review.created_at >= since,
                 Review.status == "normal",
             )
@@ -296,7 +312,7 @@ async def get_dish_elimination(db: AsyncSession, user: User) -> list[dict]:
 
 
 async def get_service_cases(
-    db: AsyncSession, user: User, case_type: str | None = None
+    db: AsyncSession, user: User, case_type: str | None = None, store_id: str | None = None
 ) -> list[dict]:
     """
     获取服务案例库（真实数据）
@@ -304,12 +320,16 @@ async def get_service_cases(
     """
     since = datetime.utcnow() - timedelta(days=90)
 
+    store_ids = _build_store_filter(user, store_id)
+    if not store_ids:
+        return []
+
     stmt = (
         select(Review)
         .join(Review.store)
         .where(
             and_(
-                Review.store_id.in_([sa.store_id for sa in user.store_associations]),
+                Review.store_id.in_(store_ids),
                 Review.created_at >= since,
                 Review.status == "normal",
                 Review.content.isnot(None),
@@ -349,17 +369,22 @@ async def get_service_cases(
     return cases[:10]
 
 
-async def get_competitor_opportunities(db: AsyncSession, user: User) -> list[dict]:
+async def get_competitor_opportunities(db: AsyncSession, user: User, store_id: str | None = None) -> list[dict]:
     """
     获取同行机会洞察（基于本店数据做竞品对比分析）
     """
     since = datetime.utcnow() - timedelta(days=30)
+
+    store_ids = _build_store_filter(user, store_id)
+    if not store_ids:
+        return []
+
     stmt = (
         select(Review)
         .join(Review.store)
         .where(
             and_(
-                Review.store_id.in_([sa.store_id for sa in user.store_associations]),
+                Review.store_id.in_(store_ids),
                 Review.created_at >= since,
                 Review.status == "normal",
             )
