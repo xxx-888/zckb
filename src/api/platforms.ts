@@ -135,7 +135,9 @@ export const platformsApi = {
     status: string;
     expires_in: number;
   }> => {
-    const response = await api.post<any, any>('/v1/platforms/qr-login/start', { platform });
+    const response = await api.post<any, any>('/v1/platforms/qr-login/start', { platform }, {
+      timeout: 60000,  // 启动浏览器需要较长时间，给 60 秒
+    });
     return response.data || response;
   },
 
