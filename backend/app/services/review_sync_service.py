@@ -11,13 +11,14 @@ import json
 import logging
 import multiprocessing
 import os
+import time
 from typing import Optional
 from uuid import uuid4
 
 logger = logging.getLogger(__name__)
 
 HEADLESS = os.getenv("QR_HEADLESS", "true").lower() in ("true", "1", "yes")
-REVIEW_SYNC_TIMEOUT = 120  # 评论同步超时（秒）
+REVIEW_SYNC_TIMEOUT = 600  # 评论同步超时（秒）— 部分店铺评论量大，需要更长时间
 
 _RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".qr_results")
 
@@ -35,13 +36,13 @@ PLATFORM_REVIEW_CONFIG = {
         "api_url": "https://ecom.meituan.com/emis/gw/rpc/TFeedbackListNewService/queryMTFeedbackPCNew",
         "entry_url": "https://ecom.meituan.com/emis/evaluation/poi",
         "page_size": 50,
-        "max_pages": 100,
+        "max_pages": 1000,
     },
     "dianping": {
         "api_url": "https://ecom.meituan.com/emis/gw/rpc/TFeedbackListNewService/queryDPFeedbackPCNew",
         "entry_url": "https://ecom.meituan.com/emis/evaluation/poi",
         "page_size": 50,
-        "max_pages": 100,
+        "max_pages": 1000,
     },
 }
 
@@ -80,19 +81,18 @@ async (args) => {
 
 def _review_sync_worker(
     task_id: str,
-    platform: str,
+    platform: str,  # 单个平台，如 "meituan" 或 "dianping"
     storage_state: dict,
     headless: bool,
     results_dir: str,
-    stores: list,  # [{"platform_store_id": "...", "platform_store_name": "...", "store_id": "..."}]
+    stores: list,
     time_type: str = "近30天",
 ):
     """
     在独立进程中运行评论同步：
     1. 启动浏览器，加载 storage_state
-    2. 遍历店铺列表，调用评论 API
-    3. 收集所有评论原始数据
-    4. 写入结果文件
+    2. 调用指定平台的评论 API
+    3. 收集评论原始数据，写入结果文件
     """
     import sys
     _handler = logging.StreamHandler(sys.stderr)
@@ -103,10 +103,13 @@ def _review_sync_worker(
 
     done_file = os.path.join(results_dir, f"{task_id}_review_done.json")
 
-    config = PLATFORM_REVIEW_CONFIG.get(platform)
-    if not config:
+    # 校验平台
+    if platform not in PLATFORM_REVIEW_CONFIG:
         _write_result(done_file, {"status": "failed", "error": f"不支持的平台: {platform}"})
         return
+
+    config = PLATFORM_REVIEW_CONFIG[platform]
+    logger.info(f"[ReviewSync Worker] platform={platform}, stores={len(stores)}, timeType={time_type}")
 
     pw = None
     browser = None
@@ -115,6 +118,38 @@ def _review_sync_worker(
 
     try:
         pw = sync_playwright().start()
+
+        # storage_state 直接可用（解密 cookies_encrypted 即得）
+        if not storage_state or not storage_state.get("cookies"):
+            _write_result(done_file, {"status": "failed", "error": "storage_state 为空，请重新扫码登录"})
+            return
+
+        # 兼容：如果 cookies 是 dict {name: value}，转换成 Playwright 列表格式
+        _cookies = storage_state.get("cookies")
+        if isinstance(_cookies, dict):
+            domain = ".meituan.com"  # 美团和大众点评评论 API 都在 ecom.meituan.com 域下
+            pw_cookies = []
+            for name, value in _cookies.items():
+                if str(name).startswith("_"):
+                    continue
+                pw_cookies.append({
+                    "name": str(name),
+                    "value": str(value),
+                    "domain": domain,
+                    "path": "/",
+                    "expires": -1,
+                    "httpOnly": False,
+                    "secure": True,
+                    "sameSite": "Lax",
+                })
+            storage_state["cookies"] = pw_cookies
+            logger.info(f"[ReviewSync Worker] Converted cookies dict → list: {len(pw_cookies)} cookies")
+        elif isinstance(_cookies, list):
+            # 已经是正确格式，无需转换
+            pass
+        else:
+            _write_result(done_file, {"status": "failed", "error": f"storage_state.cookies 格式异常: {type(_cookies)}"})
+            return
 
         try:
             browser = pw.chromium.launch(
@@ -179,7 +214,7 @@ def _review_sync_worker(
             store_name = store_info.get("platform_store_name", poi_id)
             store_db_id = store_info.get("store_id", "")
 
-            logger.info(f"[ReviewSync Worker] [{store_idx+1}/{len(stores)}] 抓取: {store_name} (poiId={poi_id})")
+            logger.info(f"[ReviewSync Worker] [{store_idx+1}/{len(stores)}] 抓取: {store_name} (poi_id={poi_id})")
 
             try:
                 store_reviews = []
@@ -202,13 +237,14 @@ def _review_sync_worker(
                         break  # 后续页失败，停止翻页
 
                     http_status = result.get("_status", 0)
-                    data_inner = result.get("data", {}).get("data", {})
-                    feedbacks = data_inner.get("feedbacks", [])
+                    data_outer = result.get("data") or {}
+                    data_inner = (data_outer.get("data") or {}) if data_outer else {}
+                    feedbacks = data_inner.get("feedbacks", []) or []
 
                     if page_no == 1:
-                        code = result.get("data", {}).get("code", "?")
-                        msg = result.get("data", {}).get("msg", "")
-                        api_total = data_inner.get("total")
+                        code = data_outer.get("code", "?") if data_outer else "?"
+                        msg = data_outer.get("msg", "") if data_outer else ""
+                        api_total = (data_inner or {}).get("total")
                         logger.info(
                             f"[ReviewSync Worker] {store_name}: code={code}, msg={msg}, "
                             f"http={http_status}, total={api_total}, page_feedbacks={len(feedbacks)}"
@@ -226,8 +262,7 @@ def _review_sync_worker(
                         break
 
                     # 翻页间隔
-                    import asyncio as _aio
-                    _aio.run(_aio.sleep(0.5))
+                    time.sleep(0.5)
 
                 logger.info(f"[ReviewSync Worker] {store_name}: 共抓取 {len(store_reviews)} 条评论")
                 all_reviews.extend(store_reviews)
@@ -302,9 +337,20 @@ def _convert_raw_review(raw_item: dict, store_db_id: str, platform: str, poi_id:
                     except ValueError:
                         continue
 
-        # 图片
+        # 图片（API 返回的图片可能是 dict 对象，需提取 url 字段）
         images_raw = raw_item.get("pictures") or raw_item.get("images") or raw_item.get("imgs") or []
-        images_list = images_raw if isinstance(images_raw, list) else []
+        images_list = []
+        if isinstance(images_raw, list):
+            for img in images_raw:
+                if isinstance(img, str):
+                    images_list.append(img)
+                elif isinstance(img, dict):
+                    # 优先取 url/originUrl/bigUrl，降级取 thumbUrl
+                    url = img.get("url") or img.get("originUrl") or img.get("bigUrl") or img.get("thumbUrl") or ""
+                    if url:
+                        images_list.append(url)
+        if not images_list:
+            images_list = None
 
         # 情感：基于评分自动判断
         score = raw_item.get("score") or raw_item.get("star") or 0
@@ -362,6 +408,7 @@ class ReviewSyncService:
             return
         os.makedirs(_RESULTS_DIR, exist_ok=True)
         self._processes: dict = {}
+        self._task_meta: dict = {}  # task_id → {"account_id", "platforms", "status", "result", "error", "started_at"}
         self._initialized = True
 
     def _task_file(self, task_id: str, suffix: str) -> str:
@@ -378,24 +425,25 @@ class ReviewSyncService:
 
     async def sync_reviews(
         self,
-        platform: str,
-        storage_state: dict,
-        stores: list,
+        platform: str,   # 单个平台，如 "meituan" 或 "dianping"
+        storage_state: dict,  # Playwright storage_state（直接可用）
+        stores: list,       # 该平台下的店铺列表
         time_type: str = "近30天",
     ) -> dict:
         """
-        同步平台评论。
+        同步指定平台的评论。
 
         Args:
-            platform: 平台名称
+            platform: 平台名称（"meituan" 或 "dianping"）
             storage_state: Playwright storage_state
-            stores: 店铺列表 [{"platform_store_id", "platform_store_name", "store_id"}]
+            stores: 该平台下的店铺列表 [{"platform_store_id", "platform_store_name", "store_id"}]
             time_type: 时间范围 "近7天"/"近30天"/"全部"
 
         Returns:
-            {"status": "success", "reviews": [...], "review_count": N}
-            或 {"status": "failed", "error": "..."}
+            {"status": "success", "reviews": [...], "review_count": N, "store_count": M}
         """
+        print(f"[PRINT][sync_reviews] ENTRY: platform={platform}, stores={len(stores)}", flush=True)
+        logger.info(f"[TRACE][sync_reviews] ENTRY: platform={platform}")
         self._ensure_init()
 
         if platform not in PLATFORM_REVIEW_CONFIG:
@@ -408,7 +456,7 @@ class ReviewSyncService:
         if os.path.exists(fp):
             os.remove(fp)
 
-        # 启动 worker 进程
+        # 启动 worker 进程（传单个 platform）
         process = multiprocessing.Process(
             target=_review_sync_worker,
             args=(task_id, platform, storage_state, HEADLESS, _RESULTS_DIR, stores, time_type),
@@ -419,9 +467,10 @@ class ReviewSyncService:
         self._processes[task_id] = process
         logger.info(f"[ReviewSync] Started process pid={process.pid} for {platform}, {len(stores)} stores")
 
-        # 轮询等待结果（最多 120 秒）
+        # 轮询等待结果（最多 REVIEW_SYNC_TIMEOUT 秒）
         done_file = self._task_file(task_id, "_review_done.json")
-        for _ in range(240):  # 240 * 0.5s = 120s
+        max_polls = int(REVIEW_SYNC_TIMEOUT * 2)  # 1200 * 0.5s = 600s
+        for _ in range(max_polls):
             await asyncio.sleep(0.5)
             result = self._read_json(done_file)
             if result:
@@ -430,7 +479,174 @@ class ReviewSyncService:
 
         # 超时
         self._cleanup_task(task_id)
-        return {"status": "failed", "error": "评论同步超时（120秒）"}
+        self._task_meta[task_id] = {
+            **self._task_meta.get(task_id, {}),
+            "status": "failed",
+            "error": f"评论同步超时（{REVIEW_SYNC_TIMEOUT}秒）",
+        }
+        return {"status": "failed", "error": f"评论同步超时（{REVIEW_SYNC_TIMEOUT}秒）"}
+
+    async def start_sync_reviews_async(
+        self,
+        account_id: str,
+        storage_state: dict,
+        stores_by_platform: dict,  # {"meituan": [...], "dianping": [...]}
+        time_type: str = "近30天",
+    ) -> str:
+        """
+        非阻塞启动评论同步任务，返回 task_id。
+        前端通过 get_sync_reviews_status(task_id) 轮询进度。
+        """
+        import asyncio as _asyncio
+
+        self._ensure_init()
+        task_id = str(uuid4())
+        platforms_list = list(stores_by_platform.keys())
+
+        self._task_meta[task_id] = {
+            "account_id": account_id,
+            "platforms": platforms_list,
+            "status": "running",
+            "result": None,
+            "error": None,
+            "started_at": time.time(),
+            "current_platform": platforms_list[0] if platforms_list else "",
+            "progress": f"0/{len(platforms_list)} 平台",
+        }
+
+        # 后台协程执行同步 + 入库
+        async def _background_sync():
+            from app.core.database import async_session_factory
+            from app.models.review import Review
+
+            try:
+                all_reviews = []
+                all_store_count = 0
+                errors = []
+
+                for idx, plt in enumerate(platforms_list):
+                    plt_stores = stores_by_platform[plt]
+                    self._task_meta[task_id]["current_platform"] = plt
+                    self._task_meta[task_id]["progress"] = f"{idx}/{len(platforms_list)} 平台 ({plt})"
+
+                    sync_result = await self.sync_reviews(
+                        platform=plt,
+                        storage_state=storage_state,
+                        stores=plt_stores,
+                        time_type=time_type,
+                    )
+
+                    if sync_result.get("status") == "success":
+                        all_reviews.extend(sync_result.get("reviews", []))
+                        all_store_count += sync_result.get("store_count", 0)
+                    else:
+                        err = sync_result.get("error", f"{plt} 同步失败")
+                        errors.append(err)
+                        logger.warning(f"[sync_reviews_bg] {plt} failed: {err}")
+
+                # 直接在后台入库（避免 result 接口超时）
+                created_count = 0
+                skipped_count = 0
+
+                if all_reviews:
+                    # 去重
+                    seen = set()
+                    unique_reviews = []
+                    for r in all_reviews:
+                        key = (r.get("store_id", ""), r["platform"], r["platform_review_id"])
+                        if r["platform_review_id"] and key not in seen:
+                            seen.add(key)
+                            unique_reviews.append(r)
+
+                    from itertools import groupby as _groupby
+                    from sqlalchemy import select as _select
+
+                    async with async_session_factory() as db_session:
+                        try:
+                            existing_keys = set()
+                            sorted_reviews = sorted(unique_reviews, key=lambda r: (r["platform"], r["platform_review_id"]))
+                            for plat, grp in _groupby(sorted_reviews, key=lambda r: r["platform"]):
+                                review_ids = [r["platform_review_id"] for r in list(grp)]
+                                if review_ids:
+                                    exist_stmt = _select(Review.platform_review_id).where(
+                                        Review.platform == plat,
+                                        Review.platform_review_id.in_(review_ids),
+                                    )
+                                    exist_result = await db_session.execute(exist_stmt)
+                                    existing_keys.update((plat, row[0]) for row in exist_result.all())
+
+                            from datetime import datetime
+                            for item in unique_reviews:
+                                key = (item["platform"], item["platform_review_id"])
+                                if key in existing_keys or not item["platform_review_id"]:
+                                    skipped_count += 1
+                                    continue
+                                platform_time = None
+                                if item.get("platform_created_at"):
+                                    try:
+                                        platform_time = datetime.fromisoformat(item["platform_created_at"].replace("Z", "+00:00"))
+                                        platform_time = platform_time.replace(tzinfo=None)
+                                    except Exception:
+                                        pass
+                                review = Review(
+                                    store_id=item["store_id"],
+                                    platform=item["platform"],
+                                    platform_review_id=item["platform_review_id"],
+                                    user_name=item.get("user_name"),
+                                    user_avatar=item.get("user_avatar"),
+                                    rating=item.get("rating", 3),
+                                    content=item.get("content"),
+                                    images=item.get("images"),
+                                    sentiment=item.get("sentiment"),
+                                    raw_json=item.get("raw_json"),
+                                    platform_created_at=platform_time,
+                                    status="normal",
+                                )
+                                db_session.add(review)
+                                created_count += 1
+                            await db_session.commit()
+                        except Exception as db_err:
+                            logger.exception(f"[sync_reviews_bg] 入库异常: {db_err}")
+                            await db_session.rollback()
+                            errors.append(f"入库失败: {str(db_err)}")
+
+                # 入库完成后，不再存储原始评论数据（只保留统计），释放内存
+                self._task_meta[task_id].update({
+                    "status": "success" if created_count > 0 or (not errors) else "failed",
+                    "result": {
+                        "review_count": len(all_reviews),
+                        "created": created_count,
+                        "skipped": skipped_count,
+                        "store_count": all_store_count,
+                        "errors": errors,
+                    },
+                    "error": "; ".join(errors) if errors else None,
+                    "current_platform": "",
+                    "progress": f"{len(platforms_list)}/{len(platforms_list)} 平台 - 入库完成",
+                })
+            except Exception as e:
+                logger.exception(f"[sync_reviews_bg] task {task_id} exception")
+                self._task_meta[task_id].update({
+                    "status": "failed",
+                    "error": str(e),
+                })
+
+        _asyncio.create_task(_background_sync())
+        return task_id
+
+    def get_sync_reviews_status(self, task_id: str) -> dict:
+        """查询评论同步任务状态，供前端轮询。"""
+        self._ensure_init()
+        meta = self._task_meta.get(task_id)
+        if not meta:
+            return {"status": "not_found", "error": "任务不存在"}
+        return {
+            "status": meta["status"],  # running / success / failed
+            "current_platform": meta.get("current_platform", ""),
+            "progress": meta.get("progress", ""),
+            "result": meta.get("result"),
+            "error": meta.get("error"),
+        }
 
     def _cleanup_task(self, task_id: str):
         process = self._processes.pop(task_id, None)

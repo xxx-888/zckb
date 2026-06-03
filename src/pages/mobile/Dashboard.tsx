@@ -28,13 +28,7 @@ import { cn } from '../../lib/utils';
 import { useToast } from '../../hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import {
-  fetchCoreStats,
-  fetchPlatformData,
-  fetchRecentReviews,
-  fetchStoreRankings,
-  fetchHealthStatus,
-  fetchAlert,
-  fetchStoreHealth,
+  fetchDashboardOverview,
   type CoreStats,
   type PlatformData,
   type Review,
@@ -126,7 +120,7 @@ export const Dashboard: React.FC = () => {
     navigate('/mobile/store-list');
   };
 
-  const handleReviewClick = (reviewId: number) => {
+  const handleReviewClick = (reviewId: string) => {
     navigate(`/mobile/review-detail/${reviewId}`);
   };
 
@@ -153,44 +147,40 @@ export const Dashboard: React.FC = () => {
       setLoading(true);
       setError(null);
 
-      // 直接传 timePeriod 给 API 函数，由 dashboard.ts 里的 mapPeriod 统一映射
-      console.log('[Dashboard] fetchAllData 开始获取数据, timePeriod:', timePeriod);
-      console.log('[Dashboard] isHQ:', isHQ, 'currentUser.role:', currentUser?.role);
+      // 聚合接口：1 个请求替代原来 7 个
+      console.log('[Dashboard] fetchAllData 开始, timePeriod:', timePeriod);
 
-      // 所有 API 都传入 timePeriod，确保时间筛选对所有数据生效
-      const [coreStatsRes, platformDataRes, recentReviewsRes, storeRankingsRes, healthStatsRes] = await Promise.all([
-        fetchCoreStats(timePeriod),
-        fetchPlatformData(timePeriod),
-        fetchRecentReviews(5, timePeriod),
-        fetchStoreRankings(5, timePeriod),
-        fetchHealthStatus(timePeriod),
-      ]);
+      const overview = await fetchDashboardOverview(timePeriod);
+      console.log('[Dashboard] overview:', overview);
 
-      console.log('[Dashboard] coreStatsRes:', coreStatsRes);
-      console.log('[Dashboard] platformDataRes:', platformDataRes);
-      console.log('[Dashboard] recentReviewsRes:', recentReviewsRes);
-
-      setCoreStats(coreStatsRes);
-      setPlatformData(platformDataRes);
-      setRecentReviews(recentReviewsRes);
+      // 一次性设置所有状态
+      setCoreStats(overview.core_stats);
+      setPlatformData(overview.platform_data);
+      setRecentReviews(overview.recent_reviews);
 
       if (isHQ) {
-        setStoreRankings(storeRankingsRes);
+        setStoreRankings(overview.store_rankings);
       } else {
-        const storeHealthRes = await fetchStoreHealth(timePeriod);
-        console.log('[Dashboard] storeHealthRes:', storeHealthRes);
-        if (storeHealthRes && storeHealthRes.length > 0) {
-          setStoreHealth(storeHealthRes[0]);
+        if (overview.store_health && overview.store_health.length > 0) {
+          setStoreHealth(overview.store_health[0]);
         } else {
           setStoreHealth(null);
         }
       }
 
-      const alertRes = await fetchAlert(timePeriod);
-      console.log('[Dashboard] alertRes:', alertRes);
-      setAlert(alertRes);
+      setHealthStats(overview.health_status);
 
-      setHealthStats(healthStatsRes);
+      // alert 取优先级最高的
+      if (overview.alerts && overview.alerts.length > 0) {
+        const priority: Record<string, number> = { high: 3, medium: 2, low: 1 };
+        const sorted = [...overview.alerts].sort(
+          (a, b) => (priority[a.severity] || 0) - (priority[b.severity] || 0)
+        );
+        setAlert(sorted[sorted.length - 1]);
+      } else {
+        setAlert(null);
+      }
+
     } catch (err) {
       console.error('[Dashboard] fetchAllData 错误:', err);
       setError(err instanceof Error ? err.message : '获取数据失败');
@@ -552,14 +542,14 @@ export const Dashboard: React.FC = () => {
               <Zap className="w-4 h-4 text-orange-500" />
               最新评论动态
             </h3>
-            <span className="text-[10px] text-slate-500 font-bold bg-slate-100 px-2 py-0.5 rounded-full">{recentReviews.length} 条评论</span>
+            <span className="text-[10px] text-slate-500 font-bold bg-slate-100 px-2 py-0.5 rounded-full">{coreStats?.total_reviews || recentReviews.length} 条评论</span>
           </div>
           {recentReviews && recentReviews.length > 0 ? (
             recentReviews.map((review, index) => (
               <Card
                 key={`review-${review.id}-${index}`}
                 className="p-4 border-slate-100 shadow-sm active:bg-slate-50 transition-colors bg-white relative cursor-pointer hover:shadow-md transition-all"
-                onClick={() => handleReviewClick(Number(review.id))}
+                onClick={() => handleReviewClick(review.id)}
               >
               <div className="flex justify-between items-start">
                 <div className="flex gap-3 flex-1">
@@ -614,7 +604,7 @@ export const Dashboard: React.FC = () => {
                   className="w-8 h-8 rounded-full flex-shrink-0"
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleReviewClick(Number(review.id));
+                    handleReviewClick(review.id);
                   }}
                 >
                   <ChevronRight className="w-4 h-4 text-slate-300" />

@@ -34,6 +34,7 @@ export default function PlatformConnection() {
   const [actionLoading, setActionLoading] = useState(false);
   const [syncingId, setSyncingId] = useState<string | null>(null);
   const [syncingReviewsId, setSyncingReviewsId] = useState<string | null>(null);
+  const [syncReviewsProgress, setSyncReviewsProgress] = useState('');
 
   // 编辑弹窗状态
   const [showEditModal, setShowEditModal] = useState(false);
@@ -355,20 +356,93 @@ export default function PlatformConnection() {
     }
   };
 
-  // 同步评论数据
+  // 同步评论数据（轮询模式，跟扫码登录一样的体验）
+  const syncReviewsTaskRef = useRef<{ accountId: string; taskId: string } | null>(null);
+  const syncReviewsPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const cleanupSyncReviews = () => {
+    if (syncReviewsPollRef.current) {
+      clearInterval(syncReviewsPollRef.current);
+      syncReviewsPollRef.current = null;
+    }
+    syncReviewsTaskRef.current = null;
+    setSyncingReviewsId(null);
+    setSyncReviewsProgress('');
+  };
+
+  useEffect(() => {
+    if (!syncingReviewsId || !syncReviewsTaskRef.current) return;
+
+    const poll = async () => {
+      const { accountId, taskId } = syncReviewsTaskRef.current!;
+      try {
+        const status = await platformsApi.getSyncReviewsStatus(accountId, taskId);
+
+        // 更新进度
+        if (status.progress) {
+          const platformLabels: Record<string, string> = { meituan: '美团', dianping: '大众点评' };
+          const label = platformLabels[status.current_platform] || status.current_platform;
+          setSyncReviewsProgress(label ? `${status.progress} - ${label}` : status.progress);
+        }
+
+        if (status.status === 'success') {
+          // 同步完成（入库已在后台完成），直接从 status.result 取统计
+          clearInterval(syncReviewsPollRef.current!);
+          syncReviewsPollRef.current = null;
+          const result = status.result || {};
+          const created = result.created || 0;
+          const skipped = result.skipped || 0;
+          const errs = result.errors || [];
+          if (errs.length > 0 && created === 0) {
+            toastError('评论同步失败', errs.join('; '));
+          } else {
+            success('评论同步完成', `新增 ${created} 条评论${skipped > 0 ? `，跳过 ${skipped} 条重复` : ''}${errs.length > 0 ? `\n${errs.join('; ')}` : ''}`);
+          }
+          window.dispatchEvent(new Event('visibilitychange'));
+          cleanupSyncReviews();
+        } else if (status.status === 'failed') {
+          clearInterval(syncReviewsPollRef.current!);
+          syncReviewsPollRef.current = null;
+          toastError('评论同步失败', status.error || '未知错误');
+          cleanupSyncReviews();
+        }
+        // running 状态继续轮询
+      } catch {
+        // 网络错误不中断轮询
+      }
+    };
+
+    // 2秒轮询
+    syncReviewsPollRef.current = setInterval(poll, 2000);
+
+    return () => {
+      if (syncReviewsPollRef.current) {
+        clearInterval(syncReviewsPollRef.current);
+        syncReviewsPollRef.current = null;
+      }
+    };
+  }, [syncingReviewsId, syncReviewsTaskRef.current]);
+
   const handleSyncReviews = async (accountId: string) => {
     try {
       setSyncingReviewsId(accountId);
+      setSyncReviewsProgress('准备中...');
       const result = await platformsApi.syncAccountReviews(accountId);
-      const created = result.created || 0;
-      const skipped = result.skipped || 0;
-      success('评论同步完成', `新增 ${created} 条评论${skipped > 0 ? `，跳过 ${skipped} 条重复` : ''}`);
-      // 触发 StoreContext 刷新店铺数据（评论数会变）
-      window.dispatchEvent(new Event('visibilitychange'));
+      const taskId = result.task_id;
+      if (!taskId) {
+        toastError('评论同步失败', '未返回任务 ID');
+        setSyncingReviewsId(null);
+        return;
+      }
+      // 保存任务信息，触发轮询 effect
+      syncReviewsTaskRef.current = { accountId, taskId };
+      // 手动触发 re-render 让 useEffect 重新绑定
+      setSyncingReviewsId(accountId);
+      setSyncReviewsProgress('同步中...');
     } catch (err: any) {
       toastError('评论同步失败', err.message || '网络错误');
-    } finally {
       setSyncingReviewsId(null);
+      setSyncReviewsProgress('');
     }
   };
 
@@ -414,33 +488,33 @@ export default function PlatformConnection() {
                   return (
                     <div key={account.id} className="bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
                       <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-3">
-                          <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${pInfo.color} flex items-center justify-center text-lg text-white shadow-sm`}>
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${pInfo.color} flex items-center justify-center text-lg text-white shadow-sm flex-shrink-0`}>
                             {pInfo.icon}
                           </div>
-                          <div>
-                            <p className="text-sm font-semibold text-slate-900">{account.platform_username || '未获取用户名'}</p>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-semibold text-slate-900 truncate">{account.platform_username || '未获取用户名'}</p>
                             <p className="text-xs text-slate-500">{pInfo.label}</p>
                           </div>
                         </div>
                         {getStatusBadge(account)}
                       </div>
-                      <div className="flex gap-2">
-                        <Button size="sm" variant="outline" onClick={() => handleViewStores(account)} className="flex-1 rounded-lg">
-                          <Link2 className="w-3.5 h-3.5 mr-1" />查看店铺
+                      <div className="flex flex-wrap gap-2">
+                        <Button size="sm" variant="outline" onClick={() => handleViewStores(account)} className="rounded-lg text-xs">
+                          <Link2 className="w-3 h-3 mr-1" />查看店铺
                         </Button>
-                        <Button size="sm" variant="outline" onClick={() => handleOpenEdit(account)} className="flex-1 rounded-lg">
-                          <Pencil className="w-3.5 h-3.5 mr-1" />编辑
+                        <Button size="sm" variant="outline" onClick={() => handleOpenEdit(account)} className="rounded-lg text-xs">
+                          <Pencil className="w-3 h-3 mr-1" />编辑
                         </Button>
-                        <Button size="sm" variant="outline" onClick={() => handleSyncStatus(account.id)} disabled={syncingId === account.id} className="flex-1 rounded-lg">
-                          {syncingId === account.id ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5 mr-1" />}
+                        <Button size="sm" variant="outline" onClick={() => handleSyncStatus(account.id)} disabled={syncingId === account.id} className="rounded-lg text-xs">
+                          {syncingId === account.id ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <RefreshCw className="w-3 h-3 mr-1" />}
                           {syncingId === account.id ? '同步中' : '同步状态'}
                         </Button>
-                        <Button size="sm" variant="outline" onClick={() => handleSyncReviews(account.id)} disabled={syncingReviewsId === account.id || account.cookies_status !== 'valid'} className="flex-1 rounded-lg border-orange-200 text-orange-600 hover:bg-orange-50">
-                          {syncingReviewsId === account.id ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <FileText className="w-3.5 h-3.5 mr-1" />}
-                          {syncingReviewsId === account.id ? '同步中' : '同步评论'}
+                        <Button size="sm" variant="outline" onClick={() => handleSyncReviews(account.id)} disabled={syncingReviewsId === account.id || account.cookies_status !== 'valid'} className="rounded-lg border-orange-200 text-orange-600 hover:bg-orange-50 text-xs">
+                          {syncingReviewsId === account.id ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <FileText className="w-3 h-3 mr-1" />}
+                          {syncingReviewsId === account.id ? (syncReviewsProgress || '同步中...').split(' - ')[0] : '同步评论'}
                         </Button>
-                        <Button size="sm" variant="outline" className="flex-shrink-0 border-rose-200 text-rose-600 hover:bg-rose-50 rounded-lg" onClick={() => handleUnbind(account.id)} disabled={actionLoading}>
+                        <Button size="sm" variant="outline" className="border-rose-200 text-rose-600 hover:bg-rose-50 rounded-lg" onClick={() => handleUnbind(account.id)} disabled={actionLoading}>
                           <Unlink className="w-3.5 h-3.5" />
                         </Button>
                       </div>

@@ -19,42 +19,51 @@ from app.services import user_region_service  # 导入用户区域服务
 
 async def _build_store_filter_for_user(query, user: User, db: AsyncSession):
     """
-    根据用户角色和区域权限构建门店过滤条件
-    权限计算：取并集（区域权限 + 直接店铺权限）
+    根据用户角色和区域权限构建门店过滤条件。
+    权限计算：取并集（区域权限 + 直接店铺权限）。
+    预查询 user_stores 获取 ID 列表，避免子查询可能引发的 SAWarning。
     """
-    
+
     # 超级管理员不受限制
     if user.role in ["SUPER_ADMIN", "HQ"]:
         return query
-    
-    # 获取用户关联的区域（包括子级）- 需要使用 await
+
+    # 获取用户关联的区域（包括子级）
     region_ids = await user_region_service.get_user_accessible_region_ids(db, user.id)
-    
+
+    # 预查询用户直接关联的门店 ID（避免子查询）
+    user_store_result = await db.execute(
+        select(UserStore.store_id).where(UserStore.user_id == user.id)
+    )
+    owned_store_ids = [row[0] for row in user_store_result.all()]
+
     # 构建过滤条件：店铺的 region_id 在用户区域内 OR 店铺直接关联用户
     if region_ids:
         # 区域权限：店铺的 region_id 在用户可访问的区域列表中
         region_filter = Store.region_id.in_(region_ids)
-        
-        # 直接关联权限：通过 owner_id 或 user_stores 表
-        direct_filter = or_(
-            Store.owner_id == user.id,
-            Store.id.in_(
-                select(UserStore.store_id).where(UserStore.user_id == user.id)
+
+        # 直接关联权限：通过 owner_id 或 user_stores 预查询结果
+        if owned_store_ids:
+            direct_filter = or_(
+                Store.owner_id == user.id,
+                Store.id.in_(owned_store_ids),
             )
-        )
-        
+        else:
+            direct_filter = Store.owner_id == user.id
+
         # 取并集
         return query.where(or_(region_filter, direct_filter))
     else:
         # 如果没有区域权限，只能看直接关联的店铺
-        return query.where(
-            or_(
-                Store.owner_id == user.id,
-                Store.id.in_(
-                    select(UserStore.store_id).where(UserStore.user_id == user.id)
+        if owned_store_ids:
+            return query.where(
+                or_(
+                    Store.owner_id == user.id,
+                    Store.id.in_(owned_store_ids),
                 )
             )
-        )
+        else:
+            return query.where(Store.owner_id == user.id)
 
 
 async def get_stores(

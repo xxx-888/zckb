@@ -83,9 +83,21 @@ export const platformsApi = {
     return response.data;
   },
 
-  // 同步平台评论数据
-  syncAccountReviews: async (accountId: string): Promise<{ created: number; skipped: number; total: number }> => {
+  // 同步平台评论数据（异步，返回 task_id）
+  syncAccountReviews: async (accountId: string): Promise<{ task_id: string; platforms: string[]; store_count: number }> => {
     const response = await api.post<any>(`/v1/platforms/accounts/${accountId}/sync-reviews`);
+    return response.data || response;
+  },
+
+  // 查询评论同步任务进度（轮询）
+  getSyncReviewsStatus: async (accountId: string, taskId: string): Promise<{ status: string; current_platform: string; progress: string; error?: string }> => {
+    const response = await api.get<any>(`/v1/platforms/accounts/${accountId}/sync-reviews/status/${taskId}`);
+    return response.data || response;
+  },
+
+  // 获取评论同步结果（入库已在后台完成，此接口只返回统计数字）
+  getSyncReviewsResult: async (accountId: string, taskId: string): Promise<{ created: number; skipped: number; total: number; errors: string[]; message: string }> => {
+    const response = await api.get<any>(`/v1/platforms/accounts/${accountId}/sync-reviews/result/${taskId}`);
     return response.data || response;
   },
 

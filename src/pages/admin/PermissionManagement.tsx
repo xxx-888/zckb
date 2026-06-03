@@ -11,6 +11,7 @@ import { useToast } from '../../hooks/use-toast';
 import { adminApi, AdminUser, Role } from '../../api/admin';
 import { storesApi } from '../../api/stores';
 import type { Store as StoreType } from '../../api/stores';
+import { useSearchDebounce } from '../../lib/utils';
 
 export const PermissionManagement: React.FC = () => {
   const [tab, setTab] = useState<'users' | 'roles'>('users');
@@ -39,8 +40,13 @@ export const PermissionManagement: React.FC = () => {
   // 表单状态
   const [formData, setFormData] = useState({ name: '', username: '', email: '', phone: '', password: '', role: 'OPERATOR', permissions: '', description: '' });
   const [searchQuery, setSearchQuery] = useState('');
+  const { inputValue: searchInput, debouncedValue: debouncedSearch, handleChange: handleSearchInput } = useSearchDebounce();
 
   const { success, error: toastError } = useToast();
+
+  useEffect(() => {
+    setSearchQuery(debouncedSearch);
+  }, [debouncedSearch]);
 
   // ==================== 数据获取 ====================
   const fetchData = async () => {
@@ -330,7 +336,7 @@ export const PermissionManagement: React.FC = () => {
         {/* 搜索 */}
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <input className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm outline-none" placeholder={tab === 'users' ? '搜索用户名、手机号、邮箱...' : '搜索角色名称...'} value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+          <input className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm outline-none" placeholder={tab === 'users' ? '搜索用户名、手机号、邮箱...' : '搜索角色名称...'} value={searchInput} onChange={e => handleSearchInput(e.target.value)} />
         </div>
 
         {/* ==================== 用户列表 ==================== */}

@@ -13,23 +13,33 @@ from sqlalchemy.orm import joinedload
 
 from app.core.exceptions import BusinessException, NotFoundException
 from app.models.review import ReplyAudit, Review
-from app.models.store import Store
 from app.models.user import User, UserStore
 
 
-def _build_store_filter(user: User) -> Optional:
+async def _fetch_user_store_ids(db: AsyncSession, user: User) -> Optional[list]:
     """
-    根据用户角色构建门店可见性过滤条件。
-    - SUPER_ADMIN / HQ / OPERATOR：可见所有门店
-    - STORE：仅可见关联门店
+    预查询用户可见的门店 ID 列表。
+    返回 None 表示可见所有门店（管理员），返回空列表表示无门店。
+    用 Python 列表替代 SQL 子查询，避免 SAWarning 笛卡尔积。
     """
     if user.role in ("SUPER_ADMIN", "HQ", "OPERATOR"):
-        return None  # 不过滤
-
-    # STORE 角色：查询 user_stores 获取关联门店 ID
-    return Store.id.in_(
+        return None
+    result = await db.execute(
         select(UserStore.store_id).where(UserStore.user_id == user.id)
     )
+    return [row[0] for row in result.all()]
+
+
+def _build_store_filter(store_ids: Optional[list]) -> Optional:
+    """
+    根据预查询的门店 ID 列表构建 Review.store_id 过滤条件。
+    不再引用 Store 表，避免与 joinedload(Review.store) 产生笛卡尔积。
+    """
+    if store_ids is None:
+        return None  # 管理员：不过滤
+    if not store_ids:
+        return False  # 无门店：匹配不到任何记录
+    return Review.store_id.in_(store_ids)
 
 
 async def get_reviews(
@@ -50,8 +60,9 @@ async def get_reviews(
     """
     conditions = [Review.status == "normal"]
 
-    # 角色过滤
-    store_filter = _build_store_filter(user)
+    # 角色过滤（预查询 store IDs，避免笛卡尔积）
+    store_ids = await _fetch_user_store_ids(db, user)
+    store_filter = _build_store_filter(store_ids)
     if store_filter is not None:
         conditions.append(store_filter)
 
@@ -440,8 +451,9 @@ async def get_review_stats(
 
     conditions = [Review.status == "normal"]
 
-    # 角色过滤
-    store_filter = _build_store_filter(user)
+    # 角色过滤（预查询 store IDs，避免笛卡尔积）
+    store_ids = await _fetch_user_store_ids(db, user)
+    store_filter = _build_store_filter(store_ids)
     if store_filter is not None:
         conditions.append(store_filter)
 

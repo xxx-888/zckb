@@ -1,4 +1,4 @@
-import React, { useState, useEffect, type ReactNode } from 'react';
+import React, { useState, useEffect, useRef, type ReactNode } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -81,6 +81,8 @@ export const MobileLayout: React.FC<MobileLayoutProps> = ({ children, title }) =
   // 平台账号绑定状态
   const [hasPlatformAccount, setHasPlatformAccount] = useState(false);
   const [accountCheckDone, setAccountCheckDone] = useState(false);
+  // 用 ref 标记账号检查是否正在进行，避免与重定向 useEffect 竞态
+  const checkingRef = useRef(false);
 
   const noStore = stores.length === 0;
   const isBindPage = location.pathname === '/mobile/platform-connection';
@@ -93,8 +95,9 @@ export const MobileLayout: React.FC<MobileLayoutProps> = ({ children, title }) =
       return;
     }
     // 订阅有效时，先重置为未完成，再发起异步检查
-    // 必须同步重置，否则重定向 useEffect 会用旧的 accountCheckDone=true 抢跑
+    // 同步设置 ref 防止重定向 useEffect 竞态抢跑
     setAccountCheckDone(false);
+    checkingRef.current = true;
     const checkPlatformAccounts = async () => {
       try {
         const data = await platformsApi.getAccounts();
@@ -104,24 +107,26 @@ export const MobileLayout: React.FC<MobileLayoutProps> = ({ children, title }) =
         console.error('[MobileLayout] getAccounts 失败:', err);
         setHasPlatformAccount(false);
       } finally {
+        checkingRef.current = false;
         setAccountCheckDone(true);
       }
     };
     checkPlatformAccounts();
   }, [hasValidSubscription]);
 
-  // 有订阅但无平台账号且不在绑定页 → 重定向
-  // 只要绑定了平台账号，无论是否有门店，都允许访问
-  // 必须用 accountCheckDone 保证账号检查完成后再判断，避免竞态
+  // 有订阅但无平台账号、无门店且不在绑定页 → 重定向
+  // 用 checkingRef 防止与账号检查 useEffect 的竞态（React 批量执行同周期 effect）
   useEffect(() => {
+    // 账号检查正在异步进行中，不执行重定向判断（防止竞态抢跑）
+    if (checkingRef.current) return;
     console.log('[MobileLayout] 重定向检查:', {
-      subLoading, accountCheckDone, hasValidSubscription, hasPlatformAccount, isBindPage
+      subLoading, accountCheckDone, hasValidSubscription, hasPlatformAccount, isBindPage, noStore,
     });
-    if (!subLoading && accountCheckDone && hasValidSubscription && !hasPlatformAccount && !isBindPage) {
+    if (!subLoading && accountCheckDone && hasValidSubscription && !hasPlatformAccount && !isBindPage && noStore) {
       console.log('[MobileLayout] 重定向到绑定页');
       navigate('/mobile/platform-connection', { replace: true });
     }
-  }, [subLoading, accountCheckDone, hasValidSubscription, hasPlatformAccount, isBindPage]);
+  }, [subLoading, accountCheckDone, hasValidSubscription, hasPlatformAccount, isBindPage, noStore]);
 
   // 未绑定店铺 → 跳转绑定页
   const handleNoStore = () => {

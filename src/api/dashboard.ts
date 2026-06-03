@@ -144,3 +144,24 @@ export async function fetchStoreHealth(timePeriod?: string): Promise<any[]> {
   const q = timePeriod ? `?period=${mapPeriod(timePeriod)}` : '';
   return fetchAPI<any[]>(`/v1/dashboard/store-health${q}`);
 }
+
+// ==================== 聚合接口 ====================
+
+export interface DashboardOverview {
+  core_stats: CoreStats;
+  platform_data: PlatformData[];
+  recent_reviews: Review[];
+  store_rankings: StoreRanking[];
+  health_status: HealthStatus[];
+  store_health: any[];
+  alerts: AlertData[];
+}
+
+/**
+ * 聚合接口：一次请求获取 Dashboard 全部数据。
+ * 替代原来 7 个独立 API 调用，大幅减少 round-trip。
+ */
+export async function fetchDashboardOverview(timePeriod?: string): Promise<DashboardOverview> {
+  const q = timePeriod ? `?period=${mapPeriod(timePeriod)}` : '';
+  return fetchAPI<DashboardOverview>(`/v1/dashboard/overview${q}`);
+}

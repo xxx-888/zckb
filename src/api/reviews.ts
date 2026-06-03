@@ -85,13 +85,19 @@ export const reviewsApi = {
   // 获取评论详情
   getReviewById: async (id: string): Promise<Review> => {
     const response = await api.get<any>(`/v1/reviews/${id}`);
-    return response.data || response;
+    if (response && response.code !== undefined && response.data !== undefined) {
+      return response.data as Review;
+    }
+    return response as Review;
   },
 
   // 获取相似评论
   getSimilarReviews: async (id: string): Promise<Review[]> => {
     const response = await api.get<any>(`/v1/reviews/${id}/similar`);
-    return response.data || response;
+    if (response && response.code !== undefined && response.data !== undefined) {
+      return response.data as Review[];
+    }
+    return response as Review[];
   },
 
   // 获取评论统计

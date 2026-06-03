@@ -22,7 +22,7 @@ import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { Input } from '../../components/ui/input';
 import { AdminLayout } from '../../components/AdminLayout';
-import { cn } from '../../lib/utils';
+import { cn, useSearchDebounce } from '../../lib/utils';
 import { useToast } from '../../hooks/use-toast';
 import { fetchNegativeReplyTasks, negativeReplyApi } from '../../api/negative-reply';
 import type { NegativeReplyTask } from '../../api/negative-reply';
@@ -35,6 +35,7 @@ export const NegativeReply: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [searchKeyword, setSearchKeyword] = useState('');
+  const { inputValue: searchInput, debouncedValue: debouncedKeyword, handleChange: handleSearchInput } = useSearchDebounce();
   const [filterRisk, setFilterRisk] = useState<'all' | 'high' | 'medium' | 'low'>('all');
   const pageSize = 10;
 
@@ -137,6 +138,10 @@ export const NegativeReply: React.FC = () => {
 
   // 搜索和筛选变化时重新加载
   useEffect(() => {
+    setSearchKeyword(debouncedKeyword);
+  }, [debouncedKeyword]);
+
+  useEffect(() => {
     setCurrentPage(1);
     loadData(1);
   }, [searchKeyword, filterRisk]);
@@ -234,8 +239,8 @@ export const NegativeReply: React.FC = () => {
               <Input
                 placeholder="搜索用户名或评论内容..."
                 className="pl-9"
-                value={searchKeyword}
-                onChange={(e) => setSearchKeyword(e.target.value)}
+                value={searchInput}
+                onChange={(e) => handleSearchInput(e.target.value)}
               />
             </div>
             <div className="flex gap-2">

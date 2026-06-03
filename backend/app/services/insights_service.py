@@ -406,18 +406,18 @@ async def get_competitor_opportunities(db: AsyncSession, user: User, store_id: s
         opportunities.append({
             "title": "服务差异化机会",
             "description": f"本店平均{avg_rating:.1f}星，可在服务细节上超越竞品",
-            "action": "建议推出个性化服务，如记住常客喜好",
+            "action_items": ["建议推出个性化服务，如记住常客喜好"],
         })
     if negative_count > 0:
         opportunities.append({
             "title": "差评改进机会",
             "description": f"近30天有{negative_count}条差评，改进后可超越竞品",
-            "action": "建议针对差评集中问题制定改进计划",
+            "action_items": ["建议针对差评集中问题制定改进计划"],
         })
     opportunities.append({
         "title": "菜品创新机会",
         "description": "周边竞品菜品更新慢，可推出季节限定菜品",
-        "action": "建议每季度推出2-3款限时特色菜品",
+        "action_items": ["建议每季度推出2-3款限时特色菜品"],
     })
 
     return opportunities[:3]

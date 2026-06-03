@@ -9,11 +9,13 @@ import { useToast } from '../../hooks/use-toast';
 import { useParams, useNavigate } from 'react-router-dom';
 import { fetchReviewById } from '../../api/reviews';
 import type { Review } from '../../api/reviews';
+import { normalizeImageUrls } from '../../lib/utils';
 
 export const ReviewDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const [review, setReview] = useState<Review | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const { success } = useToast();
   const navigate = useNavigate();
 
@@ -22,10 +24,14 @@ export const ReviewDetail: React.FC = () => {
     const load = async () => {
       try {
         setLoading(true);
+        setError(null);
+        console.log('[ReviewDetail] 加载评论, id:', id);
         const data = await fetchReviewById(id);
+        console.log('[ReviewDetail] 返回数据:', data);
         setReview(data);
-      } catch (err) {
+      } catch (err: any) {
         console.error('加载评论详情失败', err);
+        setError(err?.message || '加载失败');
       } finally {
         setLoading(false);
       }
@@ -54,7 +60,17 @@ export const ReviewDetail: React.FC = () => {
   if (!review) {
     return (
       <MobileLayout title="评论详情">
-        <div className="text-center py-20 text-slate-400">未找到评论数据</div>
+        <div className="text-center py-20 text-slate-400">
+          {error ? (
+            <div>
+              <p className="mb-2">加载失败</p>
+              <p className="text-xs text-slate-300">{error}</p>
+            </div>
+          ) : (
+            <p>未找到评论数据</p>
+          )}
+          <Button variant="outline" className="mt-4" onClick={() => navigate(-1)}>返回</Button>
+        </div>
       </MobileLayout>
     );
   }
@@ -127,11 +143,11 @@ export const ReviewDetail: React.FC = () => {
           </p>
 
           {/* 图片展示 */}
-          {review.hasImage && review.images && (
+          {normalizeImageUrls(review.images).length > 0 && (
             <div className="grid grid-cols-2 gap-2 mb-4">
-              {review.images.map((img, i) => (
+              {normalizeImageUrls(review.images).map((url, i) => (
                 <div key={i} className="rounded-xl overflow-hidden bg-slate-100 h-32">
-                  <img src={img} alt={`评论图片${i + 1}`} className="w-full h-full object-cover" />
+                  <img src={url} alt={`评论图片${i + 1}`} className="w-full h-full object-cover" loading="lazy" />
                 </div>
               ))}
             </div>

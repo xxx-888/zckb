@@ -18,34 +18,29 @@ from app.models.user import User
 
 async def sync_negative_reviews(db: AsyncSession, user: User) -> int:
     """
-    同步差评到审核任务表
+    同步差评到审核任务表（注意：此函数会在事务中为每条差评调用 AI，仅在后台任务中使用）
     为所有差评（rating <= 2）且还没有审核任务的评论创建任务
-    
+
     Args:
         db: 数据库会话
         user: 当前用户
-        
+
     Returns:
         int: 创建的任务数量
     """
+    from app.models.store import Store
+    from app.models.user import UserStore
+
     # 获取用户关联的店铺ID
-    # 超级管理员可以查看所有店铺
-    if user.role == "SUPER_ADMIN":
-        # 查询所有店铺
-        from app.models.store import Store
+    if user.role in ("SUPER_ADMIN", "HQ", "OPERATOR"):
         result = await db.execute(select(Store.id))
         user_store_ids = [row[0] for row in result.all()]
     else:
-        # 非管理员：只查询关联的店铺
-        user_store_ids = [sa.store_id for sa in user.store_associations]
-        
-        # 同时查询拥有的店铺
-        from app.models.store import Store
-        owned_stores_result = await db.execute(
-            select(Store.id).where(Store.owner_id == user.id)
-        )
-        owned_store_ids = [row[0] for row in owned_stores_result.all()]
-        user_store_ids = list(set(user_store_ids + owned_store_ids))
+        store_ids_stmt = select(UserStore.store_id).where(UserStore.user_id == user.id)
+        owned_stmt = select(Store.id).where(Store.owner_id == user.id)
+        all_ids_stmt = store_ids_stmt.union(owned_stmt)
+        result = await db.execute(all_ids_stmt)
+        user_store_ids = [row[0] for row in result.all()]
     
     if not user_store_ids:
         return 0
@@ -126,48 +121,65 @@ async def get_tasks(
     status: str | None = None,
     page: int = 1,
     page_size: int = 20,
+    store_id: str | None = None,
+    search: str | None = None,
 ) -> tuple[list, int]:
     """
     获取差评任务列表
-    
+
+    注意: 不再自动调用 sync_negative_reviews（逐条调 AI 太慢会超时）。
+    同步应通过独立的异步任务触发。
+
     Args:
         db: 数据库会话
         user: 当前用户
         status: 状态筛选
         page: 页码
         page_size: 每页大小
-        
+        store_id: 门店ID筛选
+        search: 关键词搜索
+
     Returns:
         tuple[list, int]: (任务列表, 总数)
     """
-    # 先同步差评到审核任务表
-    await sync_negative_reviews(db, user)
-    
-    # 构建查询条件
-    # 超级管理员可以查看所有数据，非管理员只能查看关联的店铺
+    from app.models.store import Store
+    from app.models.user import UserStore
+
+    # 构建门店可见性条件
     conditions = []
-    
-    if user.role != "SUPER_ADMIN":
-        # 非管理员：只查询关联的店铺
-        user_store_ids = [sa.store_id for sa in user.store_associations]
-        
-        # 同时查询拥有的店铺
-        from app.models.store import Store
-        owned_stores_result = await db.execute(
-            select(Store.id).where(Store.owner_id == user.id)
-        )
-        owned_store_ids = [row[0] for row in owned_stores_result.all()]
-        
-        # 合并店铺ID
-        all_store_ids = list(set(user_store_ids + owned_store_ids))
-        
+
+    if user.role in ("SUPER_ADMIN", "HQ", "OPERATOR"):
+        # 管理员可见所有门店
+        if store_id:
+            conditions.append(ReplyAudit.store_id == store_id)
+    else:
+        # 非管理员：查询关联门店
+        store_ids_stmt = select(UserStore.store_id).where(UserStore.user_id == user.id)
+        owned_stmt = select(Store.id).where(Store.owner_id == user.id)
+        all_ids_stmt = store_ids_stmt.union(owned_stmt)
+        result = await db.execute(all_ids_stmt)
+        all_store_ids = [row[0] for row in result.all()]
+
         if not all_store_ids:
             return [], 0
-        
-        conditions.append(ReplyAudit.store_id.in_(all_store_ids))
-    
+
+        if store_id:
+            if store_id not in [str(sid) for sid in all_store_ids]:
+                return [], 0
+            conditions.append(ReplyAudit.store_id == store_id)
+        else:
+            conditions.append(ReplyAudit.store_id.in_(all_store_ids))
+
     if status:
         conditions.append(ReplyAudit.status == status)
+
+    # 关键词搜索（匹配评论内容或用户名）
+    if search:
+        search_conditions = [
+            Review.content.ilike(f"%{search}%"),
+            Review.user_name.ilike(f"%{search}%"),
+        ]
+        conditions.append(func.or_(*search_conditions))
 
     # 查询总数
     count_stmt = select(func.count(ReplyAudit.id)).where(and_(*conditions))
@@ -208,19 +220,29 @@ async def get_tasks(
 async def approve_task(db: AsyncSession, task_id: UUID, user: User) -> ReplyAudit:
     """
     批准并发送差评回复
-    
+
     Args:
         db: 数据库会话
         task_id: 任务ID
         user: 当前用户
-        
+
     Returns:
         ReplyAudit: 审核记录
     """
+    from app.models.store import Store
+    from app.models.user import UserStore
+
+    # 构建门店权限条件
+    store_ids_stmt = select(UserStore.store_id).where(UserStore.user_id == user.id)
+    owned_stmt = select(Store.id).where(Store.owner_id == user.id)
+    all_ids_stmt = store_ids_stmt.union(owned_stmt)
+    result = await db.execute(all_ids_stmt)
+    all_store_ids = [row[0] for row in result.all()]
+
     stmt = select(ReplyAudit).where(
         and_(
             ReplyAudit.id == task_id,
-            ReplyAudit.store_id.in_([sa.store_id for sa in user.store_associations]),
+            ReplyAudit.store_id.in_(all_store_ids),
         )
     )
     result = await db.execute(stmt)
@@ -254,20 +276,29 @@ async def reject_task(
 ) -> ReplyAudit:
     """
     驳回差评回复任务
-    
+
     Args:
         db: 数据库会话
         task_id: 任务ID
         user: 当前用户
         reason: 驳回原因
-        
+
     Returns:
         ReplyAudit: 审核记录
     """
+    from app.models.store import Store
+    from app.models.user import UserStore
+
+    store_ids_stmt = select(UserStore.store_id).where(UserStore.user_id == user.id)
+    owned_stmt = select(Store.id).where(Store.owner_id == user.id)
+    all_ids_stmt = store_ids_stmt.union(owned_stmt)
+    result = await db.execute(all_ids_stmt)
+    all_store_ids = [row[0] for row in result.all()]
+
     stmt = select(ReplyAudit).where(
         and_(
             ReplyAudit.id == task_id,
-            ReplyAudit.store_id.in_([sa.store_id for sa in user.store_associations]),
+            ReplyAudit.store_id.in_(all_store_ids),
         )
     )
     result = await db.execute(stmt)
@@ -351,21 +382,37 @@ async def get_history(
 ) -> tuple[list, int]:
     """
     获取已处理历史
-    
+
     Args:
         db: 数据库会话
         user: 当前用户
         page: 页码
         page_size: 每页大小
-        
+
     Returns:
         tuple[list, int]: (历史记录列表, 总数)
     """
-    # 查询已处理的任务（approved, rejected, sent）
+    from app.models.store import Store
+    from app.models.user import UserStore
+
+    # 构建门店可见性条件
+    store_conditions = []
+
+    if user.role in ("SUPER_ADMIN", "HQ", "OPERATOR"):
+        pass  # 管理员可见所有
+    else:
+        store_ids_stmt = select(UserStore.store_id).where(UserStore.user_id == user.id)
+        owned_stmt = select(Store.id).where(Store.owner_id == user.id)
+        all_ids_stmt = store_ids_stmt.union(owned_stmt)
+        result = await db.execute(all_ids_stmt)
+        all_store_ids = [row[0] for row in result.all()]
+        if not all_store_ids:
+            return [], 0
+        store_conditions.append(ReplyAudit.store_id.in_(all_store_ids))
+
     conditions = [
-        ReplyAudit.store_id.in_([sa.store_id for sa in user.store_associations]),
         ReplyAudit.status.in_(["approved", "rejected", "sent"]),
-    ]
+    ] + store_conditions
 
     # 查询总数
     count_stmt = select(func.count(ReplyAudit.id)).where(and_(*conditions))

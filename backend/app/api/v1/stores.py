@@ -258,6 +258,9 @@ async def sync_store_reviews(
     if not store_platforms:
         return success(data={"created": 0, "skipped": 0, "total": 0}, message="该店铺暂未绑定平台账号")
 
+    # 支持的平台列表：美团和点评都从开店宝后台获取，只是接口不同
+    platforms_to_sync = ["meituan", "dianping"]
+    
     # 按 account_id 分组同步（每个账号同步一次，包含多个店铺）
     total_created = 0
     total_skipped = 0
@@ -274,11 +277,23 @@ async def sync_store_reviews(
         account_result = await db.execute(account_stmt)
         account = account_result.scalar_one_or_none()
 
-        if not account or not account.storage_state:
+        if not account or not account.cookies_encrypted:
+            logger.warning(f"[sync_store_reviews] Account {sp.account_id}: no cookies_encrypted, skipping")
             continue
 
-        # 获取该账号下所有绑定到当前用户的店铺（不仅仅是当前 store_id）
-        # 这样一次同步可以拉取该账号下的所有店铺评论
+        # 解密 cookies_encrypted，结果直接是 Playwright storage_state
+        from app.services.platform_service import PlatformService
+        platform_service = PlatformService(db)
+        storage_state = await platform_service._decrypt_credentials(account.cookies_encrypted)
+        if not storage_state:
+            logger.warning(f"[sync_store_reviews] Account {sp.account_id}: decryption failed, skipping")
+            continue
+
+        if not isinstance(storage_state, dict) or not storage_state.get("cookies"):
+            logger.warning(f"[sync_store_reviews] Account {sp.account_id}: invalid storage_state format, skipping")
+            continue
+
+        # 获取该账号下所有绑定到当前用户的店铺（一次同步拉取该账号下所有店铺评论）
         all_sp_stmt = select(StorePlatform).where(
             StorePlatform.account_id == account.id,
             StorePlatform.store_id.isnot(None),
@@ -299,30 +314,44 @@ async def sync_store_reviews(
         if not stores:
             continue
 
-        storage_state = account.storage_state if isinstance(account.storage_state, dict) else json.loads(account.storage_state)
+        # 对美团和点评两个平台分别同步（同一套 cookies，不同接口）
+        # 注意：每次 sync_reviews 会启动独立子进程，两次调用共用同一套 storage_state
+        all_platform_reviews = []  # 合并两个平台的评论
+        print(f"[PRINT] 开始同步平台列表: {platforms_to_sync}", flush=True)
+        logger.error(f"[TRACE] 开始同步平台列表: {platforms_to_sync}")
 
-        # 调用评论同步服务
-        sync_result = await review_service.sync_reviews(
-            platform=account.platform,
-            storage_state=storage_state,
-            stores=stores,
-        )
+        for platform in platforms_to_sync:
+            print(f"[PRINT] >>> 正在同步平台: {platform}", flush=True)
+            logger.error(f"[TRACE] >>> 正在同步平台: {platform}")
+            try:
+                sync_result = await review_service.sync_reviews(
+                    platform=platform,
+                    storage_state=storage_state,
+                    stores=stores,
+                )
+                print(f"[PRINT] <<< {platform} 同步结果: status={sync_result.get('status')}, error={sync_result.get('error', '')}", flush=True)
+                logger.error(f"[TRACE] <<< {platform} 同步结果: status={sync_result.get('status')}, error={sync_result.get('error', '')}")
+            except Exception as e:
+                print(f"[PRINT] XXX {platform} 同步异常: {e}", flush=True)
+                logger.error(f"[TRACE] XXX {platform} 同步异常: {e}", exc_info=True)
+                continue
+            if sync_result.get("status") == "success":
+                platform_reviews = sync_result.get("reviews", [])
+                logger.info(f"[sync_store_reviews] {platform} 返回 {len(platform_reviews)} 条评论")
+                all_platform_reviews.extend(platform_reviews)
+            else:
+                logger.warning(
+                    f"[sync_store_reviews] {platform} 同步失败: {sync_result.get('error', 'unknown')}"
+                )
 
-        if sync_result.get("status") != "success":
-            # 同步失败，继续下一个账号
-            continue
-
-        # 导入评论数据
-        raw_reviews = sync_result.get("reviews", [])
-        if not raw_reviews:
+        if not all_platform_reviews:
             synced_accounts.add(str(sp.account_id))
             continue
 
-        # 去重：批量查询已存在的 platform_review_id
-        platform_review_ids = [r.get("feedbackId") for r in raw_reviews if r.get("feedbackId")]
+        # 去重：批量查询已存在的 platform_review_id（跨平台去重）
+        platform_review_ids = [r.get("platform_review_id") for r in all_platform_reviews if r.get("platform_review_id")]
         if platform_review_ids:
             exist_stmt = select(Review.platform_review_id).where(
-                Review.platform == account.platform,
                 Review.platform_review_id.in_(platform_review_ids),
             )
             exist_result = await db.execute(exist_stmt)
@@ -332,14 +361,14 @@ async def sync_store_reviews(
 
         # 批量创建评论
         created_count = 0
-        for raw in raw_reviews:
-            feedback_id = raw.get("feedbackId")
+        for raw in all_platform_reviews:
+            feedback_id = raw.get("platform_review_id")
             if not feedback_id or feedback_id in existing_ids:
                 total_skipped += 1
                 continue
 
-            # 查找对应的 store_id
-            poi_id = raw.get("poiId")
+            # 查找对应的 store_id（用 platform_store_id 匹配）
+            poi_id = raw.get("platform_store_id")
             store_id_for_review = None
             for p in all_store_platforms:
                 if p.platform_store_id == poi_id:
@@ -350,26 +379,18 @@ async def sync_store_reviews(
                 total_skipped += 1
                 continue
 
-            # 自动情感判断：rating >= 4 正面, <= 2 负面, 其他中性
-            rating = raw.get("score", 3)
-            if rating >= 4:
-                sentiment = "positive"
-            elif rating <= 2:
-                sentiment = "negative"
-            else:
-                sentiment = "neutral"
-
+            # sentiment 已由 worker 判断好，直接用
             review = Review(
                 store_id=store_id_for_review,
-                platform=account.platform,
+                platform=raw.get("platform", "unknown"),
                 platform_review_id=feedback_id,
-                user_name=raw.get("userName", "匿名用户"),
-                user_avatar=raw.get("userAvatar"),
-                rating=rating,
+                user_name=raw.get("user_name", "匿名用户"),
+                user_avatar=raw.get("user_avatar"),
+                rating=raw.get("rating", 3),
                 content=raw.get("content", ""),
                 images=raw.get("images", []),
-                sentiment=sentiment,
-                platform_created_at=raw.get("addTime"),
+                sentiment=raw.get("sentiment", "neutral"),
+                platform_created_at=raw.get("platform_created_at"),
             )
             db.add(review)
             created_count += 1
@@ -384,5 +405,5 @@ async def sync_store_reviews(
             "skipped": total_skipped,
             "total": total_created + total_skipped,
         },
-        message=f"评论同步完成，新增 {total_created} 条",
+        message=f"评论同步完成，新增 {total_created} 条（含美团+点评）",
     )

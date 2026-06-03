@@ -10,6 +10,7 @@ import { Badge } from '../../components/ui/badge';
 import { AdminLayout } from '../../components/AdminLayout';
 import { useToast } from '../../hooks/use-toast';
 import { auditApi, AuditItem, AuditStats } from '../../api/audit';
+import { useSearchDebounce } from '../../lib/utils';
 
 const statusConfig: Record<string, { label: string; color: string; icon: React.ElementType }> = {
   pending:   { label: '待审核', color: 'bg-amber-100 text-amber-700', icon: AlertCircle },
@@ -23,6 +24,7 @@ export const ReplyAudit: React.FC = () => {
   const [stats, setStats] = useState<AuditStats | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const { inputValue: searchInput, debouncedValue: debouncedSearch, handleChange: handleSearchInput } = useSearchDebounce();
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [rejectTargetId, setRejectTargetId] = useState<string | null>(null);
@@ -30,6 +32,10 @@ export const ReplyAudit: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   const { success, error: toastError } = useToast();
+
+  useEffect(() => {
+    setSearchQuery(debouncedSearch);
+  }, [debouncedSearch]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -138,8 +144,8 @@ export const ReplyAudit: React.FC = () => {
           <input
             className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:border-indigo-300"
             placeholder="搜索门店或评论内容..."
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
+            value={searchInput}
+            onChange={e => handleSearchInput(e.target.value)}
           />
         </div>
 

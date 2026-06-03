@@ -24,7 +24,7 @@ import { Badge } from '../../components/ui/badge';
 import { Input } from '../../components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '../../components/ui/tabs';
 import { MobileLayout, useStore } from '../../components/MobileLayout';
-import { cn } from '../../lib/utils';
+import { cn, normalizeImageUrls, useSearchDebounce } from '../../lib/utils';
 import { useToast } from '../../hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { fetchReviews } from '../../api/reviews';
@@ -41,6 +41,7 @@ export const ReviewStream: React.FC = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [syncingReviews, setSyncingReviews] = useState(false);
   const [searchKeyword, setSearchKeyword] = useState('');
+  const { inputValue: searchInput, debouncedValue: debouncedKeyword, handleChange: handleSearchInput } = useSearchDebounce();
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -140,6 +141,7 @@ export const ReviewStream: React.FC = () => {
         avatar: r.user_avatar || '',
         time: r.created_at || r.platform_created_at || '',
         hasImage: !!(r.images && r.images.length > 0),
+        imageUrls: normalizeImageUrls(r.images),
       }));
 
       if (loadMoreFlag) {
@@ -201,32 +203,30 @@ export const ReviewStream: React.FC = () => {
     }
   };
 
-  const handleSearch = (value: string) => {
-    setSearchKeyword(value);
-    if (value.trim()) {
-      success('搜索中', `正在搜索："${value}"`);
-    }
-  };
+  // 防抖搜索词同步到 searchKeyword
+  useEffect(() => {
+    setSearchKeyword(debouncedKeyword);
+  }, [debouncedKeyword]);
 
   const handleFilterClick = () => {
     success('筛选功能', '筛选面板即将上线');
   };
 
-  const handleReviewClick = (reviewId: number) => {
+  const handleReviewClick = (reviewId: string) => {
     navigate(`/mobile/review-detail/${reviewId}`);
   };
 
-  const handleLike = (reviewId: number, e: React.MouseEvent) => {
+  const handleLike = (reviewId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     success('赞同成功', '已标记为有价值评论');
   };
 
-  const handleQuickReply = (reviewId: number, e: React.MouseEvent) => {
+  const handleQuickReply = (reviewId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     success('快速回复', 'AI 正在生成回复话术...');
   };
 
-  const handleMoreActions = (reviewId: number, e: React.MouseEvent) => {
+  const handleMoreActions = (reviewId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     success('更多操作', '举报、隐藏、置顶等功能开发中');
   };
@@ -356,8 +356,8 @@ export const ReviewStream: React.FC = () => {
             <Input 
               placeholder="搜索菜品、评价关键词..." 
               className="pl-9 bg-white border-none shadow-sm h-10 text-sm rounded-xl"
-              value={searchKeyword}
-              onChange={(e) => handleSearch(e.target.value)}
+              value={searchInput}
+              onChange={(e) => handleSearchInput(e.target.value)}
             />
           </div>
           <Button 
@@ -404,7 +404,7 @@ export const ReviewStream: React.FC = () => {
             <Card 
               key={review.id} 
               className="p-4 border-none shadow-sm bg-white active:bg-slate-50 cursor-pointer hover:shadow-md transition-all"
-              onClick={() => handleReviewClick(Number(review.id))}
+              onClick={() => handleReviewClick(review.id)}
             >
               <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center gap-3">
@@ -442,6 +442,17 @@ export const ReviewStream: React.FC = () => {
                 {review.content}
               </p>
 
+              {/* 图片展示 */}
+              {(review as any).imageUrls && (review as any).imageUrls.length > 0 && (
+                <div className="grid grid-cols-3 gap-1.5 mb-3 rounded-xl overflow-hidden">
+                  {(review as any).imageUrls.map((url: string, i: number) => (
+                    <div key={i} className="aspect-square bg-slate-100">
+                      <img src={url} alt={`评论图片${i + 1}`} className="w-full h-full object-cover" loading="lazy" />
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <div className="flex flex-wrap gap-1.5 mb-4">
                 {(review.tags || []).map((tag: string, i: number) => (
                   <Badge key={i} variant="outline" className="text-[9px] px-1.5 py-0 h-4 border-slate-100 bg-slate-50 text-slate-400 font-medium">
@@ -455,14 +466,14 @@ export const ReviewStream: React.FC = () => {
                 <div className="flex gap-6">
                   <button 
                     className="flex items-center gap-1.5 text-slate-300 hover:text-orange-500 transition-colors"
-                    onClick={(e) => handleLike(Number(review.id), e)}
+                    onClick={(e) => handleLike(review.id, e)}
                   >
                     <ThumbsUp className="w-3.5 h-3.5" />
                     <span className="text-[9px] font-bold">赞同</span>
                   </button>
                   <button 
                     className="flex items-center gap-1.5 text-slate-300 hover:text-orange-500 transition-colors"
-                    onClick={(e) => handleQuickReply(Number(review.id), e)}
+                    onClick={(e) => handleQuickReply(review.id, e)}
                   >
                     <MessageSquare className="w-3.5 h-3.5" />
                     <span className="text-[9px] font-bold">快速回复</span>
@@ -472,7 +483,7 @@ export const ReviewStream: React.FC = () => {
                   variant="ghost" 
                   size="icon" 
                   className="h-8 w-8 text-slate-300"
-                  onClick={(e) => handleMoreActions(Number(review.id), e)}
+                  onClick={(e) => handleMoreActions(review.id, e)}
                 >
                   <MoreVertical className="w-4 h-4" />
                 </Button>

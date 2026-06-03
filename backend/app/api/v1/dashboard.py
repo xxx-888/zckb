@@ -66,13 +66,14 @@ async def get_platform_distribution(
 @router.get("/recent-reviews", summary="最新评论")
 async def get_recent_reviews(
     limit: int = Query(10, ge=1, le=50, description="返回数量"),
+    period: str = Query("30d", description="统计周期: 1d/7d/30d/90d"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取最新评论列表
     """
-    reviews = await dashboard_service.get_recent_reviews(db, current_user, limit)
+    reviews = await dashboard_service.get_recent_reviews(db, current_user, limit, period)
 
     items = []
     for review in reviews:
@@ -94,6 +95,7 @@ async def get_recent_reviews(
 @router.get("/store-rankings", summary="门店排行")
 async def get_store_rankings(
     limit: int = Query(10, ge=1, le=50, description="返回数量"),
+    period: str = Query("30d", description="统计周期: 1d/7d/30d/90d"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_valid_subscription),
 ) -> dict:
@@ -101,7 +103,7 @@ async def get_store_rankings(
     获取门店排行榜
     - 按平均评分降序排列
     """
-    rankings = await dashboard_service.get_store_rankings(db, current_user, limit)
+    rankings = await dashboard_service.get_store_rankings(db, current_user, limit, period)
 
     items = [
         StoreRankingResponse(**item).model_dump(mode="json") for item in rankings
@@ -143,6 +145,54 @@ async def get_alerts(
     alerts = await dashboard_service.get_alerts(db, current_user)
 
     return success(data=alerts)
+
+
+@router.get("/overview", summary="Dashboard聚合数据")
+async def get_dashboard_overview(
+    period: str = Query("30d", description="统计周期: 1d/7d/30d/90d"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_valid_subscription),
+) -> dict:
+    """
+    聚合接口：一次请求返回 Dashboard 所需全部数据。
+    包含: core_stats, platform_data, recent_reviews, store_rankings,
+          health_status, store_health, alerts。
+    """
+    data = await dashboard_service.get_dashboard_overview(db, current_user, period)
+
+    # 序列化各子数据
+    data["core_stats"] = CoreStatsResponse(**data["core_stats"]).model_dump(mode="json")
+    data["platform_data"] = [
+        PlatformDistributionResponse(**item).model_dump(mode="json")
+        for item in data["platform_data"]
+    ]
+    data["recent_reviews"] = [
+        RecentReviewResponse(
+            id=r.id,
+            store_name=r.store.name if r.store else None,
+            user_name=r.user_name,
+            content=r.content,
+            rating=r.rating,
+            sentiment=r.sentiment,
+            platform=r.platform,
+            time=r.created_at,
+        ).model_dump(mode="json")
+        for r in data["recent_reviews"]
+    ]
+    data["store_rankings"] = [
+        StoreRankingResponse(**item).model_dump(mode="json")
+        for item in data["store_rankings"]
+    ]
+    data["health_status"] = [
+        HealthStatusResponse(**item).model_dump(mode="json")
+        for item in data["health_status"]
+    ]
+    data["store_health"] = [
+        StoreHealthResponse(**item).model_dump(mode="json")
+        for item in data["store_health"]
+    ]
+
+    return success(data=data)
 
 
 @router.get("/store-health", summary="门店健康值")

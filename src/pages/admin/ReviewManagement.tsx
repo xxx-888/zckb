@@ -10,6 +10,7 @@ import { storesApi } from '../../api/stores';
 import type { Review } from '../../api/reviews';
 import type { Store as StoreType } from '../../api/stores';
 import { api } from '../../lib/api';
+import { normalizeImageUrls, useSearchDebounce } from '../../lib/utils';
 
 export const ReviewManagement: React.FC = () => {
   const [reviews, setReviews] = useState<Review[]>([]);
@@ -17,6 +18,7 @@ export const ReviewManagement: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const { inputValue: searchInput, debouncedValue: debouncedSearch, handleChange: handleSearchInput } = useSearchDebounce();
   const [sentimentFilter, setSentimentFilter] = useState('all');
   const [storeFilter, setStoreFilter] = useState('all');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -34,6 +36,11 @@ export const ReviewManagement: React.FC = () => {
   const [pageSize, setPageSize] = useState(20);
 
   const { success, error: toastError } = useToast();
+
+  // 防抖后的搜索词同步到 searchQuery
+  useEffect(() => {
+    setSearchQuery(debouncedSearch);
+  }, [debouncedSearch]);
 
   // 加载数据（带分页和过滤）
   const loadData = async (page: number = currentPage) => {
@@ -234,7 +241,7 @@ export const ReviewManagement: React.FC = () => {
         <div className="flex items-center gap-3 flex-wrap">
           <div className="relative flex-1 min-w-[200px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm outline-none" placeholder="搜索评论内容、用户名、门店..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+            <input className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm outline-none" placeholder="搜索评论内容、用户名、门店..." value={searchInput} onChange={e => handleSearchInput(e.target.value)} />
           </div>
           <select className="bg-white border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none" value={sentimentFilter} onChange={e => setSentimentFilter(e.target.value)}>
             <option value="all">全部情感</option>
@@ -261,6 +268,7 @@ export const ReviewManagement: React.FC = () => {
                   <th className="text-left p-3">门店</th>
                   <th className="text-left p-3">用户</th>
                   <th className="text-left p-3">评论内容</th>
+                  <th className="text-center p-3">图片</th>
                   <th className="text-center p-3">评分</th>
                   <th className="text-center p-3">情感</th>
                   <th className="text-center p-3">入库时间</th>
@@ -282,6 +290,7 @@ export const ReviewManagement: React.FC = () => {
                     </td>
                     <td className="p-3 text-xs text-slate-600">{r.user_name || r.user || '匿名'}</td>
                     <td className="p-3 max-w-[300px]"><p className="text-xs text-slate-700 line-clamp-2">{r.content}</p></td>
+                    <td className="p-3 text-center">{normalizeImageUrls(r.images).length > 0 && <Badge className="bg-emerald-50 text-emerald-600 text-[10px]">{normalizeImageUrls(r.images).length}图</Badge>}</td>
                     <td className="p-3 text-center text-amber-500 text-xs">{starRating(r.rating)}</td>
                     <td className="p-3 text-center">{sentimentBadge(r.sentiment)}</td>
                     <td className="p-3 text-center text-xs text-slate-500">{r.created_at ? new Date(r.created_at).toLocaleDateString('zh-CN') : '-'}</td>
@@ -379,9 +388,11 @@ export const ReviewManagement: React.FC = () => {
                   <p className="text-sm text-slate-700">{viewingReview.reply}</p>
                 </div>
               )}
-              {viewingReview.images && viewingReview.images.length > 0 && (
+              {normalizeImageUrls(viewingReview.images).length > 0 && (
                 <div className="flex gap-2 flex-wrap">
-                  {viewingReview.images.map((img, i) => <img key={i} src={img} alt="" className="w-20 h-20 object-cover rounded-lg" />)}
+                  {normalizeImageUrls(viewingReview.images).map((url, i) => (
+                    <img key={i} src={url} alt="" className="w-20 h-20 object-cover rounded-lg" loading="lazy" />
+                  ))}
                 </div>
               )}
               <div className="flex justify-end"><Button variant="outline" onClick={() => setViewingReview(null)}>关闭</Button></div>

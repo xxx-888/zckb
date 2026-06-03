@@ -18,7 +18,7 @@ class ApiClient {
   constructor() {
     this.client = axios.create({
       baseURL: BASE_URL,
-      timeout: 10000,
+      timeout: 30000,
       headers: {
         'Content-Type': 'application/json',
       },
@@ -50,14 +50,15 @@ class ApiClient {
         const responseData = error.response?.data;
         const suppress404 = error.config?._suppress404;
 
-        // 402 订阅过期：重定向到订阅页面
+        // 402 订阅过期：延迟跳转，避免立即 location.href 中断所有并行请求
         if (statusCode === 402) {
           const message = responseData?.message || '订阅已过期，请续费';
-          // 避免重复跳转
           if (window.location.pathname !== '/mobile/subscription') {
-            // 用 toast 提示（如果可用），然后跳转
             console.warn('[API] 订阅过期:', message);
-            window.location.href = '/mobile/subscription';
+            // 延迟跳转，让并行请求先完成
+            setTimeout(() => {
+              window.location.href = '/mobile/subscription';
+            }, 500);
           }
           const err: any = new Error(message);
           err.response = error.response;

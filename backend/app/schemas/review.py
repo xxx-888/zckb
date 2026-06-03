@@ -4,10 +4,10 @@
 """
 
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Union
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class ReviewResponse(BaseModel):
@@ -22,7 +22,24 @@ class ReviewResponse(BaseModel):
     user_avatar: Optional[str] = None
     rating: int
     content: Optional[str] = None
-    images: Optional[list[str]] = None
+    images: Optional[list[Union[str, dict]]] = None
+
+    @field_validator("images", mode="before")
+    @classmethod
+    def normalize_images(cls, v):
+        """将 images 中可能的 dict 对象转为 url 字符串"""
+        if not v or not isinstance(v, list):
+            return v
+        result = []
+        for item in v:
+            if isinstance(item, str):
+                result.append(item)
+            elif isinstance(item, dict):
+                url = item.get("url") or item.get("originUrl") or item.get("bigUrl") or item.get("thumbUrl") or ""
+                result.append(url if url else str(item))
+            else:
+                result.append(str(item))
+        return result
     sentiment: Optional[str] = None
     tags: Optional[list[str]] = None
     reply: Optional[str] = None

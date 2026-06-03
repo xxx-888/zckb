@@ -5,13 +5,12 @@ Dashboard 服务模块
 
 from datetime import datetime, timedelta
 from typing import Optional
-from uuid import UUID
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
-from app.models.review import Review
+from app.models.review import Review, ReplyAudit
 from app.models.store import Store, StorePlatform
 from app.models.user import User, UserStore
 
@@ -25,18 +24,36 @@ PLATFORM_CONFIG = {
 }
 
 
-def _build_store_filter(user: User) -> Optional:
+async def _fetch_user_store_ids(db: AsyncSession, user: User) -> Optional[list]:
     """
-    根据用户角色构建门店可见性过滤条件。
-    - HQ / OPERATOR：可见所有门店
-    - STORE：仅可见关联门店
+    预查询用户可见的门店 ID 列表。
+    返回 None 表示可见所有门店（管理员），返回空列表表示无门店。
+    用 Python 列表替代 SQL 子查询，避免 SAWarning 笛卡尔积。
     """
-    if user.role in ("HQ", "OPERATOR"):
+    if user.role in ("SUPER_ADMIN", "HQ", "OPERATOR"):
         return None
-
-    return Store.id.in_(
+    result = await db.execute(
         select(UserStore.store_id).where(UserStore.user_id == user.id)
     )
+    return [row[0] for row in result.all()]
+
+
+def _review_store_filter(store_ids: Optional[list]):
+    """基于预查询的 ID 列表构建 Review.store_id 过滤条件"""
+    if store_ids is None:
+        return None
+    if not store_ids:
+        return False  # 匹配不到任何记录
+    return Review.store_id.in_(store_ids)
+
+
+def _store_filter(store_ids: Optional[list]):
+    """基于预查询的 ID 列表构建 Store.id 过滤条件"""
+    if store_ids is None:
+        return None
+    if not store_ids:
+        return False
+    return Store.id.in_(store_ids)
 
 
 def _get_period_days(period: str) -> int:
@@ -46,182 +63,136 @@ def _get_period_days(period: str) -> int:
 
 
 def _calc_trend(current: float, previous: float) -> float:
-    """
-    计算环比趋势百分比
-
-    Args:
-        current: 当前值
-        previous: 上期值
-
-    Returns:
-        float: 趋势百分比（正数表示增长）
-    """
+    """计算环比趋势百分比"""
     if previous == 0:
         return 100.0 if current > 0 else 0.0
     return round((current - previous) / previous * 100, 1)
+
+
+def _get_period_range(period: str):
+    """获取当期和上期的时间范围"""
+    now = datetime.utcnow()
+    days = _get_period_days(period)
+
+    if period == "1d":
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        return today_start, today_start - timedelta(days=1), today_start
+    else:
+        current_start = now - timedelta(days=days)
+        previous_start = now - timedelta(days=days * 2)
+        return current_start, previous_start, current_start
+
+
+def _review_conditions(store_ids: Optional[list], extra=None):
+    """构建 Review 基础查询条件（基于预查询 ID 列表，无子查询）"""
+    conds = [Review.status == "normal"]
+    sf = _review_store_filter(store_ids)
+    if sf is not None:
+        conds.append(sf)
+    if extra:
+        conds.extend(extra)
+    return conds
 
 
 async def get_core_stats(
     db: AsyncSession,
     user: User,
     period: str = "30d",
+    store_ids: Optional[list] = None,
 ) -> dict:
     """
-    获取核心统计数据
-
-    Args:
-        db: 数据库会话
-        user: 当前用户
-        period: 统计周期 (7d/30d/90d)
-
-    Returns:
-        dict: 核心统计数据
+    获取核心统计数据 — 合并为 2 个查询（当期+上期）。
     """
-    days = _get_period_days(period)
-    now = datetime.utcnow()
+    if store_ids is None:
+        store_ids = await _fetch_user_store_ids(db, user)
 
-    if period == "1d":
-        # 按自然天计算：current_start = 今天 UTC 00:00:00
-        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        current_start = today_start
-        previous_start = today_start - timedelta(days=1)
-        # 昨天的范围是 [previous_start, current_start)
-    else:
-        current_start = now - timedelta(days=days)
-        previous_start = now - timedelta(days=days * 2)
+    current_start, previous_start, period_end = _get_period_range(period)
 
-    # 构建基础条件
-    base_conditions = [Review.status == "normal"]
-    store_filter = _build_store_filter(user)
-    if store_filter is not None:
-        base_conditions.append(store_filter)
+    # ========== 当期统计 ==========
+    current_base = _review_conditions(store_ids, [Review.created_at >= current_start])
 
-    # 当期统计
-    current_conditions = base_conditions + [Review.created_at >= current_start]
-    current_where = and_(*current_conditions)
+    current_dedup = (
+        select(
+            Review.platform_review_id,
+            func.avg(Review.rating).label("rating"),
+            func.max(case((Review.sentiment == "positive", 1), else_=0)).label("is_positive"),
+            func.max(case((Review.reply.isnot(None), 1), else_=0)).label("is_replied"),
+            func.max(case((Review.ai_generated.is_(True), 1), else_=0)).label("is_ai"),
+        )
+        .where(and_(*current_base))
+        .group_by(Review.platform_review_id)
+    ).subquery()
 
-    # 上期统计
-    previous_conditions = base_conditions + [
+    current_stats = (
+        await db.execute(
+            select(
+                func.count().label("total"),
+                func.avg(current_dedup.c.rating).label("avg_rating"),
+                func.sum(current_dedup.c.is_positive).label("positive"),
+                func.sum(current_dedup.c.is_replied).label("replied"),
+                func.sum(current_dedup.c.is_ai).label("ai_replied"),
+            )
+            .select_from(current_dedup)
+        )
+    ).one()
+
+    current_total = current_stats.total or 0
+    current_avg = float(current_stats.avg_rating) if current_stats.avg_rating else 0.0
+    current_positive = current_stats.positive or 0
+    current_replied = current_stats.replied or 0
+    current_ai_replied = current_stats.ai_replied or 0
+
+    # ========== 上期统计 ==========
+    previous_base = _review_conditions(store_ids, [
         Review.created_at >= previous_start,
-        Review.created_at < current_start,
-    ]
-    previous_where = and_(*previous_conditions)
-
-    # 当期评论总数
-    current_total = (
-        await db.execute(
-            select(func.count()).select_from(Review).where(current_where)
+        Review.created_at < period_end,
+    ])
+    previous_dedup = (
+        select(
+            Review.platform_review_id,
+            func.avg(Review.rating).label("rating"),
+            func.max(case((Review.sentiment == "positive", 1), else_=0)).label("is_positive"),
+            func.max(case((Review.reply.isnot(None), 1), else_=0)).label("is_replied"),
+            func.max(case((Review.ai_generated.is_(True), 1), else_=0)).label("is_ai"),
         )
-    ).scalar() or 0
+        .where(and_(*previous_base))
+        .group_by(Review.platform_review_id)
+    ).subquery()
 
-    # 上期评论总数
-    previous_total = (
+    previous_stats = (
         await db.execute(
-            select(func.count()).select_from(Review).where(previous_where)
+            select(
+                func.count().label("total"),
+                func.avg(previous_dedup.c.rating).label("avg_rating"),
+                func.sum(previous_dedup.c.is_positive).label("positive"),
+                func.sum(previous_dedup.c.is_replied).label("replied"),
+                func.sum(previous_dedup.c.is_ai).label("ai_replied"),
+            )
+            .select_from(previous_dedup)
         )
-    ).scalar() or 0
+    ).one()
 
-    # 当期平均评分
-    current_avg = (
-        await db.execute(select(func.avg(Review.rating)).where(current_where))
-    ).scalar() or 0.0
+    previous_total = previous_stats.total or 0
+    previous_avg = float(previous_stats.avg_rating) if previous_stats.avg_rating else 0.0
+    previous_positive = previous_stats.positive or 0
+    previous_replied = previous_stats.replied or 0
 
-    # 上期平均评分
-    previous_avg = (
-        await db.execute(select(func.avg(Review.rating)).where(previous_where))
-    ).scalar() or 0.0
-
-    # 当期正面率
-    current_positive = (
-        await db.execute(
-            select(func.count())
-            .select_from(Review)
-            .where(and_(current_where, Review.sentiment == "positive"))
-        )
-    ).scalar() or 0
-
-    # 上期正面率
-    previous_positive = (
-        await db.execute(
-            select(func.count())
-            .select_from(Review)
-            .where(and_(previous_where, Review.sentiment == "positive"))
-        )
-    ).scalar() or 0
-
-    # 当期回复率
-    current_replied = (
-        await db.execute(
-            select(func.count())
-            .select_from(Review)
-            .where(and_(current_where, Review.reply.isnot(None)))
-        )
-    ).scalar() or 0
-
-    # 上期回复率
-    previous_replied = (
-        await db.execute(
-            select(func.count())
-            .select_from(Review)
-            .where(and_(previous_where, Review.reply.isnot(None)))
-        )
-    ).scalar() or 0
-
-    # 当期 AI 回复率
-    current_ai_replied = (
-        await db.execute(
-            select(func.count())
-            .select_from(Review)
-            .where(and_(current_where, Review.ai_generated.is_(True)))
-        )
-    ).scalar() or 0
-
-    # 上期 AI 回复率
-    previous_ai_replied = (
-        await db.execute(
-            select(func.count())
-            .select_from(Review)
-            .where(and_(previous_where, Review.ai_generated.is_(True)))
-        )
-    ).scalar() or 0
-
-    # 计算趋势
-    review_trend = _calc_trend(current_total, previous_total)
-    rating_trend = _calc_trend(round(float(current_avg), 1), round(float(previous_avg), 1))
-
-    current_positive_rate = (
-        round(current_positive / current_total * 100, 1) if current_total else 0.0
-    )
-    previous_positive_rate = (
-        round(previous_positive / previous_total * 100, 1) if previous_total else 0.0
-    )
-    positive_trend = _calc_trend(current_positive_rate, previous_positive_rate)
-
-    current_reply_rate = (
-        round(current_replied / current_total * 100, 1) if current_total else 0.0
-    )
-    previous_reply_rate = (
-        round(previous_replied / previous_total * 100, 1) if previous_total else 0.0
-    )
-    reply_trend = _calc_trend(current_reply_rate, previous_reply_rate)
-
-    current_ai_rate = (
-        round(current_ai_replied / current_total * 100, 1) if current_total else 0.0
-    )
-    previous_ai_rate = (
-        round(previous_ai_replied / previous_total * 100, 1) if previous_total else 0.0
-    )
-    ai_reply_rate = current_ai_rate
+    # 计算比率
+    current_positive_rate = round(current_positive / current_total * 100, 1) if current_total else 0.0
+    previous_positive_rate = round(previous_positive / previous_total * 100, 1) if previous_total else 0.0
+    current_reply_rate = round(current_replied / current_total * 100, 1) if current_total else 0.0
+    previous_reply_rate = round(previous_replied / previous_total * 100, 1) if previous_total else 0.0
+    current_ai_rate = round(current_ai_replied / current_total * 100, 1) if current_total else 0.0
 
     return {
         "total_reviews": current_total,
-        "review_trend": review_trend,
-        "avg_rating": round(float(current_avg), 1),
-        "rating_trend": rating_trend,
+        "review_trend": _calc_trend(current_total, previous_total),
+        "avg_rating": round(current_avg, 1),
+        "rating_trend": _calc_trend(round(current_avg, 1), round(previous_avg, 1)),
         "positive_rate": current_positive_rate,
-        "positive_trend": positive_trend,
-        "ai_reply_rate": ai_reply_rate,
-        "reply_trend": reply_trend,
+        "positive_trend": _calc_trend(current_positive_rate, previous_positive_rate),
+        "ai_reply_rate": current_ai_rate,
+        "reply_trend": _calc_trend(current_reply_rate, previous_reply_rate),
     }
 
 
@@ -229,56 +200,43 @@ async def get_platform_distribution(
     db: AsyncSession,
     user: User,
     period: str = "30d",
+    store_ids: Optional[list] = None,
 ) -> list[dict]:
-    """
-    获取平台分布数据
+    """获取平台分布数据（按 platform_review_id 去重）"""
+    if store_ids is None:
+        store_ids = await _fetch_user_store_ids(db, user)
 
-    Args:
-        db: 数据库会话
-        user: 当前用户
-        period: 统计周期 (1d/7d/30d/90d)
-
-    Returns:
-        list[dict]: 各平台评论数量和占比
-    """
     days = _get_period_days(period)
     now = datetime.utcnow()
     period_start = now - timedelta(days=days)
 
-    conditions = [Review.status == "normal", Review.created_at >= period_start]
-    store_filter = _build_store_filter(user)
-    if store_filter is not None:
-        conditions.append(store_filter)
+    conditions = _review_conditions(store_ids, [Review.created_at >= period_start])
 
-    where_clause = and_(*conditions)
+    dedup = (
+        select(Review.platform_review_id, Review.platform)
+        .where(and_(*conditions))
+        .group_by(Review.platform_review_id, Review.platform)
+    ).subquery()
 
-    # 按平台统计
     stmt = (
-        select(Review.platform, func.count().label("count"))
-        .where(where_clause)
-        .group_by(Review.platform)
+        select(dedup.c.platform, func.count().label("count"))
+        .group_by(dedup.c.platform)
     )
     result = await db.execute(stmt)
     platform_data = result.all()
 
     total = sum(row.count for row in platform_data)
-
     distribution = []
     for row in platform_data:
         config = PLATFORM_CONFIG.get(row.platform, {"color": "#999999", "icon": ""})
-        distribution.append(
-            {
-                "platform": row.platform,
-                "count": row.count,
-                "percentage": round(row.count / total * 100, 1) if total else 0.0,
-                "color": config["color"],
-                "icon": config["icon"],
-            }
-        )
-
-    # 按数量降序排列
+        distribution.append({
+            "platform": row.platform,
+            "count": row.count,
+            "percentage": round(row.count / total * 100, 1) if total else 0.0,
+            "color": config["color"],
+            "icon": config["icon"],
+        })
     distribution.sort(key=lambda x: x["count"], reverse=True)
-
     return distribution
 
 
@@ -287,34 +245,38 @@ async def get_recent_reviews(
     user: User,
     limit: int = 10,
     period: str = "30d",
+    store_ids: Optional[list] = None,
 ) -> list[Review]:
-    """
-    获取最新评论列表
+    """获取最新评论列表（按 platform_review_id 去重，用 CTE）"""
+    if store_ids is None:
+        store_ids = await _fetch_user_store_ids(db, user)
 
-    Args:
-        db: 数据库会话
-        user: 当前用户
-        limit: 返回数量
-        period: 统计周期 (1d/7d/30d/90d)
-
-    Returns:
-        list[Review]: 最新评论列表
-    """
     days = _get_period_days(period)
     now = datetime.utcnow()
     period_start = now - timedelta(days=days)
 
-    conditions = [Review.status == "normal", Review.created_at >= period_start]
-    store_filter = _build_store_filter(user)
-    if store_filter is not None:
-        conditions.append(store_filter)
-
+    conditions = _review_conditions(store_ids, [Review.created_at >= period_start])
     where_clause = and_(*conditions)
+
+    latest_cte = (
+        select(
+            Review.platform_review_id,
+            func.max(Review.created_at).label("max_time"),
+        )
+        .where(where_clause)
+        .group_by(Review.platform_review_id)
+    ).cte("latest_reviews")
 
     stmt = (
         select(Review)
         .options(joinedload(Review.store))
-        .where(where_clause)
+        .join(
+            latest_cte,
+            and_(
+                Review.platform_review_id == latest_cte.c.platform_review_id,
+                Review.created_at == latest_cte.c.max_time,
+            ),
+        )
         .order_by(Review.created_at.desc())
         .limit(limit)
     )
@@ -326,93 +288,77 @@ async def get_store_rankings(
     db: AsyncSession,
     user: User,
     limit: int = 10,
+    period: str = "30d",
+    store_ids: Optional[list] = None,
 ) -> list[dict]:
-    """
-    获取门店排行榜
+    """获取门店排行榜（用子查询预聚合 Review 数据）"""
+    if store_ids is None:
+        store_ids = await _fetch_user_store_ids(db, user)
 
-    Args:
-        db: 数据库会话
-        user: 当前用户
-        limit: 返回数量
+    days = _get_period_days(period)
+    now = datetime.utcnow()
+    period_start = now - timedelta(days=days)
 
-    Returns:
-        list[dict]: 门店排行数据
-    """
-    # 基础条件
     store_conditions = [Store.status == "active"]
-    store_filter = _build_store_filter(user)
-    if store_filter is not None:
-        store_conditions.append(store_filter)
-
+    sf = _store_filter(store_ids)
+    if sf is not None:
+        store_conditions.append(sf)
     store_where = and_(*store_conditions)
 
-    # 查询门店及其评论统计
+    review_sub = (
+        select(
+            Review.store_id,
+            func.count(func.distinct(Review.platform_review_id)).label("review_count"),
+            func.avg(Review.rating).label("avg_rating"),
+        )
+        .where(and_(Review.status == "normal", Review.created_at >= period_start))
+        .group_by(Review.store_id)
+    ).subquery()
+
     stmt = (
         select(
             Store.id,
             Store.name,
             Store.health_score,
-            func.count(Review.id).label("review_count"),
-            func.avg(Review.rating).label("avg_rating"),
+            func.coalesce(review_sub.c.review_count, 0).label("review_count"),
+            review_sub.c.avg_rating,
         )
-        .outerjoin(Review, and_(Review.store_id == Store.id, Review.status == "normal"))
+        .outerjoin(review_sub, Store.id == review_sub.c.store_id)
         .where(store_where)
-        .group_by(Store.id, Store.name, Store.health_score)
-        .order_by(func.avg(Review.rating).desc())
+        .order_by(review_sub.c.avg_rating.desc().nullslast())
         .limit(limit)
     )
     result = await db.execute(stmt)
     rows = result.all()
 
     rankings = []
-    for idx, row in enumerate(rows):
+    for row in rows:
         avg_rating = round(float(row.avg_rating), 1) if row.avg_rating else 0.0
         health_score = row.health_score or 0.0
-
-        # 健康状态
-        if health_score >= 80:
-            health = "good"
-        elif health_score >= 60:
-            health = "warning"
-        else:
-            health = "danger"
-
-        rankings.append(
-            {
-                "name": row.name,
-                "score": avg_rating,
-                "reviews": row.review_count,
-                "trend": 0.0,  # TODO: 与上期对比计算趋势
-                "health": health,
-                "health_score": health_score,
-            }
-        )
-
+        health = "good" if health_score >= 80 else ("warning" if health_score >= 60 else "danger")
+        rankings.append({
+            "name": row.name,
+            "score": avg_rating,
+            "reviews": row.review_count,
+            "trend": 0.0,
+            "health": health,
+            "health_score": health_score,
+        })
     return rankings
 
 
 async def get_health_status(
     db: AsyncSession,
     user: User,
+    store_ids: Optional[list] = None,
 ) -> list[dict]:
-    """
-    获取数据源健康状态
+    """获取数据源健康状态"""
+    if store_ids is None:
+        store_ids = await _fetch_user_store_ids(db, user)
 
-    Args:
-        db: 数据库会话
-        user: 当前用户
+    sf = _store_filter(store_ids)
+    store_where = sf if sf is not None else True
 
-    Returns:
-        list[dict]: 各平台数据源健康状态
-    """
-    conditions = []
-    store_filter = _build_store_filter(user)
-    if store_filter is not None:
-        conditions.append(store_filter)
-
-    store_where = and_(*conditions) if conditions else True
-
-    # 查询各平台的最后同步时间
     stmt = (
         select(
             StorePlatform.platform,
@@ -428,41 +374,21 @@ async def get_health_status(
 
     now = datetime.utcnow()
     health_list = []
-
     for row in platform_data:
         last_sync = row.last_sync
         if last_sync:
-            hours_since_sync = (now - last_sync).total_seconds() / 3600
-            if hours_since_sync < 24:
-                status = "normal"
-            elif hours_since_sync < 48:
-                status = "warning"
-            else:
-                status = "error"
+            hours = (now - last_sync).total_seconds() / 3600
+            status = "normal" if hours < 24 else ("warning" if hours < 48 else "error")
             sync_time = last_sync.isoformat()
         else:
             status = "error"
             sync_time = None
+        health_list.append({"platform": row.platform, "status": status, "time": sync_time})
 
-        health_list.append(
-            {
-                "platform": row.platform,
-                "status": status,
-                "time": sync_time,
-            }
-        )
-
-    # 确保所有平台都有记录
-    existing_platforms = {item["platform"] for item in health_list}
-    for platform in PLATFORM_CONFIG:
-        if platform not in existing_platforms:
-            health_list.append(
-                {
-                    "platform": platform,
-                    "status": "error",
-                    "time": None,
-                }
-            )
+    existing = {item["platform"] for item in health_list}
+    for p in PLATFORM_CONFIG:
+        if p not in existing:
+            health_list.append({"platform": p, "status": "error", "time": None})
 
     return health_list
 
@@ -470,113 +396,91 @@ async def get_health_status(
 async def get_alerts(
     db: AsyncSession,
     user: User,
+    store_ids: Optional[list] = None,
 ) -> list[dict]:
-    """
-    获取异常警告列表
+    """获取异常警告列表"""
+    if store_ids is None:
+        store_ids = await _fetch_user_store_ids(db, user)
 
-    Args:
-        db: 数据库会话
-        user: 当前用户
-
-    Returns:
-        list[dict]: 异常警告列表
-    """
     alerts = []
-    conditions = [Review.status == "normal"]
-    store_filter = _build_store_filter(user)
-    if store_filter is not None:
-        conditions.append(store_filter)
-    where_clause = and_(*conditions)
-
-    # 1. 检查高风险评论
-    high_risk_stmt = (
-        select(func.count())
-        .select_from(Review)
-        .where(and_(where_clause, Review.risk_level == "high"))
-    )
-    high_risk_count = (await db.execute(high_risk_stmt)).scalar() or 0
-    if high_risk_count > 0:
-        alerts.append(
-            {
-                "id": "high_risk_reviews",
-                "type": "risk",
-                "title": "高风险评论预警",
-                "description": f"当前有 {high_risk_count} 条高风险评论需要处理",
-                "severity": "high",
-                "timestamp": datetime.utcnow().isoformat(),
-            }
-        )
-
-    # 2. 检查未回复的差评（最近7天）
+    base_conds = _review_conditions(store_ids)
+    where_clause = and_(*base_conds)
     now = datetime.utcnow()
     week_ago = now - timedelta(days=7)
-    unanswered_negative_stmt = (
-        select(func.count())
-        .select_from(Review)
-        .where(
-            and_(
-                where_clause,
-                Review.sentiment == "negative",
-                Review.reply.is_(None),
-                Review.created_at >= week_ago,
+
+    # 高风险评论
+    high_risk_sub = (
+        select(Review.platform_review_id)
+        .where(and_(where_clause, Review.risk_level == "high"))
+        .group_by(Review.platform_review_id)
+    ).subquery()
+    high_risk_count = (
+        await db.execute(select(func.count()).select_from(high_risk_sub))
+    ).scalar() or 0
+    if high_risk_count > 0:
+        alerts.append({
+            "id": "high_risk_reviews", "type": "risk",
+            "title": "高风险评论预警",
+            "description": f"当前有 {high_risk_count} 条高风险评论需要处理",
+            "severity": "high", "timestamp": now.isoformat(),
+        })
+
+    # 未回复差评
+    unanswered_sub = (
+        select(Review.platform_review_id)
+        .where(and_(
+            where_clause,
+            Review.sentiment == "negative",
+            Review.reply.is_(None),
+            Review.created_at >= week_ago,
+        ))
+        .group_by(Review.platform_review_id)
+    ).subquery()
+    unanswered_count = (
+        await db.execute(select(func.count()).select_from(unanswered_sub))
+    ).scalar() or 0
+    if unanswered_count > 0:
+        alerts.append({
+            "id": "unanswered_negative", "type": "reply",
+            "title": "差评未回复提醒",
+            "description": f"近7天有 {unanswered_count} 条差评尚未回复",
+            "severity": "medium", "timestamp": now.isoformat(),
+        })
+
+    # 待审核 AI 回复
+    pending_count = (
+        await db.execute(
+            select(func.count()).select_from(ReplyAudit).where(ReplyAudit.status == "pending")
+        )
+    ).scalar() or 0
+    if pending_count > 0:
+        alerts.append({
+            "id": "pending_ai_replies", "type": "audit",
+            "title": "AI 回复待审核",
+            "description": f"当前有 {pending_count} 条 AI 回复草稿待审核",
+            "severity": "low", "timestamp": now.isoformat(),
+        })
+
+    # 评分下降
+    recent_avg = (
+        await db.execute(
+            select(func.avg(Review.rating)).where(and_(where_clause, Review.created_at >= week_ago))
+        )
+    ).scalar() or 0.0
+    prev_avg = (
+        await db.execute(
+            select(func.avg(Review.rating)).where(
+                and_(where_clause, Review.created_at >= week_ago - timedelta(days=7), Review.created_at < week_ago)
             )
         )
-    )
-    unanswered_count = (await db.execute(unanswered_negative_stmt)).scalar() or 0
-    if unanswered_count > 0:
-        alerts.append(
-            {
-                "id": "unanswered_negative",
-                "type": "reply",
-                "title": "差评未回复提醒",
-                "description": f"近7天有 {unanswered_count} 条差评尚未回复",
-                "severity": "medium",
-                "timestamp": datetime.utcnow().isoformat(),
-            }
-        )
-
-    # 3. 检查待审核的 AI 回复
-    from app.models.review import ReplyAudit
-
-    pending_audit_stmt = select(func.count()).select_from(ReplyAudit).where(
-        ReplyAudit.status == "pending"
-    )
-    pending_count = (await db.execute(pending_audit_stmt)).scalar() or 0
-    if pending_count > 0:
-        alerts.append(
-            {
-                "id": "pending_ai_replies",
-                "type": "audit",
-                "title": "AI 回复待审核",
-                "description": f"当前有 {pending_count} 条 AI 回复草稿待审核",
-                "severity": "low",
-                "timestamp": datetime.utcnow().isoformat(),
-            }
-        )
-
-    # 4. 检查评分下降趋势（近7天 vs 前7天）
-    recent_avg_stmt = select(func.avg(Review.rating)).where(
-        and_(where_clause, Review.created_at >= week_ago)
-    )
-    recent_avg = (await db.execute(recent_avg_stmt)).scalar() or 0.0
-
-    prev_week_start = week_ago - timedelta(days=7)
-    prev_avg_stmt = select(func.avg(Review.rating)).where(
-        and_(where_clause, Review.created_at >= prev_week_start, Review.created_at < week_ago)
-    )
-    prev_avg = (await db.execute(prev_avg_stmt)).scalar() or 0.0
-
+    ).scalar() or 0.0
     if prev_avg > 0 and recent_avg < prev_avg * 0.9:
-        alerts.append(
-            {
-                "id": "rating_decline",
-                "type": "trend",
-                "title": "评分下降预警",
-                "description": f"近7天平均评分 {round(float(recent_avg), 1)}，较前7天下降 {round((1 - recent_avg / prev_avg) * 100, 1)}%",
-                "severity": "medium",
-                "timestamp": datetime.utcnow().isoformat(),
-            }
-        )
+        alerts.append({
+            "id": "rating_decline", "type": "trend",
+            "title": "评分下降预警",
+            "description": f"近7天平均评分 {round(float(recent_avg), 1)}，较前7天下降 {round((1 - recent_avg / prev_avg) * 100, 1)}%",
+            "severity": "medium", "timestamp": now.isoformat(),
+        })
 
     return alerts
 
@@ -584,38 +488,40 @@ async def get_alerts(
 async def get_store_health(
     db: AsyncSession,
     user: User,
+    store_ids: Optional[list] = None,
 ) -> list[dict]:
-    """
-    获取门店健康值列表
+    """获取门店健康值（一条 SQL 同时算 review_count/avg_rating/replied_count）"""
+    if store_ids is None:
+        store_ids = await _fetch_user_store_ids(db, user)
 
-    Args:
-        db: 数据库会话
-        user: 当前用户
-
-    Returns:
-        list[dict]: 门店健康值数据
-    """
-    # 基础条件
     store_conditions = [Store.status == "active"]
-    store_filter = _build_store_filter(user)
-    if store_filter is not None:
-        store_conditions.append(store_filter)
-
+    sf = _store_filter(store_ids)
+    if sf is not None:
+        store_conditions.append(sf)
     store_where = and_(*store_conditions)
 
-    # 查询门店及其评论统计
+    review_sub = (
+        select(
+            Review.store_id,
+            func.count(Review.platform_review_id).label("review_count"),
+            func.avg(Review.rating).label("avg_rating"),
+            func.sum(case((Review.reply.isnot(None), 1), else_=0)).label("replied_count"),
+        )
+        .where(Review.status == "normal")
+        .group_by(Review.store_id)
+    ).subquery()
+
     stmt = (
         select(
             Store.id,
             Store.name,
             Store.health_score,
-            func.count(Review.id).label("review_count"),
-            func.avg(Review.rating).label("avg_rating"),
-            func.count().filter(Review.reply.isnot(None)).label("replied_count"),
+            func.coalesce(review_sub.c.review_count, 0).label("review_count"),
+            func.coalesce(review_sub.c.avg_rating, 0).label("avg_rating"),
+            func.coalesce(review_sub.c.replied_count, 0).label("replied_count"),
         )
-        .outerjoin(Review, and_(Review.store_id == Store.id, Review.status == "normal"))
+        .outerjoin(review_sub, Store.id == review_sub.c.store_id)
         .where(store_where)
-        .group_by(Store.id, Store.name, Store.health_score)
         .order_by(Store.health_score.desc().nullslast())
     )
     result = await db.execute(stmt)
@@ -623,24 +529,59 @@ async def get_store_health(
 
     health_list = []
     for row in rows:
-        review_count = row.review_count
-        avg_rating = round(float(row.avg_rating), 1) if row.avg_rating else 0.0
-        replied_count = row.replied_count
-        reply_rate = (
-            round(replied_count / review_count * 100, 1) if review_count else 0.0
-        )
+        rc = row.review_count
+        reply_rate = round(row.replied_count / rc * 100, 1) if rc else 0.0
         health_score = row.health_score or 0.0
-
-        health_list.append(
-            {
-                "store_id": str(row.id),
-                "store_name": row.name,
-                "health_score": health_score,
-                "review_count": review_count,
-                "avg_rating": avg_rating,
-                "reply_rate": reply_rate,
-                "trend": 0.0,  # TODO: 与上期对比计算趋势
-            }
-        )
-
+        health_list.append({
+            "store_id": str(row.id),
+            "store_name": row.name,
+            "health_score": health_score,
+            "review_count": rc,
+            "avg_rating": round(float(row.avg_rating), 1) if row.avg_rating else 0.0,
+            "reply_rate": reply_rate,
+            "trend": 0.0,
+        })
     return health_list
+
+
+async def get_dashboard_overview(
+    db: AsyncSession,
+    user: User,
+    period: str = "30d",
+) -> dict:
+    """
+    聚合接口：一次性返回 Dashboard 所需的所有数据。
+    预查询 store_ids 一次，传给所有子函数，避免重复查询和子查询笛卡尔积。
+    """
+    import asyncio
+
+    # 预查询一次 store_ids，传给所有子函数
+    store_ids = await _fetch_user_store_ids(db, user)
+
+    (
+        core_stats,
+        platform_data,
+        recent_reviews,
+        store_rankings,
+        health_status,
+        store_health,
+        alerts,
+    ) = await asyncio.gather(
+        get_core_stats(db, user, period, store_ids),
+        get_platform_distribution(db, user, period, store_ids),
+        get_recent_reviews(db, user, 5, period, store_ids),
+        get_store_rankings(db, user, 5, period, store_ids),
+        get_health_status(db, user, store_ids),
+        get_store_health(db, user, store_ids),
+        get_alerts(db, user, store_ids),
+    )
+
+    return {
+        "core_stats": core_stats,
+        "platform_data": platform_data,
+        "recent_reviews": recent_reviews,
+        "store_rankings": store_rankings,
+        "health_status": health_status,
+        "store_health": store_health,
+        "alerts": alerts,
+    }

@@ -380,6 +380,13 @@ async def sync_account_status(
     logger.info(f"[SyncAccount] sync_result raw: {json.dumps(sync_result, ensure_ascii=False, default=str)[:2000]}")
     synced_stores = 0
 
+    # 美团开店宝后台同时管理美团和大众点评两个平台
+    # 同一个 poiId 在两个平台有各自的评论流（queryMTFeedbackPCNew / queryDPFeedbackPCNew）
+    # 所以对 meituan 账号，每个店铺需要同时写入 meituan + dianping 两条 store_platforms 记录
+    platforms_to_register = [platform]
+    if platform == "meituan":
+        platforms_to_register = ["meituan", "dianping"]
+
     if sync_result.get("status") == "success" and sync_result.get("stores"):
         stores = sync_result["stores"]
         from sqlalchemy import select
@@ -400,72 +407,101 @@ async def sync_account_status(
             ps_id = store_info["platform_store_id"]
             ps_name = store_info["platform_store_name"]
 
-            # 查找是否已存在 store_platform 记录
-            stmt = select(StorePlatform).where(
-                StorePlatform.account_id == account.id,
-                StorePlatform.platform_store_id == ps_id,
-            )
-            existing_result = await db.execute(stmt)
-            existing_sp = existing_result.scalar_one_or_none()
+            # 对需要同时注册的每个平台，分别创建/更新 store_platforms 记录
+            for target_platform in platforms_to_register:
+                target_suffix = platform_suffix_map.get(target_platform, f" - {target_platform}")
 
-            if existing_sp:
-                # 更新已有记录
-                existing_sp.platform_store_name = ps_name
-                existing_sp.last_sync_at = datetime.utcnow()
-
-                # 如果还没关联系统门店，自动创建并绑定
-                if not existing_sp.store_id:
-                    auto_store_name = ps_name + store_suffix
-                    new_store = StoreModel(
-                        name=auto_store_name,
-                        type="restaurant",
-                        status="active",
-                        platform_count=1,
-                        owner_id=current_user.id,
-                    )
-                    db.add(new_store)
-                    await db.flush()  # 获取 new_store.id
-                    existing_sp.store_id = new_store.id
-                    existing_sp.connected = True
-
-                    # 创建 UserStore 关联
-                    user_store = UserStore(
-                        user_id=str(current_user.id),
-                        store_id=str(new_store.id),
-                    )
-                    db.add(user_store)
-            else:
-                # 自动创建系统门店并绑定
-                auto_store_name = ps_name + store_suffix
-                new_store = StoreModel(
-                    name=auto_store_name,
-                    type="restaurant",
-                    status="active",
-                    platform_count=1,
-                    owner_id=current_user.id,
+                # 查找是否已存在 store_platform 记录（按 account_id + platform + platform_store_id）
+                stmt = select(StorePlatform).where(
+                    StorePlatform.account_id == account.id,
+                    StorePlatform.platform_store_id == ps_id,
+                    StorePlatform.platform == target_platform,
                 )
-                db.add(new_store)
-                await db.flush()  # 获取 new_store.id
+                existing_result = await db.execute(stmt)
+                existing_sp = existing_result.scalar_one_or_none()
 
-                # 创建 UserStore 关联
-                user_store = UserStore(
-                    user_id=str(current_user.id),
-                    store_id=str(new_store.id),
-                )
-                db.add(user_store)
+                if existing_sp:
+                    # 更新已有记录
+                    existing_sp.platform_store_name = ps_name
+                    existing_sp.last_sync_at = datetime.utcnow()
 
-                # 创建 store_platform 记录并直接绑定
-                new_sp = StorePlatform(
-                    account_id=account.id,
-                    platform=platform,
-                    platform_store_id=ps_id,
-                    platform_store_name=ps_name,
-                    store_id=new_store.id,
-                    connected=True,
-                    last_sync_at=datetime.utcnow(),
-                    sync_status="synced",
-                )
-                db.add(new_sp)
+                    # 如果还没关联系统门店，自动创建并绑定
+                    if not existing_sp.store_id:
+                        auto_store_name = ps_name + target_suffix
+                        new_store = StoreModel(
+                            name=auto_store_name,
+                            type="restaurant",
+                            status="active",
+                            platform_count=1,
+                            owner_id=current_user.id,
+                        )
+                        db.add(new_store)
+                        await db.flush()  # 获取 new_store.id
+                        existing_sp.store_id = new_store.id
+                        existing_sp.connected = True
+
+                        # 创建 UserStore 关联
+                        user_store = UserStore(
+                            user_id=str(current_user.id),
+                            store_id=str(new_store.id),
+                        )
+                        db.add(user_store)
+                else:
+                    # 查找是否有其他平台的同 poiId 记录已关联了系统门店
+                    # 例如 meituan 已创建了门店，dianping 直接复用同一个门店
+                    shared_stmt = select(StorePlatform.store_id).where(
+                        StorePlatform.account_id == account.id,
+                        StorePlatform.platform_store_id == ps_id,
+                        StorePlatform.store_id.isnot(None),
+                    ).limit(1)
+                    shared_result = await db.execute(shared_stmt)
+                    existing_store_id = shared_result.scalar_one_or_none()
+
+                    if existing_store_id:
+                        # 复用已存在的系统门店
+                        new_sp = StorePlatform(
+                            account_id=account.id,
+                            platform=target_platform,
+                            platform_store_id=ps_id,
+                            platform_store_name=ps_name,
+                            store_id=str(existing_store_id),
+                            connected=True,
+                            last_sync_at=datetime.utcnow(),
+                            sync_status="synced",
+                        )
+                        db.add(new_sp)
+                    else:
+                        # 自动创建系统门店并绑定
+                        auto_store_name = ps_name + target_suffix
+                        new_store = StoreModel(
+                            name=auto_store_name,
+                            type="restaurant",
+                            status="active",
+                            platform_count=1,
+                            owner_id=current_user.id,
+                        )
+                        db.add(new_store)
+                        await db.flush()  # 获取 new_store.id
+
+                        # 创建 UserStore 关联
+                        user_store = UserStore(
+                            user_id=str(current_user.id),
+                            store_id=str(new_store.id),
+                        )
+                        db.add(user_store)
+
+                        # 创建 store_platform 记录并直接绑定
+                        new_sp = StorePlatform(
+                            account_id=account.id,
+                            platform=target_platform,
+                            platform_store_id=ps_id,
+                            platform_store_name=ps_name,
+                            store_id=new_store.id,
+                            connected=True,
+                            last_sync_at=datetime.utcnow(),
+                            sync_status="synced",
+                        )
+                        db.add(new_sp)
             synced_stores += 1
 
     # 更新同步时间
@@ -489,31 +525,30 @@ async def sync_account_status(
     )
 
 
-@router.post("/accounts/{account_id}/sync-reviews", summary="同步平台评论数据")
+@router.post("/accounts/{account_id}/sync-reviews", summary="同步平台评论数据（异步）")
 async def sync_account_reviews(
     account_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
-    同步指定平台账号下所有店铺的评论数据。
-    1. 获取该账号下所有 store_platforms
-    2. 通过 Playwright 调用平台评论 API
-    3. 将评论数据导入 reviews 表（自动去重）
+    异步启动评论同步任务，立即返回 task_id。
+    前端通过 GET /accounts/{account_id}/sync-reviews/status/{task_id} 轮询进度。
+    同步完成后通过 GET /accounts/{account_id}/sync-reviews/result/{task_id} 获取结果。
     """
-    from app.models.store import Store as StoreModel
     from app.models.review import Review
     from app.services.review_sync_service import ReviewSyncService
+    from app.services.platform_service import PlatformService
 
     platform_service = PlatformService(db)
     account = await platform_service.get_account_by_id(account_id)
     if not account or str(account.user_id) != str(current_user.id):
         raise NotFoundException("平台账号不存在")
 
-    if not account.storage_state:
-        return error(message="账号无登录态，请先扫码登录")
+    storage_state = await platform_service._decrypt_credentials(account.cookies_encrypted)
+    if not storage_state or not storage_state.get("cookies"):
+        return error(message="登录态解密失败或格式错误，请重新扫码登录")
 
-    # 获取已绑定的店铺列表
     stmt = select(StorePlatform).where(
         StorePlatform.account_id == account.id,
         StorePlatform.store_id.isnot(None),
@@ -524,96 +559,94 @@ async def sync_account_reviews(
     if not store_platforms:
         return error(message="暂无已绑定的店铺，请先同步店铺列表")
 
-    # 构建店铺列表传给子进程
-    stores = [
-        {
+    # 按 platform 分组店铺
+    stores_by_platform: dict[str, list] = {}
+    for sp in store_platforms:
+        if not sp.platform_store_id:
+            continue
+        store_info = {
             "platform_store_id": sp.platform_store_id,
             "platform_store_name": sp.platform_store_name,
             "store_id": str(sp.store_id) if sp.store_id else "",
         }
-        for sp in store_platforms
-        if sp.platform_store_id
-    ]
+        stores_by_platform.setdefault(sp.platform, []).append(store_info)
 
-    storage_state = account.storage_state if isinstance(account.storage_state, dict) else json.loads(account.storage_state)
-
-    # 调用评论同步服务（子进程 Playwright 抓取）
     review_service = ReviewSyncService.get_instance()
-    sync_result = await review_service.sync_reviews(
-        platform=account.platform,
+    task_id = await review_service.start_sync_reviews_async(
+        account_id=str(account_id),
         storage_state=storage_state,
-        stores=stores,
+        stores_by_platform=stores_by_platform,
     )
-
-    if sync_result.get("status") != "success":
-        return error(message=f"评论同步失败: {sync_result.get('error', '未知错误')}")
-
-    # 将评论数据导入 DB
-    raw_reviews = sync_result.get("reviews", [])
-    created_count = 0
-    skipped_count = 0
-
-    # 预查已存在的 review（去重）
-    if raw_reviews:
-        existing_keys = set()
-        # 按 platform 分组批量查
-        from itertools import groupby
-        sorted_reviews = sorted(raw_reviews, key=lambda r: (r["platform"], r["platform_review_id"]))
-        for plat, group in groupby(sorted_reviews, key=lambda r: r["platform"]):
-            review_ids = [r["platform_review_id"] for r in list(group)]
-            if review_ids:
-                exist_stmt = select(Review.platform_review_id).where(
-                    Review.platform == plat,
-                    Review.platform_review_id.in_(review_ids),
-                )
-                exist_result = await db.execute(exist_stmt)
-                existing_keys.update((plat, row[0]) for row in exist_result.all())
-
-        # 逐条创建
-        from datetime import datetime
-        for item in raw_reviews:
-            key = (item["platform"], item["platform_review_id"])
-            if key in existing_keys or not item["platform_review_id"]:
-                skipped_count += 1
-                continue
-
-            # 解析时间
-            platform_time = None
-            if item.get("platform_created_at"):
-                try:
-                    platform_time = datetime.fromisoformat(item["platform_created_at"].replace("Z", "+00:00"))
-                    # 转为 naive datetime (与项目其他代码一致)
-                    platform_time = platform_time.replace(tzinfo=None)
-                except Exception:
-                    pass
-
-            review = Review(
-                store_id=item["store_id"],
-                platform=item["platform"],
-                platform_review_id=item["platform_review_id"],
-                user_name=item.get("user_name"),
-                user_avatar=item.get("user_avatar"),
-                rating=item.get("rating", 3),
-                content=item.get("content"),
-                images=item.get("images"),
-                sentiment=item.get("sentiment"),
-                raw_json=item.get("raw_json"),
-                platform_created_at=platform_time,
-                status="normal",
-            )
-            db.add(review)
-            created_count += 1
-
-        await db.commit()
 
     return success(
         data={
-            "created": created_count,
-            "skipped": skipped_count,
-            "total": len(raw_reviews),
-            "store_count": sync_result.get("store_count", 0),
+            "task_id": task_id,
+            "platforms": list(stores_by_platform.keys()),
+            "store_count": len(store_platforms),
         },
-        message=f"评论同步完成，新增 {created_count} 条，跳过 {skipped_count} 条重复",
+        message="评论同步任务已启动",
+    )
+
+
+@router.get("/accounts/{account_id}/sync-reviews/status/{task_id}", summary="查询评论同步进度")
+async def get_sync_reviews_status(
+    account_id: UUID,
+    task_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_valid_subscription),
+) -> dict:
+    """
+    查询评论同步任务状态（前端轮询）。
+    - running: 同步中（含 current_platform, progress）
+    - success: 同步完成，调用 /result/{task_id} 入库
+    - failed: 同步失败（含 error 信息）
+    """
+    from app.services.review_sync_service import ReviewSyncService
+
+    review_service = ReviewSyncService.get_instance()
+    status = review_service.get_sync_reviews_status(task_id)
+
+    if status["status"] == "not_found":
+        return error(message="同步任务不存在或已过期")
+
+    return success(data=status)
+
+
+@router.get("/accounts/{account_id}/sync-reviews/result/{task_id}", summary="获取评论同步结果")
+async def get_sync_reviews_result(
+    account_id: UUID,
+    task_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_valid_subscription),
+) -> dict:
+    """
+    获取评论同步结果（入库已在后台完成，此接口只返回统计数字）。
+    """
+    from app.services.review_sync_service import ReviewSyncService
+
+    review_service = ReviewSyncService.get_instance()
+    status = review_service.get_sync_reviews_status(task_id)
+
+    if status["status"] == "not_found":
+        return error(message="同步任务不存在或已过期")
+    if status["status"] == "running":
+        return error(message="同步尚未完成")
+    if status["status"] == "failed":
+        return error(message=f"同步失败: {status.get('error', '未知错误')}")
+
+    result_data = status.get("result", {})
+    created = result_data.get("created", 0)
+    skipped = result_data.get("skipped", 0)
+    errors = result_data.get("errors", [])
+
+    return success(
+        data={
+            "created": created,
+            "skipped": skipped,
+            "total": result_data.get("review_count", 0),
+            "errors": errors,
+        },
+        message=f"评论同步完成，新增 {created} 条，跳过 {skipped} 条重复",
     )
 
 

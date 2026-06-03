@@ -9,6 +9,7 @@ import { storesApi } from '../../api/stores';
 import { adminApi } from '../../api/admin';
 import type { Store as StoreType } from '../../api/stores';
 import type { AdminUser } from '../../api/admin';
+import { useSearchDebounce } from '../../lib/utils';
 
 export const StoreManagement: React.FC = () => {
   const [stores, setStores] = useState<StoreType[]>([]);
@@ -16,6 +17,7 @@ export const StoreManagement: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const { inputValue: searchInput, debouncedValue: debouncedSearch, handleChange: handleSearchInput } = useSearchDebounce();
   const [showAdd, setShowAdd] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [showUsers, setShowUsers] = useState(false);
@@ -28,6 +30,10 @@ export const StoreManagement: React.FC = () => {
   const [loadingRegions, setLoadingRegions] = useState(false);
 
   const { success, error: toastError } = useToast();
+
+  useEffect(() => {
+    setSearchQuery(debouncedSearch);
+  }, [debouncedSearch]);
 
   const loadData = async () => {
     setLoading(true);
@@ -151,7 +157,7 @@ export const StoreManagement: React.FC = () => {
 
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <input className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm outline-none" placeholder="搜索门店名称或地址..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+          <input className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm outline-none" placeholder="搜索门店名称或地址..." value={searchInput} onChange={e => handleSearchInput(e.target.value)} />
         </div>
 
         {filteredStores.length === 0 ? (

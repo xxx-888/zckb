@@ -27,16 +27,18 @@ async def get_tasks(
     status: str | None = Query(None, description="状态筛选: pending/approved/rejected/sent"),
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页大小"),
+    store_id: str | None = Query(None, description="门店ID筛选"),
+    search: str | None = Query(None, description="关键词搜索(评论内容/用户名)"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
     获取差评处理任务列表
     - 待审核的AI生成回复
-    - 支持按状态筛选
+    - 支持按状态、门店、关键词筛选
     """
     tasks, total = await negative_reply_service.get_tasks(
-        db, current_user, status, page, page_size
+        db, current_user, status, page, page_size, store_id, search
     )
     return paginated(
         items=[NegativeReplyTaskResponse(**task).model_dump(mode="json") for task in tasks],
