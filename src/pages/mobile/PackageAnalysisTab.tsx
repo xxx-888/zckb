@@ -49,6 +49,16 @@ export const PackageAnalysisTab: React.FC = () => {
     );
   }
 
+  if (!data.top_ranking.length && !data.bottom_ranking.length) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+        <Package className="w-12 h-12 mb-3 opacity-50" />
+        <p className="text-sm">暂无套餐核销数据</p>
+        <p className="text-xs mt-1">请在后台录入套餐核销记录后查看</p>
+      </div>
+    );
+  }
+
   const allItems = [...data.top_ranking, ...data.bottom_ranking];
   const displayItems = view === 'top' ? data.top_ranking : view === 'bottom' ? data.bottom_ranking : allItems;
 

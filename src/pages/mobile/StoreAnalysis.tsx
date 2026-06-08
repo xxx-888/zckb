@@ -10,6 +10,7 @@ import {
   ShoppingCart,
   CheckCircle,
   AlertTriangle,
+  Store,
 } from 'lucide-react';
 import { Card } from '../../components/ui/card';
 import { Badge } from '../../components/ui/badge';
@@ -49,6 +50,16 @@ export const StoreAnalysis: React.FC = () => {
     return (
       <div className="space-y-4 p-4">
         {[1,2,3].map(i => <Card key={i} className="p-4 animate-pulse"><div className="h-48 bg-slate-100 rounded-lg" /></Card>)}
+      </div>
+    );
+  }
+
+  if (!data.funnels?.length && !data.rankings?.length && !data.reviews_summary) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+        <Store className="w-12 h-12 mb-3 opacity-50" />
+        <p className="text-sm">暂无门店运营数据</p>
+        <p className="text-xs mt-1">请在后台录入门店运营指标后查看</p>
       </div>
     );
   }

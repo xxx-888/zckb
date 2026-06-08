@@ -20,6 +20,7 @@ import {
   Wallet,
   TrendingUp,
   TrendingDown,
+  BarChart3,
   ArrowUpRight,
   ArrowDownRight,
   Calendar,
@@ -62,18 +63,31 @@ export const RevenueAnalysis: React.FC = () => {
     );
   }
 
-  const weeklyData = data.weekly;
+  // 无数据时展示空状态
+  if (!data.daily.length && !data.weekly.length) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+        <BarChart3 className="w-12 h-12 mb-3 opacity-50" />
+        <p className="text-sm">暂无营业额数据</p>
+        <p className="text-xs mt-1">请在后台录入营业额记录后查看</p>
+      </div>
+    );
+  }
+
+  const weeklyData = data.weekly.length > 0 ? data.weekly : data.daily.length > 0 ? [{ ...data.daily[data.daily.length - 1], week_label: '本周' }] : [];
   const momRevenue = weeklyData.length >= 2
     ? ((weeklyData[1].total_revenue - weeklyData[0].total_revenue) / weeklyData[0].total_revenue * 100).toFixed(1)
     : '0';
 
   // 分渠道占比
   const latestWeek = weeklyData[weeklyData.length - 1];
-  const channelData = [
-    { name: '美团', value: latestWeek.meituan_revenue },
-    { name: '抖音', value: latestWeek.douyin_revenue },
-    { name: '其他', value: latestWeek.total_revenue - latestWeek.meituan_revenue - latestWeek.douyin_revenue },
-  ].filter(d => d.value > 0);
+  const channelData = latestWeek
+    ? [
+        { name: '美团', value: latestWeek.meituan_revenue || 0 },
+        { name: '抖音', value: latestWeek.douyin_revenue || 0 },
+        { name: '其他', value: (latestWeek.total_revenue || 0) - (latestWeek.meituan_revenue || 0) - (latestWeek.douyin_revenue || 0) },
+      ].filter(d => d.value > 0)
+    : [];
 
   // 明细表格数据（日维度）
   const formatMoney = (n: number) => `¥${n.toLocaleString()}`;
