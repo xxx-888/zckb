@@ -31,21 +31,25 @@ import {
 
 // ==================== 时间周期 ====================
 
-interface TimeOption { value: string; label: string; dateRange: string; }
+interface TimeOption { value: string; label: string; dateRange: string; startDate: string; endDate: string; }
 
 function getWeekOptions(): TimeOption[] {
   const now = new Date();
   const formatDate = (d: Date) => `${d.getMonth() + 1}.${d.getDate()}`;
+  const toISO = (d: Date) => d.toISOString().slice(0, 10);
   const getWeekRange = (weeksAgo: number) => {
-    const end = new Date(now.getTime() - weeksAgo * 7 * 86400000);
-    const start = new Date(end.getTime() - 6 * 86400000);
-    return { label: formatDate(start) + '-' + formatDate(end) };
+    // 计算N周前的周一到周日
+    const ref = new Date(now.getTime() - weeksAgo * 7 * 86400000);
+    const dayOfWeek = ref.getDay() || 7; // 周日=7
+    const monday = new Date(ref.getTime() - (dayOfWeek - 1) * 86400000);
+    const sunday = new Date(monday.getTime() + 6 * 86400000);
+    return { label: formatDate(monday) + '-' + formatDate(sunday), startDate: toISO(monday), endDate: toISO(sunday) };
   };
   return [
-    { value: 'current', label: '本周', dateRange: getWeekRange(0).label },
-    { value: 'last', label: '上周', dateRange: getWeekRange(1).label },
-    { value: 'week2', label: '两周前', dateRange: getWeekRange(2).label },
-    { value: 'week3', label: '三周前', dateRange: getWeekRange(3).label },
+    { value: 'current', label: '本周', dateRange: getWeekRange(0).label, startDate: getWeekRange(0).startDate, endDate: getWeekRange(0).endDate },
+    { value: 'last', label: '上周', dateRange: getWeekRange(1).label, startDate: getWeekRange(1).startDate, endDate: getWeekRange(1).endDate },
+    { value: 'week2', label: '两周前', dateRange: getWeekRange(2).label, startDate: getWeekRange(2).startDate, endDate: getWeekRange(2).endDate },
+    { value: 'week3', label: '三周前', dateRange: getWeekRange(3).label, startDate: getWeekRange(3).startDate, endDate: getWeekRange(3).endDate },
   ];
 }
 
@@ -67,14 +71,18 @@ export const Dashboard: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
-      const result = await fetchStoreDashboard({});
+      const option = timeOptions.find(o => o.value === timePeriod);
+      const result = await fetchStoreDashboard({
+        start_date: option?.startDate,
+        end_date: option?.endDate,
+      });
       setData(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : '获取数据失败');
     } finally {
       setLoading(false);
     }
-  }, [timePeriod]);
+  }, [timePeriod, timeOptions]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 

@@ -65,6 +65,13 @@ async def _get_store_ids(
     return all_ids if all_ids else []
 
 
+def _default_week_range():
+    """默认本周一到今天"""
+    today = date.today()
+    monday = today - timedelta(days=today.weekday())
+    return monday, today
+
+
 def _parse_date(val: Optional[str]) -> Optional[date]:
     if not val:
         return None
@@ -162,8 +169,8 @@ async def delete_revenue(
 @router.get("/revenue/summary")
 async def revenue_summary(
     store_id: Optional[str] = Query(None),
-    start_date: str = Query(..., description="当期开始日期 YYYY-MM-DD"),
-    end_date: str = Query(..., description="当期结束日期 YYYY-MM-DD"),
+    start_date: Optional[str] = Query(None, description="当期开始日期 YYYY-MM-DD"),
+    end_date: Optional[str] = Query(None, description="当期结束日期 YYYY-MM-DD"),
     compare_start: Optional[str] = Query(None, description="对比期开始日期"),
     compare_end: Optional[str] = Query(None, description="对比期结束日期"),
     db: AsyncSession = Depends(get_db),
@@ -173,9 +180,10 @@ async def revenue_summary(
     store_ids = await _get_store_ids(user, db, UUID(store_id) if store_id else None)
     if not store_ids:
         return success(None)
+    _s = _parse_date(start_date) or _default_week_range()[0]
+    _e = _parse_date(end_date) or _default_week_range()[1]
     result = await svc.get_revenue_summary(
-        db, store_ids,
-        date.fromisoformat(start_date), date.fromisoformat(end_date),
+        db, store_ids, _s, _e,
         _parse_date(compare_start), _parse_date(compare_end),
     )
     return success(result)
@@ -184,8 +192,8 @@ async def revenue_summary(
 @router.get("/revenue/trend")
 async def revenue_trend(
     store_id: Optional[str] = Query(None),
-    start_date: str = Query(...),
-    end_date: str = Query(...),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_valid_subscription),
 ):
@@ -193,9 +201,10 @@ async def revenue_trend(
     store_ids = await _get_store_ids(user, db, UUID(store_id) if store_id else None)
     if not store_ids:
         return success({"daily": [], "weekly": []})
+    _s = _parse_date(start_date) or _default_week_range()[0]
+    _e = _parse_date(end_date) or _default_week_range()[1]
     result = await svc.get_revenue_trend(
-        db, store_ids,
-        date.fromisoformat(start_date), date.fromisoformat(end_date),
+        db, store_ids, _s, _e,
     )
     return success(result)
 
@@ -277,8 +286,8 @@ async def delete_package(
 @router.get("/packages/comparison")
 async def package_comparison(
     store_id: Optional[str] = Query(None),
-    current_start: str = Query(..., description="当期开始"),
-    current_end: str = Query(..., description="当期结束"),
+    current_start: Optional[str] = Query(None, description="当期开始"),
+    current_end: Optional[str] = Query(None, description="当期结束"),
     compare_start: Optional[str] = Query(None, description="对比期开始"),
     compare_end: Optional[str] = Query(None, description="对比期结束"),
     db: AsyncSession = Depends(get_db),
@@ -288,9 +297,10 @@ async def package_comparison(
     store_ids = await _get_store_ids(user, db, UUID(store_id) if store_id else None)
     if not store_ids:
         return success(None)
+    _s = _parse_date(current_start) or _default_week_range()[0]
+    _e = _parse_date(current_end) or _default_week_range()[1]
     result = await svc.get_package_comparison(
-        db, store_ids,
-        date.fromisoformat(current_start), date.fromisoformat(current_end),
+        db, store_ids, _s, _e,
         _parse_date(compare_start), _parse_date(compare_end),
     )
     return success(result)
@@ -299,8 +309,8 @@ async def package_comparison(
 @router.get("/packages/ranking")
 async def package_ranking(
     store_id: Optional[str] = Query(None),
-    start_date: str = Query(...),
-    end_date: str = Query(...),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_valid_subscription),
 ):
@@ -308,9 +318,10 @@ async def package_ranking(
     store_ids = await _get_store_ids(user, db, UUID(store_id) if store_id else None)
     if not store_ids:
         return success(None)
+    _s = _parse_date(start_date) or _default_week_range()[0]
+    _e = _parse_date(end_date) or _default_week_range()[1]
     result = await svc.get_package_ranking(
-        db, store_ids,
-        date.fromisoformat(start_date), date.fromisoformat(end_date),
+        db, store_ids, _s, _e,
     )
     return success(result)
 
@@ -393,8 +404,8 @@ async def delete_metric(
 @router.get("/metrics/health")
 async def store_health(
     store_id: Optional[str] = Query(None),
-    start_date: str = Query(...),
-    end_date: str = Query(...),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
     compare_start: Optional[str] = Query(None),
     compare_end: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
@@ -404,9 +415,10 @@ async def store_health(
     store_ids = await _get_store_ids(user, db, UUID(store_id) if store_id else None)
     if not store_ids:
         return success(None)
+    _s = _parse_date(start_date) or _default_week_range()[0]
+    _e = _parse_date(end_date) or _default_week_range()[1]
     result = await svc.get_store_health(
-        db, store_ids,
-        date.fromisoformat(start_date), date.fromisoformat(end_date),
+        db, store_ids, _s, _e,
         _parse_date(compare_start), _parse_date(compare_end),
     )
     return success(result)
@@ -479,8 +491,8 @@ async def delete_analysis(
 @router.get("/overview")
 async def dashboard_overview(
     store_id: Optional[str] = Query(None),
-    start_date: str = Query(..., description="当期开始"),
-    end_date: str = Query(..., description="当期结束"),
+    start_date: Optional[str] = Query(None, description="当期开始(YYYY-MM-DD)，不传默认本周"),
+    end_date: Optional[str] = Query(None, description="当期结束(YYYY-MM-DD)，不传默认本周"),
     compare_start: Optional[str] = Query(None),
     compare_end: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
@@ -490,9 +502,16 @@ async def dashboard_overview(
     store_ids = await _get_store_ids(user, db, UUID(store_id) if store_id else None)
     if not store_ids:
         return success(None)
+    # 默认本周一 ~ 今天
+    _start = _parse_date(start_date)
+    _end = _parse_date(end_date)
+    if not _start or not _end:
+        today = date.today()
+        _start = today - timedelta(days=today.weekday())
+        _end = today
     result = await svc.get_dashboard_overview(
         db, user, store_ids,
-        date.fromisoformat(start_date), date.fromisoformat(end_date),
+        _start, _end,
         _parse_date(compare_start), _parse_date(compare_end),
     )
     return success(result)
