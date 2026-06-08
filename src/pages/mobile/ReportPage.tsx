@@ -94,11 +94,29 @@ export const ReportPage: React.FC = () => {
 - 美团星级4.8，点评4.0，抖音4.7
 - 榜单：美团人气榜第1名，点评热门榜第2名，抖音人气榜第6名`;
 
-    navigator.clipboard.writeText(prompt).then(() => {
-      setCopiedPrompt(true);
-      success('AI提示词', '已复制到剪贴板，可粘贴到 ChatGPT 等 AI 工具中使用');
-      setTimeout(() => setCopiedPrompt(false), 3000);
-    });
+    const copyPrompt = async () => {
+      try {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(prompt);
+        } else {
+          // HTTP 环境下 clipboard API 不可用，降级用 execCommand
+          const ta = document.createElement('textarea');
+          ta.value = prompt;
+          ta.style.cssText = 'position:fixed;left:-9999px';
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          document.body.removeChild(ta);
+        }
+        setCopiedPrompt(true);
+        success('AI提示词', '已复制到剪贴板，可粘贴到 ChatGPT 等 AI 工具中使用');
+        setTimeout(() => setCopiedPrompt(false), 3000);
+      } catch {
+        // 最后降级：弹窗让用户手动复制
+        window.prompt('请手动复制以下提示词：', prompt);
+      }
+    };
+    copyPrompt();
   };
 
   return (
