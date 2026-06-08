@@ -19,6 +19,12 @@ from .spider import SpiderPlatform, SpiderSyncLog, SpiderTask
 from .report import AnnualReport, WeeklyBrief, Competitor, CompetitorAnalysisTask
 from .settings import ReplyTemplate, AutoReplyConfig, UserNotificationSetting
 from .verification_code import VerificationCode
+from .store_dashboard import (
+    RevenueRecord,
+    PackageRecord,
+    StoreMetric,
+    OperationAnalysis,
+)
 
 __all__ = [
     # Base
@@ -66,4 +72,9 @@ __all__ = [
     "CollectionPack",
     "UserCollectionBalance",
     "CollectionOrder",
+    # Store Dashboard
+    "RevenueRecord",
+    "PackageRecord",
+    "StoreMetric",
+    "OperationAnalysis",
 ]

@@ -36,7 +36,6 @@ export interface PackageRanking {
   douyin_verify: number;
   total_verify: number;
   verify_rate: number;
-  mom_verify_change?: number; // 环比核销变化
 }
 
 export interface PackageAnalysisData {
@@ -53,10 +52,10 @@ export interface PackageAnalysisData {
 
 export interface StoreFunnel {
   platform: string;
-  impressions: number;    // 曝光
-  visits: number;          // 访问
-  purchases: number;       // 购买
-  verifications: number;   // 核销
+  impressions: number;
+  visits: number;
+  purchases: number;
+  verifications: number;
   impression_to_visit: number;
   visit_to_purchase: number;
 }
@@ -90,94 +89,124 @@ export interface StoreHealthData {
   }[];
 }
 
-// ==================== Mock 数据 ====================
+// ==================== API 参数 ====================
 
-const mockDailyRevenue: DailyRevenue[] = Array.from({ length: 7 }, (_, i) => {
-  const d = new Date(2026, 4, 25 + i);
-  return {
-    date: `${d.getMonth() + 1}.${d.getDate()}`,
-    total_revenue: 15000 + Math.floor(Math.random() * 8000),
-    meituan_revenue: 5000 + Math.floor(Math.random() * 3000),
-    douyin_revenue: 8000 + Math.floor(Math.random() * 5000),
-    other_revenue: 1000 + Math.floor(Math.random() * 2000),
-    visitor_count: 180 + Math.floor(Math.random() * 80),
-    table_count: 60 + Math.floor(Math.random() * 30),
-    avg_people_per_table: 2.8 + Math.random() * 0.4,
-    avg_per_capita: 75 + Math.random() * 20,
-  };
-});
-
-export const mockRevenueTrend: RevenueTrendData = {
-  daily: mockDailyRevenue,
-  weekly: [
-    { week_label: '5.16-23', total_revenue: 86800, meituan_revenue: 45680, douyin_revenue: 34120, visitor_count: 1210, table_count: 403 },
-    { week_label: '5.24-31', total_revenue: 124580, meituan_revenue: 31290, douyin_revenue: 78900, visitor_count: 1458, table_count: 486 },
-  ],
-};
-
-export const mockPackageAnalysis: PackageAnalysisData = {
-  top_ranking: [
-    { product_name: '【牛牛爆款】鲜切4人餐', meituan_buy: 57, meituan_verify: 50, douyin_buy: 45, douyin_verify: 50, total_verify: 100, verify_rate: 97.1, mom_verify_change: 65.8 },
-    { product_name: '【撸串搭子】当日现串2人餐', meituan_buy: 36, meituan_verify: 31, douyin_buy: 28, douyin_verify: 35, total_verify: 66, verify_rate: 100, mom_verify_change: 82.5 },
-    { product_name: '招牌牛肉系列（10串）', meituan_buy: 8, meituan_verify: 7, douyin_buy: 10, douyin_verify: 2, total_verify: 9, verify_rate: 50, mom_verify_change: 100 },
-    { product_name: '招牌广式猪杂粥（大份）', meituan_buy: 10, meituan_verify: 7, douyin_buy: 3, douyin_verify: 1, total_verify: 8, verify_rate: 61.5, mom_verify_change: 300 },
-    { product_name: '【聚会首选】当日现串6-8人餐', meituan_buy: 13, meituan_verify: 12, douyin_buy: 5, douyin_verify: 8, total_verify: 20, verify_rate: 111, mom_verify_change: 100 },
-  ],
-  bottom_ranking: [
-    { product_name: '50元代金券', meituan_buy: 6, meituan_verify: 6, douyin_buy: 0, douyin_verify: 0, total_verify: 6, verify_rate: 100, mom_verify_change: 100 },
-    { product_name: '25元代金券', meituan_buy: 5, meituan_verify: 3, douyin_buy: 0, douyin_verify: 0, total_verify: 3, verify_rate: 60, mom_verify_change: 50 },
-    { product_name: '小朋友必点组合', meituan_buy: 4, meituan_verify: 3, douyin_buy: 0, douyin_verify: 1, total_verify: 4, verify_rate: 80, mom_verify_change: 100 },
-    { product_name: '生蚝10个+荤串10串', meituan_buy: 6, meituan_verify: 5, douyin_buy: 0, douyin_verify: 5, total_verify: 10, verify_rate: 83.3, mom_verify_change: 100 },
-    { product_name: '招牌霸王大串3串', meituan_buy: 0, meituan_verify: 0, douyin_buy: 0, douyin_verify: 0, total_verify: 0, verify_rate: 0, mom_verify_change: 0 },
-  ],
-  overall_summary: {
-    total_buy: 139,
-    total_verify: 226,
-    avg_verify_rate: 80.8,
-  },
-};
-
-export const mockStoreHealth: StoreHealthData = {
-  funnels: [
-    { platform: '美团', impressions: 55363, visits: 5283, purchases: 273, verifications: 220, impression_to_visit: 9.5, visit_to_purchase: 5.2 },
-    { platform: '点评', impressions: 55363, visits: 5283, purchases: 273, verifications: 220, impression_to_visit: 9.5, visit_to_purchase: 5.2 },
-    { platform: '抖音', impressions: 753, visits: 564, purchases: 105, verifications: 72, impression_to_visit: 74.9, visit_to_purchase: 18.6 },
-  ],
-  rankings: [
-    { platform: '美团', ranking_name: '人气榜', current_rank: '第1名', prev_rank: '第1名', rank_change: '持平' },
-    { platform: '点评', ranking_name: '热门榜', current_rank: '第2名', prev_rank: '第2名', rank_change: '持平' },
-    { platform: '抖音', ranking_name: '人气榜', current_rank: '第6名', prev_rank: '第6名', rank_change: '持平' },
-  ],
-  reviews_summary: [
-    { platform: '美团', star_rating: 4.8, prev_star_rating: 4.8, new_reviews: 33, bad_reviews: 1, bad_keywords: ['室内抽烟'] },
-    { platform: '点评', star_rating: 4.0, prev_star_rating: 4.0, new_reviews: 0, bad_reviews: 0, bad_keywords: [] },
-    { platform: '抖音', star_rating: 4.7, prev_star_rating: 4.7, new_reviews: 0, bad_reviews: 0, bad_keywords: [] },
-  ],
-  daily_metrics: mockDailyRevenue.map(d => ({
-    ...d,
-    platform: '美团',
-    impressions: 7000 + Math.floor(Math.random() * 2000),
-    visits: 600 + Math.floor(Math.random() * 200),
-    purchases: 35 + Math.floor(Math.random() * 15),
-    verifications: 28 + Math.floor(Math.random() * 12),
-    star_rating: 4.7 + Math.random() * 0.2,
-    new_reviews: Math.floor(Math.random() * 6),
-  })),
-};
+export interface AnalysisParams {
+  store_id?: string;
+  start_date?: string;
+  end_date?: string;
+  compare_start?: string;
+  compare_end?: string;
+}
 
 // ==================== API 函数 ====================
 
-export async function fetchRevenueTrend(params?: any): Promise<RevenueTrendData> {
-  await new Promise(r => setTimeout(r, 300));
-  return mockRevenueTrend;
+const API_BASE = '/v1/store-dashboard';
+
+/** 获取营业额趋势数据 */
+export async function fetchRevenueTrend(params?: AnalysisParams): Promise<RevenueTrendData> {
+  try {
+    const res = await api.get<any>(`${API_BASE}/revenue/trend`, { params });
+    const data = res?.data || res;
+    return {
+      daily: (data?.daily || []).map((d: any) => ({
+        date: d.date,
+        total_revenue: d.total_revenue || 0,
+        meituan_revenue: d.meituan_revenue || 0,
+        douyin_revenue: d.douyin_revenue || 0,
+        other_revenue: d.other_revenue || 0,
+        visitor_count: d.visitor_count || 0,
+        table_count: d.table_count || 0,
+        avg_people_per_table: d.avg_people_per_table || 0,
+        avg_per_capita: d.avg_per_capita || 0,
+      })),
+      weekly: (data?.weekly || []).map((w: any) => ({
+        week_label: w.week_label,
+        total_revenue: w.total_revenue || 0,
+        meituan_revenue: w.meituan_revenue || 0,
+        douyin_revenue: w.douyin_revenue || 0,
+        visitor_count: w.visitor_count || 0,
+        table_count: w.table_count || 0,
+      })),
+    };
+  } catch {
+    return { daily: [], weekly: [] };
+  }
 }
 
-export async function fetchPackageAnalysis(params?: any): Promise<PackageAnalysisData> {
-  await new Promise(r => setTimeout(r, 300));
-  return mockPackageAnalysis;
+/** 获取套餐分析排行 */
+export async function fetchPackageAnalysis(params?: AnalysisParams): Promise<PackageAnalysisData> {
+  try {
+    const res = await api.get<any>(`${API_BASE}/packages/ranking`, { params });
+    const data = res?.data || res;
+    if (!data) {
+      return { top_ranking: [], bottom_ranking: [], overall_summary: { total_buy: 0, total_verify: 0, avg_verify_rate: 0 } };
+    }
+    return {
+      top_ranking: (data.top_ranking || []).map((r: any) => ({
+        product_name: r.product_name,
+        meituan_buy: r.meituan_buy || 0,
+        meituan_verify: r.meituan_verify || 0,
+        douyin_buy: r.douyin_buy || 0,
+        douyin_verify: r.douyin_verify || 0,
+        total_verify: r.total_verify || 0,
+        verify_rate: r.verify_rate || 0,
+      })),
+      bottom_ranking: (data.bottom_ranking || []).map((r: any) => ({
+        product_name: r.product_name,
+        meituan_buy: r.meituan_buy || 0,
+        meituan_verify: r.meituan_verify || 0,
+        douyin_buy: r.douyin_buy || 0,
+        douyin_verify: r.douyin_verify || 0,
+        total_verify: r.total_verify || 0,
+        verify_rate: r.verify_rate || 0,
+      })),
+      overall_summary: data.overall_summary || { total_buy: 0, total_verify: 0, avg_verify_rate: 0 },
+    };
+  } catch {
+    return { top_ranking: [], bottom_ranking: [], overall_summary: { total_buy: 0, total_verify: 0, avg_verify_rate: 0 } };
+  }
 }
 
-export async function fetchStoreHealth(params?: any): Promise<StoreHealthData> {
-  await new Promise(r => setTimeout(r, 300));
-  return mockStoreHealth;
+/** 获取门店运营健康度 */
+export async function fetchStoreHealth(params?: AnalysisParams): Promise<StoreHealthData> {
+  try {
+    const res = await api.get<any>(`${API_BASE}/metrics/health`, { params });
+    const data = res?.data || res;
+    if (!data) {
+      return { funnels: [], rankings: [], reviews_summary: [], daily_metrics: [] };
+    }
+    return {
+      funnels: (data.funnels || []).map((f: any) => ({
+        platform: f.platform,
+        impressions: f.impressions || 0,
+        visits: f.visits || 0,
+        purchases: f.purchases || 0,
+        verifications: f.verifications || 0,
+        impression_to_visit: f.impression_to_visit || 0,
+        visit_to_purchase: f.visit_to_purchase || 0,
+      })),
+      rankings: data.rankings || [],
+      reviews_summary: (data.reviews_summary || []).map((r: any) => ({
+        platform: r.platform,
+        star_rating: r.star_rating || 0,
+        prev_star_rating: r.prev_star_rating || 0,
+        new_reviews: r.new_reviews || 0,
+        bad_reviews: r.bad_reviews || 0,
+        bad_keywords: r.bad_keywords || [],
+      })),
+      daily_metrics: (data.daily_metrics || []).map((d: any) => ({
+        date: d.date,
+        platform: d.platform,
+        impressions: d.impressions || 0,
+        visits: d.visits || 0,
+        purchases: d.purchases || 0,
+        verifications: d.verifications || 0,
+        star_rating: d.star_rating || 0,
+        new_reviews: d.new_reviews || 0,
+      })),
+    };
+  } catch {
+    return { funnels: [], rankings: [], reviews_summary: [], daily_metrics: [] };
+  }
 }

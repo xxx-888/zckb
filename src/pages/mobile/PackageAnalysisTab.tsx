@@ -21,7 +21,7 @@ import {
 import { Card } from '../../components/ui/card';
 import { Badge } from '../../components/ui/badge';
 import { cn } from '../../lib/utils';
-import { fetchPackageAnalysis, mockPackageAnalysis, type PackageAnalysisData } from '../../api/analysis';
+import { fetchPackageAnalysis, type PackageAnalysisData } from '../../api/analysis';
 
 export const PackageAnalysisTab: React.FC = () => {
   const [data, setData] = useState<PackageAnalysisData | null>(null);
@@ -158,7 +158,7 @@ export const PackageAnalysisTab: React.FC = () => {
                   )}>
                     {item.verify_rate.toFixed(1)}%
                   </td>
-                  <td className="p-2 text-center">{renderMomChange(item.mom_verify_change)}</td>
+                  <td className="p-2 text-center">-</td>
                 </tr>
               ))}
             </tbody>

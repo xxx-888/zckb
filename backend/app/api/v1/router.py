@@ -112,3 +112,8 @@ api_router.include_router(collection_pack_router)
 from app.api.v1.admin.collection_pack import router as admin_collection_pack_router
 
 api_router.include_router(admin_collection_pack_router)
+
+# store_dashboard - 经营看板
+from app.api.v1.store_dashboard import router as store_dashboard_router
+
+api_router.include_router(store_dashboard_router)

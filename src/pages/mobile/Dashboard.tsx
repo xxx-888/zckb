@@ -67,7 +67,7 @@ export const Dashboard: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
-      const result = await fetchStoreDashboard({ period_type: 'week' });
+      const result = await fetchStoreDashboard({});
       setData(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : '获取数据失败');
@@ -277,9 +277,9 @@ export const Dashboard: React.FC = () => {
             </div>
             <span className="text-xs font-bold text-slate-700">运营分析</span>
           </div>
-          <p className="text-xs text-slate-600 leading-relaxed line-clamp-3">{data.operation_analysis.analysis_opinion}</p>
+          <p className="text-xs text-slate-600 leading-relaxed line-clamp-3">{data.operation_analysis?.analysis_opinion}</p>
           <div className="mt-2 flex items-center gap-2">
-            {data.operation_analysis.next_week_goals.slice(0, 2).map((g, i) => (
+            {(data.operation_analysis?.goals || []).slice(0, 2).map((g, i) => (
               <Badge key={i} variant="secondary" className="text-[9px]">{g.slice(0, 12)}...</Badge>
             ))}
           </div>
