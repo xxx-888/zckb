@@ -1,204 +1,421 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   TrendingUp,
-  MessageSquare,
-  Star,
-  ThumbsUp,
-  Calendar,
-  Filter,
-  ChevronRight,
-  BarChart3,
-  Award,
-  AlertCircle,
-  ShieldCheck,
-  Zap,
-  Flame,
-  ChefHat,
-  CheckCircle2,
-  Bot,
   TrendingDown,
-  Store as StoreIcon
+  Minus,
+  Calendar,
+  ChevronDown,
+  ChevronRight,
+  Store,
+  Users,
+  UtensilsCrossed,
+  UserRound,
+  Wallet,
+  Package,
+  BarChart3,
+  Target,
+  Lightbulb,
+  CheckCircle2,
+  ArrowUpRight,
+  ArrowDownRight,
 } from 'lucide-react';
 import { Card } from '../../components/ui/card';
 import { Badge } from '../../components/ui/badge';
 import { Skeleton } from '../../components/ui/skeleton';
 import { Button } from '../../components/ui/button';
-import { MobileLayout, useStore } from '../../components/MobileLayout';
+import { MobileLayout } from '../../components/MobileLayout';
 import { cn } from '../../lib/utils';
 import { useToast } from '../../hooks/use-toast';
-import { useNavigate } from 'react-router-dom';
 import {
-  fetchDashboardOverview,
-  type CoreStats,
-  type PlatformData,
-  type Review,
-  type StoreRanking,
-  type HealthStatus,
-  type AlertData
-} from '../../api/dashboard';
-import { authApi } from '../../api/auth';
-import { useSubscription, SubscriptionPrompt } from '../../hooks/use-subscription-check';
+  fetchStoreDashboard,
+  type StoreDashboardData,
+  type RevenueData,
+  type BusinessMetrics,
+  type PackageComparison,
+  type OperationAnalysis,
+  type OperationMetrics,
+  type MetricItem,
+} from '../../api/store-dashboard';
+
+// ==================== 时间周期选项 ====================
+
+interface TimeOption {
+  value: string;
+  label: string;
+  dateRange: string;
+}
+
+function getWeekOptions(): TimeOption[] {
+  const now = new Date();
+  const formatDate = (d: Date) => `${d.getMonth() + 1}.${d.getDate()}`;
+  const getWeekRange = (weeksAgo: number) => {
+    const end = new Date(now.getTime() - weeksAgo * 7 * 86400000);
+    const start = new Date(end.getTime() - 6 * 86400000);
+    return { start, end, label: formatDate(start) + '-' + formatDate(end) };
+  };
+  return [
+    { value: 'current', label: '本周', dateRange: getWeekRange(0).label },
+    { value: 'last', label: '上周', dateRange: getWeekRange(1).label },
+    { value: 'week2', label: '两周前', dateRange: getWeekRange(2).label },
+    { value: 'week3', label: '三周前', dateRange: getWeekRange(3).label },
+  ];
+}
+
+// ==================== 子组件：营业额卡片 ====================
+
+const RevenueCard: React.FC<{ data: RevenueData }> = ({ data }) => {
+  const formatMoney = (n: number) => `¥${n.toLocaleString()}`;
+
+  return (
+    <Card className="p-4 bg-white border-slate-100 shadow-sm">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-lg bg-orange-50 flex items-center justify-center">
+            <Wallet className="w-4 h-4 text-orange-500" />
+          </div>
+          <span className="text-sm font-bold text-slate-700">营业额概览</span>
+        </div>
+        <Badge className={cn(
+          "text-[10px] border-none",
+          data.mom_type === 'up' ? "bg-emerald-50 text-emerald-600" :
+          data.mom_type === 'down' ? "bg-rose-50 text-rose-600" :
+          "bg-slate-50 text-slate-600"
+        )}>
+          环比 {data.mom_type === 'up' ? '+' : data.mom_type === 'down' ? '' : ''}{data.mom_change}%
+        </Badge>
+      </div>
+
+      {/* 总营业额 */}
+      <div className="mb-4">
+        <p className="text-[10px] text-slate-400 mb-1">总营业额</p>
+        <div className="flex items-baseline gap-2">
+          <p className="text-3xl font-black text-slate-900">{formatMoney(data.total_revenue)}</p>
+          {data.mom_type === 'up' ? (
+            <span className="flex items-center gap-0.5 text-xs font-bold text-emerald-500">
+              <TrendingUp className="w-3.5 h-3.5" />+{data.mom_change}%
+            </span>
+          ) : data.mom_type === 'down' ? (
+            <span className="flex items-center gap-0.5 text-xs font-bold text-rose-500">
+              <TrendingDown className="w-3.5 h-3.5" />{data.mom_change}%
+            </span>
+          ) : (
+            <span className="flex items-center gap-0.5 text-xs font-bold text-slate-400">
+              <Minus className="w-3.5 h-3.5" />持平
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* 分平台 */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="bg-slate-50 rounded-xl p-3">
+          <div className="flex items-center gap-1.5 mb-1">
+            <div className="w-5 h-5 rounded bg-yellow-400 flex items-center justify-center">
+              <span className="text-[8px] font-bold text-white">美</span>
+            </div>
+            <span className="text-[10px] text-slate-500">美团</span>
+          </div>
+          <p className="text-lg font-bold text-slate-900">{formatMoney(data.meituan_revenue)}</p>
+          <p className="text-[9px] text-slate-400 mt-0.5">
+            占比 {((data.meituan_revenue / data.total_revenue) * 100).toFixed(1)}%
+          </p>
+        </div>
+        <div className="bg-slate-50 rounded-xl p-3">
+          <div className="flex items-center gap-1.5 mb-1">
+            <div className="w-5 h-5 rounded bg-slate-900 flex items-center justify-center">
+              <span className="text-[8px] font-bold text-white">抖</span>
+            </div>
+            <span className="text-[10px] text-slate-500">抖音</span>
+          </div>
+          <p className="text-lg font-bold text-slate-900">{formatMoney(data.douyin_revenue)}</p>
+          <p className="text-[9px] text-slate-400 mt-0.5">
+            占比 {((data.douyin_revenue / data.total_revenue) * 100).toFixed(1)}%
+          </p>
+        </div>
+      </div>
+    </Card>
+  );
+};
+
+// ==================== 子组件：经营指标卡片 ====================
+
+const BusinessMetricsCard: React.FC<{ data: BusinessMetrics }> = ({ data }) => {
+  const metrics = [
+    { label: '到店人数', value: data.visitor_count.toLocaleString(), icon: Users, color: 'text-blue-500', bg: 'bg-blue-50', mom: data.mom_visitor_change },
+    { label: '接待桌数', value: data.table_count.toLocaleString(), icon: UtensilsCrossed, color: 'text-purple-500', bg: 'bg-purple-50', mom: data.mom_table_change },
+    { label: '桌均人数', value: data.avg_people_per_table.toFixed(1), icon: UserRound, color: 'text-amber-500', bg: 'bg-amber-50', mom: null },
+    { label: '人均消费', value: `¥${data.avg_per_capita.toFixed(1)}`, icon: Wallet, color: 'text-emerald-500', bg: 'bg-emerald-50', mom: null },
+  ];
+
+  return (
+    <Card className="p-4 bg-white border-slate-100 shadow-sm">
+      <div className="flex items-center gap-2 mb-3">
+        <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
+          <BarChart3 className="w-4 h-4 text-blue-500" />
+        </div>
+        <span className="text-sm font-bold text-slate-700">经营指标</span>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        {metrics.map((m) => (
+          <div key={m.label} className="bg-slate-50 rounded-xl p-3">
+            <div className="flex items-center gap-1.5 mb-2">
+              <div className={cn("w-6 h-6 rounded-lg flex items-center justify-center", m.bg)}>
+                <m.icon className={cn("w-3.5 h-3.5", m.color)} />
+              </div>
+              <span className="text-[10px] text-slate-500">{m.label}</span>
+            </div>
+            <p className="text-xl font-bold text-slate-900">{m.value}</p>
+            {m.mom !== null && (
+              <p className={cn(
+                "text-[9px] mt-0.5 font-medium",
+                m.mom >= 0 ? "text-emerald-500" : "text-rose-500"
+              )}>
+                {m.mom >= 0 ? '+' : ''}{m.mom}% 环比
+              </p>
+            )}
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+};
+
+// ==================== 子组件：套餐数据表格 ====================
+
+const PackageTable: React.FC<{ data: PackageComparison }> = ({ data }) => {
+  const [expanded, setExpanded] = useState(true);
+
+  const current = data.current_period;
+  const compare = data.compare_period;
+
+  // 对齐两个周期的商品（按名称匹配）
+  const allNames = Array.from(new Set([
+    ...current.items.map(i => i.product_name),
+    ...compare.items.map(i => i.product_name),
+  ]));
+
+  return (
+    <Card className="bg-white border-slate-100 shadow-sm overflow-hidden">
+      <div
+        className="p-4 flex items-center justify-between cursor-pointer"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center">
+            <Package className="w-4 h-4 text-indigo-500" />
+          </div>
+          <div>
+            <span className="text-sm font-bold text-slate-700">套餐核销数据</span>
+            <p className="text-[9px] text-slate-400">{data.store_name}</p>
+          </div>
+        </div>
+        <ChevronDown className={cn("w-5 h-5 text-slate-400 transition-transform", expanded && "rotate-180")} />
+      </div>
+
+      {expanded && (
+        <div className="px-4 pb-4">
+          {/* 表头 */}
+          <div className="overflow-x-auto -mx-4 px-4">
+            <table className="w-full text-[10px] border-collapse">
+              <thead>
+                <tr className="bg-slate-50">
+                  <th className="p-2 text-left text-slate-500 font-medium rounded-tl-lg w-[120px]">商品名称</th>
+                  <th className="p-2 text-center text-slate-500 font-medium" colSpan={3}>
+                    <span className="text-orange-600">{compare.period_label}</span>
+                  </th>
+                  <th className="p-2 text-center text-slate-500 font-medium rounded-tr-lg" colSpan={3}>
+                    <span className="text-indigo-600">{current.period_label}</span>
+                  </th>
+                </tr>
+                <tr className="bg-slate-50">
+                  <th className="p-1.5 text-left"></th>
+                  <th className="p-1.5 text-center text-slate-400 font-normal">美团购买</th>
+                  <th className="p-1.5 text-center text-slate-400 font-normal">美团核销</th>
+                  <th className="p-1.5 text-center text-slate-400 font-normal">抖音核销</th>
+                  <th className="p-1.5 text-center text-slate-400 font-normal">美团购买</th>
+                  <th className="p-1.5 text-center text-slate-400 font-normal">美团核销</th>
+                  <th className="p-1.5 text-center text-slate-400 font-normal">抖音核销</th>
+                </tr>
+              </thead>
+              <tbody>
+                {allNames.map((name, idx) => {
+                  const cItem = compare.items.find(i => i.product_name === name);
+                  const curItem = current.items.find(i => i.product_name === name);
+                  return (
+                    <tr key={idx} className={cn("border-b border-slate-100", idx % 2 === 0 ? "bg-white" : "bg-slate-50/50")}>
+                      <td className="p-2 text-slate-700 font-medium leading-tight">{name}</td>
+                      <td className="p-1.5 text-center text-slate-600">{cItem?.meituan_buy ?? 0}</td>
+                      <td className="p-1.5 text-center text-slate-600">{cItem?.meituan_verify ?? 0}</td>
+                      <td className="p-1.5 text-center text-slate-600">{cItem?.douyin_verify ?? 0}</td>
+                      <td className="p-1.5 text-center text-slate-600 font-medium">{curItem?.meituan_buy ?? 0}</td>
+                      <td className="p-1.5 text-center text-slate-600 font-medium">{curItem?.meituan_verify ?? 0}</td>
+                      <td className="p-1.5 text-center text-slate-600 font-medium">{curItem?.douyin_verify ?? 0}</td>
+                    </tr>
+                  );
+                })}
+                {/* 合计行 */}
+                <tr className="bg-orange-50 font-bold">
+                  <td className="p-2 text-orange-700">合计</td>
+                  <td className="p-1.5 text-center text-orange-700">{compare.total_meituan_buy}</td>
+                  <td className="p-1.5 text-center text-orange-700">{compare.total_meituan_verify}</td>
+                  <td className="p-1.5 text-center text-orange-700">{compare.total_douyin_verify}</td>
+                  <td className="p-1.5 text-center text-orange-700">{current.total_meituan_buy}</td>
+                  <td className="p-1.5 text-center text-orange-700">{current.total_meituan_verify}</td>
+                  <td className="p-1.5 text-center text-orange-700">{current.total_douyin_verify}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+};
+
+// ==================== 子组件：运营分析 ====================
+
+const AnalysisCard: React.FC<{ data: OperationAnalysis }> = ({ data }) => {
+  return (
+    <Card className="p-4 bg-white border-slate-100 shadow-sm">
+      <div className="flex items-center gap-2 mb-3">
+        <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center">
+          <Lightbulb className="w-4 h-4 text-emerald-500" />
+        </div>
+        <span className="text-sm font-bold text-slate-700">运营分析</span>
+      </div>
+
+      {/* 分析意见 */}
+      <div className="mb-4">
+        <div className="flex items-center gap-1.5 mb-2">
+          <BarChart3 className="w-3.5 h-3.5 text-orange-500" />
+          <span className="text-xs font-bold text-slate-700">分析意见</span>
+        </div>
+        <div className="bg-slate-50 rounded-xl p-3">
+          <p className="text-xs text-slate-600 leading-relaxed">{data.analysis_opinion}</p>
+        </div>
+      </div>
+
+      {/* 下周目标 */}
+      <div>
+        <div className="flex items-center gap-1.5 mb-2">
+          <Target className="w-3.5 h-3.5 text-indigo-500" />
+          <span className="text-xs font-bold text-slate-700">下周目标</span>
+        </div>
+        <div className="space-y-2">
+          {data.next_week_goals.map((goal, idx) => (
+            <div key={idx} className="flex items-start gap-2 bg-indigo-50 rounded-xl p-3">
+              <CheckCircle2 className="w-4 h-4 text-indigo-500 flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-slate-700 leading-relaxed">{goal}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </Card>
+  );
+};
+
+// ==================== 子组件：指标对比表格 ====================
+
+const MetricsTable: React.FC<{ metrics: MetricItem[]; platformName: string; platformColor: string }> = ({
+  metrics,
+  platformName,
+  platformColor,
+}) => {
+  const [expanded, setExpanded] = useState(true);
+
+  const getHighlightClass = (h?: string) => {
+    if (h === 'positive') return 'text-emerald-600 font-bold';
+    if (h === 'negative') return 'text-rose-600 font-bold';
+    return 'text-slate-600';
+  };
+
+  return (
+    <Card className="bg-white border-slate-100 shadow-sm overflow-hidden">
+      <div
+        className="p-4 flex items-center justify-between cursor-pointer"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <div className="flex items-center gap-2">
+          <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center", platformColor)}>
+            <BarChart3 className="w-4 h-4 text-white" />
+          </div>
+          <span className="text-sm font-bold text-slate-700">{platformName}</span>
+        </div>
+        <ChevronDown className={cn("w-5 h-5 text-slate-400 transition-transform", expanded && "rotate-180")} />
+      </div>
+
+      {expanded && (
+        <div className="px-4 pb-4">
+          <div className="overflow-x-auto -mx-4 px-4">
+            <table className="w-full text-[11px] border-collapse">
+              <thead>
+                <tr className="bg-slate-50">
+                  <th className="p-2 text-left text-slate-500 font-medium rounded-tl-lg">项目</th>
+                  <th className="p-2 text-center text-slate-500 font-medium">上期</th>
+                  <th className="p-2 text-center text-slate-500 font-medium">本期</th>
+                  <th className="p-2 text-center text-slate-500 font-medium rounded-tr-lg">环比</th>
+                </tr>
+              </thead>
+              <tbody>
+                {metrics.map((m, idx) => (
+                  <tr key={idx} className={cn("border-b border-slate-100", idx % 2 === 0 ? "bg-white" : "bg-slate-50/50")}>
+                    <td className="p-2 text-slate-700 font-medium whitespace-nowrap">{m.name}</td>
+                    <td className="p-2 text-center text-slate-500">{m.compare_value}</td>
+                    <td className="p-2 text-center text-slate-700 font-medium">{m.current_value}</td>
+                    <td className={cn("p-2 text-center", getHighlightClass(m.highlight))}>
+                      {typeof m.mom_change === 'string' && (m.mom_change as string).startsWith('+') ? (
+                        <span className="flex items-center justify-center gap-0.5">
+                          <ArrowUpRight className="w-3 h-3" />{m.mom_change}
+                        </span>
+                      ) : typeof m.mom_change === 'string' && (m.mom_change as string).startsWith('-') ? (
+                        <span className="flex items-center justify-center gap-0.5">
+                          <ArrowDownRight className="w-3 h-3" />{m.mom_change}
+                        </span>
+                      ) : (
+                        m.mom_change
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+};
+
+// ==================== 主页面 ====================
 
 export const Dashboard: React.FC = () => {
   const { success } = useToast();
-  const navigate = useNavigate();
-  const { selectedStore } = useStore();
-  const [currentUser, setCurrentUser] = useState<any>(null);
-
-  // ===== 判断用户角色 =====
-  // SUPER_ADMIN / HQ / OPERATOR 都可以看到全量数据（管理视图）
-  const isHQ = currentUser?.role === 'SUPER_ADMIN' || currentUser?.role === 'HQ' || currentUser?.role === 'OPERATOR';
+  const [timePeriod, setTimePeriod] = useState('current');
   const [showTimeDropdown, setShowTimeDropdown] = useState(false);
-  const [timePeriod, setTimePeriod] = useState<'today' | 'yesterday' | '7days' | '30days' | '90days' | 'custom'>('7days');
   const dropdownRef = React.useRef<HTMLDivElement>(null);
+  const timeOptions = React.useMemo(() => getWeekOptions(), []);
 
-  // ===== API 数据状态 =====
-  const [coreStats, setCoreStats] = useState<CoreStats | null>(null);
-  const [platformData, setPlatformData] = useState<PlatformData[]>([]);
-  const [recentReviews, setRecentReviews] = useState<Review[]>([]);
-  const [storeRankings, setStoreRankings] = useState<StoreRanking[]>([]);
-  const [healthStats, setHealthStats] = useState<HealthStatus[]>([]);
-  const [alert, setAlert] = useState<AlertData | null>(null);
-  const [storeHealth, setStoreHealth] = useState<{
-    store_id: string;
-    store_name: string;
-    health_score: number;
-    review_count: number;
-    avg_rating: number;
-    reply_rate: number;
-    trend: number;
-  } | null>(null);
+  const [data, setData] = useState<StoreDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const lastPeriodRef = React.useRef<string | null>(null);
 
-  // ===== 订阅状态检测 =====
-  const {
-    subscription,
-    loading: subscriptionLoading,
-    error: subscriptionError,
-    hasValidSubscription,
-  } = useSubscription();
-
-  // ===== 动态日期计算 =====
-  const getTimeOptions = () => {
-    const fmt = (d: Date) =>
-      `${d.getFullYear()}年${String(d.getMonth() + 1).padStart(2, '0')}月${String(d.getDate()).padStart(2, '0')}日`;
-    const now = new Date();
-    const today = fmt(now);
-    const yesterday = fmt(new Date(now.getTime() - 86400000));
-    const range = (days: number) => {
-      const d = new Date(now.getTime() - days * 86400000);
-      return `${fmt(d)} - ${today}`;
-    };
-    return [
-      { value: 'today', label: '今天', dateRange: today },
-      { value: 'yesterday', label: '昨天', dateRange: yesterday },
-      { value: '7days', label: '最近7天', dateRange: range(6) },
-      { value: '30days', label: '最近30天', dateRange: range(29) },
-      { value: '90days', label: '最近90天', dateRange: range(89) },
-      { value: 'custom', label: '自定义', dateRange: '选择日期范围' },
-    ];
-  };
-  const timeOptions = React.useMemo(() => getTimeOptions(), []);
-
-  const getCurrentDateRange = () => {
-    return timeOptions.find(opt => opt.value === timePeriod)?.dateRange || '';
-  };
-
-  const handleTimePeriodChange = (period: 'today' | 'yesterday' | '7days' | '30days' | '90days' | 'custom') => {
-    setTimePeriod(period);
-    setShowTimeDropdown(false);
-    success('时间筛选', `已切换到${timeOptions.find(opt => opt.value === period)?.label}`);
-  };
-
-  const handleFilterClick = () => {
-    setShowTimeDropdown(!showTimeDropdown);
-  };
-
-  const handleViewAllStores = () => {
-    navigate('/mobile/store-list');
-  };
-
-  const handleReviewClick = (reviewId: string) => {
-    navigate(`/mobile/review-detail/${reviewId}`);
-  };
-
-  const handleAlertClick = () => {
-    navigate('/mobile/negative-reply');
-  };
-
-  // ===== 时间周期映射（前端 → 后端）=====
-  const mapPeriod = (tp: string): string => {
-    const m: Record<string, string> = {
-      'today': '1d',
-      'yesterday': '1d',
-      '7days': '7d',
-      '30days': '30d',
-      '90days': '90d',
-      'custom': '7d',
-    };
-    return m[tp] || '7d';
-  };
-
-  // ===== 获取数据 =====
-  const fetchAllData = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-
-      // 聚合接口：1 个请求替代原来 7 个
-      console.log('[Dashboard] fetchAllData 开始, timePeriod:', timePeriod);
-
-      const overview = await fetchDashboardOverview(timePeriod);
-      console.log('[Dashboard] overview:', overview);
-
-      // 一次性设置所有状态
-      setCoreStats(overview.core_stats);
-      setPlatformData(overview.platform_data);
-      setRecentReviews(overview.recent_reviews);
-
-      if (isHQ) {
-        setStoreRankings(overview.store_rankings);
-      } else {
-        if (overview.store_health && overview.store_health.length > 0) {
-          setStoreHealth(overview.store_health[0]);
-        } else {
-          setStoreHealth(null);
-        }
-      }
-
-      setHealthStats(overview.health_status);
-
-      // alert 取优先级最高的
-      if (overview.alerts && overview.alerts.length > 0) {
-        const priority: Record<string, number> = { high: 3, medium: 2, low: 1 };
-        const sorted = [...overview.alerts].sort(
-          (a, b) => (priority[a.severity] || 0) - (priority[b.severity] || 0)
-        );
-        setAlert(sorted[sorted.length - 1]);
-      } else {
-        setAlert(null);
-      }
-
+      const result = await fetchStoreDashboard({ period_type: 'week' });
+      setData(result);
     } catch (err) {
-      console.error('[Dashboard] fetchAllData 错误:', err);
+      console.error('[Dashboard] 获取数据失败:', err);
       setError(err instanceof Error ? err.message : '获取数据失败');
     } finally {
       setLoading(false);
     }
-  }, [timePeriod, isHQ, currentUser]);
+  }, [timePeriod]);
 
-  // ===== 时间周期变化时重新获取数据 =====
   useEffect(() => {
-    // 只在 currentUser 加载完成后才获取数据
-    if (!currentUser) {
-      console.log('[Dashboard] currentUser 为空，不获取数据');
-      return;
-    }
-    console.log('[Dashboard] useEffect [timePeriod, currentUser] 触发，开始获取数据');
-    fetchAllData();
-  }, [timePeriod, currentUser]);
+    fetchData();
+  }, [fetchData]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -210,29 +427,21 @@ export const Dashboard: React.FC = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // ===== 获取当前用户 =====
-  useEffect(() => {
-    const user = authApi.getStoredUser();
-    setCurrentUser(user);
-    if (!user) {
-      navigate('/mobile/login');
-    }
-  }, [navigate]);
+  const handleTimeChange = (value: string) => {
+    setTimePeriod(value);
+    setShowTimeDropdown(false);
+    const label = timeOptions.find(o => o.value === value)?.label;
+    success('时间筛选', `已切换到${label}`);
+  };
 
-  // ===== 订阅状态检测（非阻塞）=====
-  // 备注：订阅检查在后台进行，不阻塞页面渲染
-  // 如果用户没有有效订阅，会在页面上显示提示
-  useEffect(() => {
-    if (!hasValidSubscription && !subscriptionLoading) {
-      // 可以在这里添加订阅过期提示
-      console.log('订阅已过期或无效');
-    }
-  }, [hasValidSubscription, subscriptionLoading]);
+  const getCurrentDateRange = () => {
+    return timeOptions.find(opt => opt.value === timePeriod)?.dateRange || '';
+  };
 
   // ===== 加载状态 =====
   if (loading) {
     return (
-      <MobileLayout title="数据概览">
+      <MobileLayout title="经营看板">
         <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500 p-4">
           <Skeleton lines={1} className="h-8 w-48 mb-4" />
           <Card className="p-5">
@@ -247,14 +456,13 @@ export const Dashboard: React.FC = () => {
   }
 
   // ===== 错误状态 =====
-  if (error) {
+  if (error || !data) {
     return (
-      <MobileLayout title={isHQ ? "门店动态" : "数据概览"}>
+      <MobileLayout title="经营看板">
         <div className="p-4">
           <Card className="p-6 text-center">
-            <AlertCircle className="w-12 h-12 text-rose-500 mx-auto mb-4" />
-            <p className="text-sm text-slate-600 mb-4">{error}</p>
-            <Button onClick={() => fetchAllData()} className="bg-orange-500 hover:bg-orange-600 text-white">
+            <p className="text-sm text-slate-600 mb-4">{error || '暂无数据'}</p>
+            <Button onClick={() => fetchData()} className="bg-orange-500 hover:bg-orange-600 text-white">
               重试
             </Button>
           </Card>
@@ -264,10 +472,10 @@ export const Dashboard: React.FC = () => {
   }
 
   return (
-    <MobileLayout title={isHQ ? "门店动态" : "数据概览"}>
+    <MobileLayout title="经营看板">
       <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
 
-        {/* Date/Filter Summary */}
+        {/* 时间筛选 */}
         <div className="relative" ref={dropdownRef}>
           <div className="flex items-center justify-between bg-white p-3 rounded-2xl shadow-sm border border-slate-100">
             <div className="flex items-center gap-2">
@@ -278,13 +486,13 @@ export const Dashboard: React.FC = () => {
               variant="ghost"
               size="sm"
               className="h-8 text-orange-600 font-semibold gap-1"
-              onClick={handleFilterClick}
+              onClick={() => setShowTimeDropdown(!showTimeDropdown)}
             >
-              {timeOptions.find(opt => opt.value === timePeriod)?.label} <Filter className="w-3.5 h-3.5" />
+              {timeOptions.find(opt => opt.value === timePeriod)?.label}
+              <ChevronDown className={cn("w-3.5 h-3.5 transition-transform", showTimeDropdown && "rotate-180")} />
             </Button>
           </div>
 
-          {/* Time Period Dropdown */}
           {showTimeDropdown && (
             <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-lg border border-slate-100 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
               {timeOptions.map((option) => (
@@ -296,12 +504,10 @@ export const Dashboard: React.FC = () => {
                       ? "bg-orange-50 text-orange-600"
                       : "text-slate-700 hover:bg-slate-50"
                   )}
-                  onClick={() => handleTimePeriodChange(option.value as any)}
+                  onClick={() => handleTimeChange(option.value)}
                 >
                   <span>{option.label}</span>
-                  {option.value !== 'custom' && (
-                    <span className="text-[10px] text-slate-400">{option.dateRange}</span>
-                  )}
+                  <span className="text-[10px] text-slate-400">{option.dateRange}</span>
                   {timePeriod === option.value && (
                     <CheckCircle2 className="w-4 h-4 text-orange-600" />
                   )}
@@ -311,313 +517,39 @@ export const Dashboard: React.FC = () => {
           )}
         </div>
 
-        {/* ===== 核心数据融合卡片（含数据源健康度） ===== */}
-        <Card className="p-5 bg-white border-slate-100 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-orange-50 flex items-center justify-center">
-                <MessageSquare className="w-4 h-4 text-orange-500" />
-              </div>
-              <span className="text-sm font-bold text-slate-700">核心数据概览</span>
-            </div>
-            <Badge className="bg-orange-50 text-orange-600 border-orange-200 text-[10px]">
-              {timePeriod === '7days' ? '近7天' : timePeriod === '30days' ? '近30天' : '今日'}
-            </Badge>
-          </div>
+        {/* 营业额概览 */}
+        <RevenueCard data={data.revenue} />
 
-          {/* 第一行：评论总数 + 趋势 */}
-          <div className="flex items-end justify-between mb-4">
-            <div>
-              <p className="text-4xl font-black text-slate-900">{coreStats?.total_reviews?.toLocaleString() || '0'}</p>
-              <p className="text-xs text-slate-400 mt-1">评论总数</p>
-            </div>
-            <div className="flex items-center gap-1 bg-emerald-50 px-2 py-1 rounded-full">
-              <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />
-              <span className="text-xs font-bold text-emerald-600">{coreStats?.review_trend != null ? `+${(coreStats.review_trend as number).toFixed(1)}%` : '0%'}</span>
-            </div>
-          </div>
+        {/* 经营指标 */}
+        <BusinessMetricsCard data={data.business_metrics} />
 
-          {/* 第二行：三个核心指标紧凑展示 */}
-          <div className="grid grid-cols-3 gap-3 mb-4">
-            <div className="bg-slate-50 rounded-xl p-3 text-center">
-              <Star className="w-4 h-4 fill-amber-400 text-amber-400 mx-auto mb-1" />
-              <p className="text-lg font-black text-slate-900">{(coreStats?.avg_rating || 0).toFixed(1)}</p>
-              <p className="text-[9px] text-slate-400">平均星级</p>
-              <p className="text-[9px] text-emerald-500 mt-0.5">{coreStats?.rating_trend != null ? `+${(coreStats.rating_trend as number).toFixed(1)}` : '+0'}</p>
-            </div>
-            <div className="bg-slate-50 rounded-xl p-3 text-center">
-              <ThumbsUp className="w-4 h-4 text-emerald-500 mx-auto mb-1" />
-              <p className="text-lg font-black text-slate-900">{coreStats?.positive_rate != null ? `${(coreStats.positive_rate as number).toFixed(1)}%` : '0%'}</p>
-              <p className="text-[9px] text-slate-400">好评率</p>
-              <p className="text-[9px] text-emerald-500 mt-0.5">{coreStats?.positive_trend != null ? `+${(coreStats.positive_trend as number).toFixed(1)}%` : '0%'}</p>
-            </div>
-            <div className="bg-slate-50 rounded-xl p-3 text-center">
-              <Bot className="w-4 h-4 text-blue-500 mx-auto mb-1" />
-              <p className="text-lg font-black text-slate-900">{coreStats?.ai_reply_rate != null ? `${(coreStats.ai_reply_rate as number).toFixed(1)}%` : '0%'}</p>
-              <p className="text-[9px] text-slate-400">AI回复率</p>
-              <p className="text-[9px] text-emerald-500 mt-0.5">{coreStats?.reply_trend != null ? `+${(coreStats.reply_trend as number).toFixed(1)}%` : '0%'}</p>
-            </div>
-          </div>
+        {/* 套餐核销数据 */}
+        <PackageTable data={data.package_comparison} />
 
-            {/* 第三行：平台分布 */}
-          <div className="mb-3">
-            <p className="text-[9px] text-slate-400 mb-2 font-medium flex items-center gap-1">
-              <BarChart3 className="w-3 h-3" /> 平台分布
-            </p>
-            <div className="bg-slate-50 rounded-xl p-3 space-y-2">
-              {platformData && platformData.length > 0 ? (
-                platformData.map((item, index) => (
-                  <div key={`platform-${index}-${item.platform}`} className="flex items-center gap-2">
-                    <iconify-icon icon={item.icon} className="text-sm opacity-90 w-5 flex-shrink-0"></iconify-icon>
-                    <span className="text-[9px] text-slate-600 w-10 flex-shrink-0">{item.platform === '大众点评' ? '点评' : item.platform === '小红书' ? '小红书' : item.platform}</span>
-                    <div className="flex-1 bg-slate-200 rounded-full h-2">
-                      <div
-                        className={`h-full rounded-full ${item.color}`}
-                        style={{ width: `${item.percentage || 0}%` }}
-                      ></div>
-                    </div>
-                    <span className="text-[9px] font-bold text-slate-600 w-10 text-right">{item.count || 0}条</span>
-                  </div>
-                ))
-              ) : (
-                <p className="text-[9px] text-slate-400 text-center py-2">暂无平台数据</p>
-              )}
-            </div>
-          </div>
+        {/* 运营分析 */}
+        <AnalysisCard data={data.operation_analysis} />
 
-          {/* 第四行：数据源健康度 */}
-          <div>
-            <p className="text-[9px] text-slate-400 mb-2 font-medium flex items-center gap-1">
-              <ShieldCheck className="w-3 h-3" /> 数据源状态
-            </p>
-            <div className="bg-slate-50 rounded-xl p-3">
-              <div className="grid grid-cols-4 gap-2">
-                {healthStats && healthStats.length > 0 ? (
-                  healthStats.map((stat, index) => (
-                    <div key={`health-${index}-${stat.platform}`} className="flex flex-col items-center gap-1">
-                      <div className="relative">
-                        <iconify-icon
-                          icon={stat.platform === '美团' ? 'simple-icons:meituan' :
-                                 stat.platform === '大众点评' ? 'simple-icons:dianping' :
-                                 stat.platform === '抖音' ? 'simple-icons:tiktok' : 'simple-icons:xiaohongshu'}
-                          class={cn("text-lg",
-                            stat.platform === '美团' ? 'text-yellow-500' :
-                            stat.platform === '大众点评' ? 'text-orange-500' :
-                            stat.platform === '抖音' ? 'text-slate-900' : 'text-red-500'
-                          )}
-                        ></iconify-icon>
-                        <div className={cn(
-                          "absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full border-2 border-white",
-                          stat.status === 'normal' ? 'bg-emerald-500' : 'bg-amber-500'
-                        )}></div>
-                      </div>
-                      <div className="flex items-center gap-0.5">
-                        <div className={cn(
-                          "w-1 h-1 rounded-full",
-                          stat.status === 'normal' ? 'bg-emerald-500' : 'bg-amber-500'
-                        )}></div>
-                        <span className="text-[8px] text-slate-400">{stat.time || '未知'}</span>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-[9px] text-slate-400 text-center col-span-4 py-2">暂无数据源状态</p>
-                )}
-              </div>
-            </div>
-          </div>
-        </Card>
+        {/* 运营指标对比 - 美团 */}
+        <MetricsTable
+          metrics={data.operation_metrics.meituan_metrics}
+          platformName="美团数据"
+          platformColor="bg-yellow-400"
+        />
 
-        {/* Anomaly Warning Section */}
-        {alert && (
-          <div
-            className="px-1 cursor-pointer"
-            onClick={handleAlertClick}
-          >
-            <div className="bg-rose-50 border border-rose-100 rounded-2xl p-4 flex items-center gap-4 relative overflow-hidden hover:bg-rose-100 transition-colors">
-              <div className="w-12 h-12 rounded-full bg-rose-100 flex items-center justify-center flex-shrink-0">
-                <Flame className="w-6 h-6 text-rose-600 animate-pulse" />
-              </div>
-              <div className="flex-1 z-10">
-                <div className="flex items-center gap-2 mb-1">
-                  <h4 className="text-sm font-bold text-rose-900">{alert.title}</h4>
-                  <Badge className="bg-rose-500 text-white border-none text-[8px] px-1.5 h-4">紧急</Badge>
-                </div>
-                <p className="text-xs text-rose-700 leading-tight">
-                  {alert.description}
-                </p>
-              </div>
-              <iconify-icon icon="mdi:alert-decagram-outline" class="absolute -right-2 -bottom-2 text-rose-200/50 text-6xl rotate-12"></iconify-icon>
-            </div>
-          </div>
-        )}
+        {/* 运营指标对比 - 点评 */}
+        <MetricsTable
+          metrics={data.operation_metrics.dianping_metrics}
+          platformName="点评数据"
+          platformColor="bg-orange-500"
+        />
 
-        {/* HQ/Operator View: Multi-store leaderboard */}
-        {isHQ && (
-          <Card className="p-5 border-slate-100 shadow-sm bg-white relative overflow-hidden">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
-                <BarChart3 className="w-4 h-4 text-orange-500" />
-                管辖门店口碑排行
-              </h3>
-              <span className="text-[10px] text-slate-400 font-medium italic">基于综合评分</span>
-            </div>
-            <div className="space-y-4">
-              {storeRankings.map((store, i) => (
-                <div key={i} className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <span className={cn(
-                      "w-5 h-5 rounded flex items-center justify-center text-[10px] font-bold",
-                      i === 0 ? "bg-amber-100 text-amber-600" :
-                      i === 1 ? "bg-slate-100 text-slate-600" :
-                      i === 2 ? "bg-orange-100 text-orange-600" : "bg-slate-100 text-slate-500"
-                    )}>{i === 0 ? '👑' : i + 1}</span>
-                    <div className="flex flex-col">
-                      <span className="text-sm font-medium text-slate-700">{store.name}</span>
-                      <span className="text-[10px] text-slate-400">健康值 {store.health_score ?? '-'}</span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <div className="text-right">
-                      <div className="text-sm font-bold text-slate-900">{store.score}</div>
-                      <div className="text-[10px] text-slate-400">{store.reviews} 评论</div>
-                    </div>
-                    {store.trend === 'up' ? (
-                      <TrendingUp className="w-4 h-4 text-emerald-500" />
-                    ) : store.trend === 'down' ? (
-                      <TrendingDown className="w-4 h-4 text-rose-500" />
-                    ) : (
-                      <div className="w-4 h-4 rounded-full border-2 border-slate-300"></div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-            <Button
-              variant="outline"
-              className="w-full mt-4 h-10 border-orange-100 text-orange-600 text-xs font-bold rounded-xl bg-orange-50/30"
-              onClick={handleViewAllStores}
-            >
-              查看全部 {currentUser.role === 'HQ' ? '85' : '12'} 家门店
-            </Button>
-            <iconify-icon icon="mdi:store-outline" class="absolute -right-4 -bottom-4 text-slate-50 text-6xl -rotate-12"></iconify-icon>
-          </Card>
-        )}
+        {/* 运营指标对比 - 抖音 */}
+        <MetricsTable
+          metrics={data.operation_metrics.douyin_metrics}
+          platformName="抖音数据"
+          platformColor="bg-slate-900"
+        />
 
-        {/* Merchant View: Store Focus */}
-        {!isHQ && storeHealth && (
-          <Card className="p-5 border-slate-100 shadow-sm bg-white relative overflow-hidden">
-            <div className="relative z-10">
-              <div className="flex items-center gap-2 mb-3">
-                <div className="w-8 h-8 rounded-lg bg-orange-50 flex items-center justify-center">
-                  <ShieldCheck className="w-4 h-4 text-orange-500" />
-                </div>
-                <p className="text-sm font-bold text-slate-700">口碑健康值</p>
-              </div>
-              <div className="flex items-baseline gap-2 mt-1">
-                <h3 className="text-4xl font-bold text-slate-900 tracking-tight">{storeHealth.health_score}</h3>
-                <Badge className={cn(
-                  "text-[10px] flex items-center gap-0.5 border",
-                  storeHealth.health_score >= 80 ? "bg-emerald-50 text-emerald-600 border-emerald-200" :
-                  storeHealth.health_score >= 60 ? "bg-amber-50 text-amber-600 border-amber-200" :
-                  "bg-rose-50 text-rose-600 border-rose-200"
-                )}>
-                  <TrendingUp className="w-3 h-3" />
-                  {storeHealth.health_score >= 80 ? '极优' : storeHealth.health_score >= 60 ? '良好' : '需改进'}
-                </Badge>
-              </div>
-              <p className="mt-4 text-slate-500 font-medium text-xs leading-relaxed max-w-[80%]">
-                {storeHealth.review_count} 条评论，平均 {storeHealth.avg_rating} 星，回复率 {storeHealth.reply_rate}%
-              </p>
-            </div>
-            <Award className="absolute -right-4 -bottom-4 w-32 h-32 text-orange-50" />
-            <ChefHat className="absolute right-4 top-4 w-12 h-12 text-orange-50" />
-          </Card>
-        )}
-
-        {/* Task List / Alerts */}
-        <div className="space-y-3 pb-6">
-          <div className="flex items-center justify-between px-1">
-            <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
-              <Zap className="w-4 h-4 text-orange-500" />
-              最新评论动态
-            </h3>
-            <span className="text-[10px] text-slate-500 font-bold bg-slate-100 px-2 py-0.5 rounded-full">{coreStats?.total_reviews || recentReviews.length} 条评论</span>
-          </div>
-          {recentReviews && recentReviews.length > 0 ? (
-            recentReviews.map((review, index) => (
-              <Card
-                key={`review-${review.id}-${index}`}
-                className="p-4 border-slate-100 shadow-sm active:bg-slate-50 transition-colors bg-white relative cursor-pointer hover:shadow-md transition-all"
-                onClick={() => handleReviewClick(review.id)}
-              >
-              <div className="flex justify-between items-start">
-                <div className="flex gap-3 flex-1">
-                  <div className={cn(
-                    "w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white flex-shrink-0",
-                    review.rating >= 4 ? "bg-emerald-400" : review.rating >= 3 ? "bg-amber-400" : "bg-rose-400"
-                  )}>
-                    {review.rating}
-                  </div>
-                  <div className="flex flex-col flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-bold text-slate-800">{review.user_name}</span>
-                      <span className="text-[10px] text-slate-400">{review.time}</span>
-                      <Badge className={cn(
-                        "text-[9px] px-1.5 h-4 border-none",
-                        review.sentiment === 'positive' ? "bg-emerald-100 text-emerald-700" :
-                        review.sentiment === 'negative' ? "bg-rose-100 text-rose-700" :
-                        "bg-amber-100 text-amber-700"
-                      )}>
-                        {review.sentiment === 'positive' ? '好评' :
-                         review.sentiment === 'negative' ? '差评' : '中评'}
-                      </Badge>
-                    </div>
-                    <p className="text-xs text-slate-500 line-clamp-2 mt-0.5">{review.content}</p>
-                    <div className="flex items-center gap-2 mt-2 flex-wrap">
-                      <Badge variant="outline" className="text-[9px] border-slate-100 bg-slate-50 text-slate-500 px-1.5 h-4">
-                        {review.platform}
-                      </Badge>
-                      <div className="flex items-center gap-0.5">
-                        {[1, 2, 3, 4, 5].map(star => (
-                          <Star
-                            key={star}
-                            className={cn(
-                              "w-3 h-3",
-                              star <= review.rating ? "text-amber-400 fill-amber-400" : "text-slate-200"
-                            )}
-                          />
-                        ))}
-                      </div>
-                      {review.rating <= 2 && (
-                        <div className="flex items-center gap-1 bg-rose-50 text-rose-600 text-[9px] px-1.5 h-4 rounded-full font-bold">
-                          <AlertCircle className="w-3 h-3" />
-                          需紧急处理
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="w-8 h-8 rounded-full flex-shrink-0"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleReviewClick(review.id);
-                  }}
-                >
-                  <ChevronRight className="w-4 h-4 text-slate-300" />
-                </Button>
-              </div>
-            </Card>
-          ))
-        ) : (
-          <Card className="p-8 text-center">
-            <p className="text-sm text-slate-400">暂无最新评论</p>
-          </Card>
-        )}
-        </div>
       </div>
     </MobileLayout>
   );

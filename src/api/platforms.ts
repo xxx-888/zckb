@@ -90,7 +90,13 @@ export const platformsApi = {
   },
 
   // 查询评论同步任务进度（轮询）
-  getSyncReviewsStatus: async (accountId: string, taskId: string): Promise<{ status: string; current_platform: string; progress: string; error?: string }> => {
+  getSyncReviewsStatus: async (accountId: string, taskId: string): Promise<{
+    status: string;
+    current_platform: string;
+    progress: string;
+    error?: string;
+    result?: { created?: number; skipped?: number; errors?: string[]; [key: string]: any };
+  }> => {
     const response = await api.get<any>(`/v1/platforms/accounts/${accountId}/sync-reviews/status/${taskId}`);
     return response.data || response;
   },
@@ -151,6 +157,9 @@ export const platformsApi = {
     platform_username?: string;
     store_count?: number;
     sync_error?: string;
+    sync_detail?: { method?: string; [key: string]: any };
+    stores?: any[];
+    error?: string;
   }> => {
     const response = await api.post(`/v1/platforms/accounts/${accountId}/sync-status`, null, {
       timeout: 60000,  // 同步需要启动浏览器，给 60 秒
