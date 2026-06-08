@@ -117,3 +117,8 @@ api_router.include_router(admin_collection_pack_router)
 from app.api.v1.store_dashboard import router as store_dashboard_router
 
 api_router.include_router(store_dashboard_router)
+
+# admin/store_dashboard - 后台经营数据管理
+from app.api.v1.admin.store_dashboard import router as admin_store_dashboard_router
+
+api_router.include_router(admin_store_dashboard_router)

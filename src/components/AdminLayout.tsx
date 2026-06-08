@@ -20,6 +20,7 @@ import {
   Globe,
   Database,
   Link2,
+  TrendingUp,
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Avatar } from './ui/avatar';
@@ -45,6 +46,7 @@ const adminNavItems = [
   { icon: Globe, label: '区域管理', path: '/admin/region-management' },
   { icon: Database, label: '采集套餐', path: '/admin/collection-pack-management' },
   { icon: Link2, label: '平台绑定管理', path: '/admin/platform-bind-manage' },
+  { icon: TrendingUp, label: '经营数据管理', path: '/admin/dashboard-data' },
 ];
 
 export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {

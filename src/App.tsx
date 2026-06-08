@@ -27,6 +27,7 @@ import { MobileSettings as AdminMobileSettings } from './pages/admin/MobileSetti
 import { SubscriptionManagement } from './pages/admin/SubscriptionManagement';
 import RegionManagement from './pages/admin/RegionManagement';
 import { CollectionPackManagement } from './pages/admin/CollectionPackManagement';
+import { DashboardDataManager } from './pages/admin/DashboardDataManager';
 import PlatformBindManage from './pages/admin/PlatformBindManage';
 import { ReviewDetail as AdminReviewDetailPage } from './pages/admin/ReviewDetail';
 
@@ -134,6 +135,7 @@ function AppContent() {
           <Route path="/admin/region-management" element={<AdminGuard><RegionManagement /></AdminGuard>} />
           <Route path="/admin/collection-pack-management" element={<AdminGuard><CollectionPackManagement /></AdminGuard>} />
           <Route path="/admin/platform-bind-manage" element={<AdminGuard><PlatformBindManage /></AdminGuard>} />
+          <Route path="/admin/dashboard-data" element={<AdminGuard><DashboardDataManager /></AdminGuard>} />
           <Route path="/admin/review-detail/:id" element={<AdminGuard><AdminReviewDetailPage /></AdminGuard>} />
 
           {/* 后台管理 - AI配置子页面 */}
