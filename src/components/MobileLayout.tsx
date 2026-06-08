@@ -9,7 +9,9 @@ import {
   Bell,
   ChevronDown,
   Building2 as StoreIcon,
-  CheckCircle2
+  CheckCircle2,
+  BarChart3,
+  FileText,
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Avatar } from './ui/avatar';
@@ -40,11 +42,11 @@ export const useStore = (): StoreContextValue => {
 
 // 路由分组
 const routeGroups: Record<string, string[]> = {
-  '/mobile': ['/mobile', '/mobile/dashboard', '/mobile/store-list', '/mobile/store-detail'],
+  '/mobile': ['/mobile', '/mobile/dashboard'],
+  '/mobile/data-analysis': ['/mobile/data-analysis'],
   '/mobile/review-stream': ['/mobile/review-stream', '/mobile/review-detail', '/mobile/negative-reply', '/mobile/positive-activation'],
-  '/mobile/ai-analysis': ['/mobile/ai-analysis'],
-  '/mobile/insights': ['/mobile/insights', '/mobile/competitor-analysis', '/mobile/dish-elimination', '/mobile/traceability-detail', '/mobile/annual-report'],
-  '/mobile/settings': ['/mobile/settings', '/mobile/store-settings', '/mobile/reply-template', '/mobile/platform-connection', '/mobile/notification-settings', '/mobile/auto-reply-settings', '/mobile/help-center', '/mobile/subscription']
+  '/mobile/report': ['/mobile/report'],
+  '/mobile/settings': ['/mobile/settings', '/mobile/store-settings', '/mobile/reply-template', '/mobile/platform-connection', '/mobile/notification-settings', '/mobile/auto-reply-settings', '/mobile/help-center', '/mobile/subscription'],
 };
 
 interface MobileLayoutProps {
@@ -54,9 +56,9 @@ interface MobileLayoutProps {
 
 const navItems = [
   { icon: LayoutDashboard, label: '首页', path: '/mobile' },
+  { icon: BarChart3, label: '数据', path: '/mobile/data-analysis' },
   { icon: MessageSquare, label: '评论', path: '/mobile/review-stream' },
-  { icon: Brain, label: 'AI', path: '/mobile/ai-analysis' },
-  { icon: TrendingUp, label: '洞察', path: '/mobile/insights' },
+  { icon: FileText, label: '报告', path: '/mobile/report' },
   { icon: Settings, label: '我的', path: '/mobile/settings' },
 ];
 

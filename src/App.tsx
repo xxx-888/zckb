@@ -54,6 +54,8 @@ import { StoreList } from './pages/mobile/StoreList';
 import { StoreDetail } from './pages/mobile/StoreDetail';
 import { AIAnalysis } from './pages/mobile/AIAnalysis';
 import { Insights } from './pages/mobile/Insights';
+import { DataAnalysis } from './pages/mobile/DataAnalysis';
+import { ReportPage } from './pages/mobile/ReportPage';
 import { NegativeReply } from './pages/mobile/NegativeReply';
 import { PositiveActivation } from './pages/mobile/PositiveActivation';
 import { ReviewStream } from './pages/mobile/ReviewStream';
@@ -85,6 +87,8 @@ function AppContent() {
           <Route path="/mobile/dashboard" element={<Dashboard />} />
           <Route path="/mobile/ai-analysis" element={<AIAnalysis />} />
           <Route path="/mobile/insights" element={<Insights />} />
+          <Route path="/mobile/data-analysis" element={<DataAnalysis />} />
+          <Route path="/mobile/report" element={<ReportPage />} />
           <Route path="/mobile/negative-reply" element={<NegativeReply />} />
           <Route path="/mobile/positive-activation" element={<PositiveActivation />} />
           <Route path="/mobile/review-stream" element={<ReviewStream />} />
