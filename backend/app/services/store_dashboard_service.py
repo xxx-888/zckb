@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from datetime import date, timedelta
 from typing import Optional
 from uuid import UUID
@@ -26,7 +25,12 @@ from app.models.user import User, UserStore
 # ==================== 工具函数 ====================
 
 async def _fetch_user_store_ids(db: AsyncSession, user: User) -> list[UUID]:
-    """预查询用户关联的门店ID列表"""
+    """预查询用户关联的门店ID列表（SUPER_ADMIN/HQ 可查看所有门店）"""
+    from app.models.store import Store as StoreModel
+    # SUPER_ADMIN 和 HQ 角色可访问所有门店
+    if getattr(user, 'role', None) in ('SUPER_ADMIN', 'HQ'):
+        result = await db.execute(select(StoreModel.id))
+        return [row[0] for row in result.all()]
     result = await db.execute(
         select(UserStore.store_id).where(UserStore.user_id == user.id)
     )
@@ -406,12 +410,13 @@ async def get_package_ranking(
 async def _query_package_period(
     db: AsyncSession, store_ids: list[UUID], start: date, end: date
 ) -> list[PackageRecord]:
+    """查询与指定日期范围有交集的套餐记录"""
     query = (
         select(PackageRecord)
         .where(
             PackageRecord.store_id.in_(store_ids),
-            PackageRecord.period_start >= start,
-            PackageRecord.period_end <= end,
+            PackageRecord.period_end >= start,
+            PackageRecord.period_start <= end,
         )
         .order_by(PackageRecord.product_name)
     )
@@ -700,13 +705,14 @@ async def get_operation_analyses(
     period_start: Optional[date] = None,
     period_end: Optional[date] = None,
 ) -> list[OperationAnalysis]:
+    """查询与指定日期范围有交集的运营分析记录"""
     query = select(OperationAnalysis).where(
         OperationAnalysis.store_id.in_(store_ids)
     )
     if period_start:
-        query = query.where(OperationAnalysis.period_start >= period_start)
+        query = query.where(OperationAnalysis.period_end >= period_start)
     if period_end:
-        query = query.where(OperationAnalysis.period_end <= period_end)
+        query = query.where(OperationAnalysis.period_start <= period_end)
     query = query.order_by(OperationAnalysis.period_start.desc())
     result = await db.execute(query)
     return list(result.scalars().all())
@@ -747,13 +753,11 @@ async def get_dashboard_overview(
     compare_start: Optional[date] = None,
     compare_end: Optional[date] = None,
 ) -> dict:
-    """获取看板完整概览（并发查询各模块）"""
-    revenue_summary, health, package_comparison, analyses = await asyncio.gather(
-        get_revenue_summary(db, store_ids, start_date, end_date, compare_start, compare_end),
-        get_store_health(db, store_ids, start_date, end_date, compare_start, compare_end),
-        get_package_comparison(db, store_ids, start_date, end_date, compare_start, compare_end),
-        get_operation_analyses(db, store_ids, start_date, end_date),
-    )
+    """获取看板完整概览（顺序查询各模块，避免共享session并发死锁）"""
+    revenue_summary = await get_revenue_summary(db, store_ids, start_date, end_date, compare_start, compare_end)
+    health = await get_store_health(db, store_ids, start_date, end_date, compare_start, compare_end)
+    package_comparison = await get_package_comparison(db, store_ids, start_date, end_date, compare_start, compare_end)
+    analyses = await get_operation_analyses(db, store_ids, start_date, end_date)
 
     # 门店名称
     store_name = ""

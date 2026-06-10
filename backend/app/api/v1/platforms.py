@@ -8,7 +8,7 @@ import json
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -18,6 +18,7 @@ from app.core.response import success, error, paginated
 from app.core.exceptions import NotFoundException
 from app.models.user import User
 from app.models.store import PlatformAccount, StorePlatform
+from app.services.store_name_utils import find_best_matching_store_from_list
 from app.schemas.platform import (
     PlatformConnectRequest,
     PlatformConnectResponse,
@@ -317,6 +318,42 @@ async def get_connected_accounts(
     )
 
 
+# ═══════════════════════════════════════════════════════
+# 店铺同步辅助函数
+# ═══════════════════════════════════════════════════════
+
+async def _update_store_name_and_count(db: AsyncSession, StoreModel, store_id, ps_name: str):
+    """更新系统门店名（取更长的）并递增 platform_count"""
+    update_stmt = select(StoreModel).where(StoreModel.id == store_id)
+    update_result = await db.execute(update_stmt)
+    store_obj = update_result.scalar_one_or_none()
+    if store_obj:
+        if len(ps_name.strip()) > len(store_obj.name.strip()):
+            old_name = store_obj.name
+            store_obj.name = ps_name.strip()
+            logger.info(f"[SyncAccount] Store name updated: '{old_name}' → '{ps_name.strip()}'")
+        store_obj.platform_count = (store_obj.platform_count or 0) + 1
+
+
+async def _create_new_store(db: AsyncSession, StoreModel, UserStore, user_id, name: str):
+    """创建系统门店 + UserStore 关联，返回新门店对象（已 flush）"""
+    new_store = StoreModel(
+        name=name,
+        type="restaurant",
+        status="active",
+        platform_count=1,
+        owner_id=user_id,
+    )
+    db.add(new_store)
+    await db.flush()
+
+    user_store = UserStore(user_id=str(user_id), store_id=str(new_store.id))
+    db.add(user_store)
+    await db.flush()
+
+    return new_store
+
+
 @router.post("/accounts/{account_id}/sync-status", summary="同步平台账号登录状态及店铺数据")
 async def sync_account_status(
     account_id: UUID,
@@ -379,6 +416,7 @@ async def sync_account_status(
     )
     logger.info(f"[SyncAccount] sync_result raw: {json.dumps(sync_result, ensure_ascii=False, default=str)[:2000]}")
     synced_stores = 0
+    final_system_store_count = 0
 
     # 美团开店宝后台同时管理美团和大众点评两个平台
     # 同一个 poiId 在两个平台有各自的评论流（queryMTFeedbackPCNew / queryDPFeedbackPCNew）
@@ -393,25 +431,30 @@ async def sync_account_status(
         from app.models.store import StorePlatform, Store as StoreModel
         from app.models.user import UserStore
 
-        # 平台后缀映射
-        platform_suffix_map = {
-            "meituan": " - 美团",
-            "dianping": " - 大众点评",
-            "douyin": " - 抖音",
-            "taobao": " - 淘宝",
-            "jd": " - 京东",
-        }
-        store_suffix = platform_suffix_map.get(platform, f" - {platform}")
+        logger.info(f"[SyncAccount] sync_stores returned {len(stores)} stores, method={sync_result.get('method')}, targets={platforms_to_register}")
 
-        for store_info in stores:
+        # ═══════════════════════════════════════════════
+        # 预查询: 一次性加载当前用户的所有系统门店（避免循环内重复查询）
+        # 后续新建的门店直接追加到此列表，保持缓存同步
+        # ═══════════════════════════════════════════════
+        all_stores_stmt = select(StoreModel.id, StoreModel.name).join(
+            UserStore, UserStore.store_id == StoreModel.id
+        ).where(
+            UserStore.user_id == str(current_user.id),
+        )
+        all_stores_result = await db.execute(all_stores_stmt)
+        all_stores_cache = [{"id": row[0], "name": row[1]} for row in all_stores_result.all()]
+        logger.info(f"[SyncAccount] Pre-loaded {len(all_stores_cache)} existing system stores for user {current_user.id}")
+
+        for idx, store_info in enumerate(stores, 1):
             ps_id = store_info["platform_store_id"]
             ps_name = store_info["platform_store_name"]
+            logger.info(f"[SyncAccount] ===== [{idx}/{len(stores)}] ps_id={ps_id}, ps_name='{ps_name}' =====")
 
             # 对需要同时注册的每个平台，分别创建/更新 store_platforms 记录
             for target_platform in platforms_to_register:
-                target_suffix = platform_suffix_map.get(target_platform, f" - {target_platform}")
 
-                # 查找是否已存在 store_platform 记录（按 account_id + platform + platform_store_id）
+                # ── Step 1: 查找是否已存在 store_platform 记录 ──
                 stmt = select(StorePlatform).where(
                     StorePlatform.account_id == account.id,
                     StorePlatform.platform_store_id == ps_id,
@@ -421,34 +464,31 @@ async def sync_account_status(
                 existing_sp = existing_result.scalar_one_or_none()
 
                 if existing_sp:
-                    # 更新已有记录
+                    # ─── 已有 SP 记录：更新名称 ───
                     existing_sp.platform_store_name = ps_name
                     existing_sp.last_sync_at = datetime.utcnow()
 
-                    # 如果还没关联系统门店，自动创建并绑定
                     if not existing_sp.store_id:
-                        auto_store_name = ps_name + target_suffix
-                        new_store = StoreModel(
-                            name=auto_store_name,
-                            type="restaurant",
-                            status="active",
-                            platform_count=1,
-                            owner_id=current_user.id,
-                        )
-                        db.add(new_store)
-                        await db.flush()  # 获取 new_store.id
-                        existing_sp.store_id = new_store.id
-                        existing_sp.connected = True
+                        # 用本地缓存做相似度匹配
+                        matched_id, sim_score, matched_name = find_best_matching_store_from_list(ps_name, all_stores_cache, threshold=0.9)
 
-                        # 创建 UserStore 关联
-                        user_store = UserStore(
-                            user_id=str(current_user.id),
-                            store_id=str(new_store.id),
-                        )
-                        db.add(user_store)
+                        if matched_id:
+                            existing_sp.store_id = str(matched_id)
+                            existing_sp.connected = True
+                            _update_store_name_and_count(db, StoreModel, matched_id, ps_name)
+                            logger.info(f"[SyncAccount] [{target_platform}] Existing SP → bound to similar '{matched_name}' (sim={sim_score:.3f})")
+                        else:
+                            # 创建新门店
+                            new_store = await _create_new_store(db, StoreModel, UserStore, current_user.id, ps_name)
+                            existing_sp.store_id = new_store.id
+                            existing_sp.connected = True
+                            all_stores_cache.append({"id": new_store.id, "name": ps_name})
+                            logger.info(f"[SyncAccount] [{target_platform}] Existing SP → created new store '{ps_name}' (id={new_store.id})")
+                    else:
+                        logger.info(f"[SyncAccount] [{target_platform}] Existing SP already bound to store_id={existing_sp.store_id}")
                 else:
-                    # 查找是否有其他平台的同 poiId 记录已关联了系统门店
-                    # 例如 meituan 已创建了门店，dianping 直接复用同一个门店
+                    # ─── 新 SP 记录 ───
+                    # Step 2: 查找同 poiId 其他平台的 SP 是否已关联门店
                     shared_stmt = select(StorePlatform.store_id).where(
                         StorePlatform.account_id == account.id,
                         StorePlatform.platform_store_id == ps_id,
@@ -458,55 +498,57 @@ async def sync_account_status(
                     existing_store_id = shared_result.scalar_one_or_none()
 
                     if existing_store_id:
-                        # 复用已存在的系统门店
+                        # 复用同 poiId 已有关联的门店
                         new_sp = StorePlatform(
-                            account_id=account.id,
-                            platform=target_platform,
-                            platform_store_id=ps_id,
-                            platform_store_name=ps_name,
-                            store_id=str(existing_store_id),
-                            connected=True,
-                            last_sync_at=datetime.utcnow(),
-                            sync_status="synced",
+                            account_id=account.id, platform=target_platform,
+                            platform_store_id=ps_id, platform_store_name=ps_name,
+                            store_id=str(existing_store_id), connected=True,
+                            last_sync_at=datetime.utcnow(), sync_status="synced",
                         )
                         db.add(new_sp)
+                        await db.flush()  # flush 以便后续 shared_stmt 查询能找到
+                        _update_store_name_and_count(db, StoreModel, existing_store_id, ps_name)
+                        logger.info(f"[SyncAccount] [{target_platform}] New SP → reused shared store_id={existing_store_id} (same poiId)")
                     else:
-                        # 自动创建系统门店并绑定
-                        auto_store_name = ps_name + target_suffix
-                        new_store = StoreModel(
-                            name=auto_store_name,
-                            type="restaurant",
-                            status="active",
-                            platform_count=1,
-                            owner_id=current_user.id,
-                        )
-                        db.add(new_store)
-                        await db.flush()  # 获取 new_store.id
+                        # Step 3: 用本地缓存做相似度匹配
+                        matched_id, sim_score, matched_name = find_best_matching_store_from_list(ps_name, all_stores_cache, threshold=0.9)
 
-                        # 创建 UserStore 关联
-                        user_store = UserStore(
-                            user_id=str(current_user.id),
-                            store_id=str(new_store.id),
-                        )
-                        db.add(user_store)
-
-                        # 创建 store_platform 记录并直接绑定
-                        new_sp = StorePlatform(
-                            account_id=account.id,
-                            platform=target_platform,
-                            platform_store_id=ps_id,
-                            platform_store_name=ps_name,
-                            store_id=new_store.id,
-                            connected=True,
-                            last_sync_at=datetime.utcnow(),
-                            sync_status="synced",
-                        )
-                        db.add(new_sp)
+                        if matched_id:
+                            new_sp = StorePlatform(
+                                account_id=account.id, platform=target_platform,
+                                platform_store_id=ps_id, platform_store_name=ps_name,
+                                store_id=str(matched_id), connected=True,
+                                last_sync_at=datetime.utcnow(), sync_status="synced",
+                            )
+                            db.add(new_sp)
+                            await db.flush()
+                            _update_store_name_and_count(db, StoreModel, matched_id, ps_name)
+                            logger.info(f"[SyncAccount] [{target_platform}] New SP → matched '{matched_name}' (sim={sim_score:.3f})")
+                        else:
+                            # Step 4: 创建全新门店
+                            logger.info(f"[SyncAccount] [{target_platform}] No match in {len(all_stores_cache)} stores, creating new '{ps_name}'")
+                            new_store = await _create_new_store(db, StoreModel, UserStore, current_user.id, ps_name.strip())
+                            new_sp = StorePlatform(
+                                account_id=account.id, platform=target_platform,
+                                platform_store_id=ps_id, platform_store_name=ps_name,
+                                store_id=new_store.id, connected=True,
+                                last_sync_at=datetime.utcnow(), sync_status="synced",
+                            )
+                            db.add(new_sp)
+                            await db.flush()
+                            all_stores_cache.append({"id": new_store.id, "name": ps_name.strip()})
+                            logger.info(f"[SyncAccount] [{target_platform}] ✓ Created '{ps_name}' (id={new_store.id}), cache={len(all_stores_cache)} stores")
             synced_stores += 1
+
+        # 记录最终系统门店缓存大小
+        final_system_store_count = len(all_stores_cache)
 
     # 更新同步时间
     account.last_sync_at = datetime.utcnow()
     await db.commit()
+
+    # 输出最终统计
+    logger.info(f"[SyncAccount] ═══ Sync complete: {synced_stores} platform stores, {final_system_store_count} system stores ═══")
 
     return success(
         data={
@@ -528,6 +570,7 @@ async def sync_account_status(
 @router.post("/accounts/{account_id}/sync-reviews", summary="同步平台评论数据（异步）")
 async def sync_account_reviews(
     account_id: UUID,
+    sync_mode: str = Query("incremental", description="同步模式: full=全量(全部历史), incremental=增量(近30天)"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_valid_subscription),
 ) -> dict:
@@ -569,13 +612,18 @@ async def sync_account_reviews(
             "platform_store_name": sp.platform_store_name,
             "store_id": str(sp.store_id) if sp.store_id else "",
         }
+        # 抖音需要 life_account_id（即平台账号ID）
+        if sp.platform == "douyin" and account.platform_account_id:
+            store_info["account_id"] = account.platform_account_id
         stores_by_platform.setdefault(sp.platform, []).append(store_info)
 
     review_service = ReviewSyncService.get_instance()
+    time_type = "全部" if sync_mode == "full" else "近30天"
     task_id = await review_service.start_sync_reviews_async(
         account_id=str(account_id),
         storage_state=storage_state,
         stores_by_platform=stores_by_platform,
+        time_type=time_type,
     )
 
     return success(
@@ -583,8 +631,9 @@ async def sync_account_reviews(
             "task_id": task_id,
             "platforms": list(stores_by_platform.keys()),
             "store_count": len(store_platforms),
+            "sync_mode": sync_mode,
         },
-        message="评论同步任务已启动",
+        message=f"{'全量' if sync_mode == 'full' else '增量'}评论同步任务已启动",
     )
 
 
@@ -917,9 +966,15 @@ async def sms_login_verify(
         platform_service = PlatformService(db)
         cookies = result["cookies"]
         platform = result["platform"]
+        platform_username = result.get("platform_username", "")
+        platform_account_id = result.get("platform_account_id", "")
+        platform_phone = result.get("platform_phone", "")
+        platform_role = result.get("platform_role", "")
+
+        logger.info(f"[SMS Verify] Saving account: username={platform_username}, account_id={platform_account_id}, phone={platform_phone}, role={platform_role}")
 
         encrypted = await platform_service._encrypt_credentials({
-            "username": "",
+            "username": platform_username,
             "cookies": cookies,
         })
 
@@ -934,13 +989,16 @@ async def sms_login_verify(
         if existing:
             existing.cookies_encrypted = encrypted
             existing.cookies_status = "valid"
+            existing.platform_username = platform_username or existing.platform_username
+            existing.platform_account_id = platform_account_id or existing.platform_account_id
             existing.last_sync_at = datetime.utcnow()
             existing.error_msg = None
         else:
             new_account = PlatformAccount(
                 user_id=current_user.id,
                 platform=platform,
-                platform_username="",
+                platform_username=platform_username or "未知用户",
+                platform_account_id=platform_account_id,
                 cookies_encrypted=encrypted,
                 cookies_status="valid",
                 last_sync_at=datetime.utcnow(),
@@ -950,7 +1008,14 @@ async def sms_login_verify(
         await db.commit()
 
         return success(
-            data={"status": "success", "platform": platform},
+            data={
+                "status": "success",
+                "platform": platform,
+                "platform_username": platform_username,
+                "platform_account_id": platform_account_id,
+                "platform_phone": platform_phone,
+                "platform_role": platform_role,
+            },
             message="登录成功，账号已绑定",
         )
 

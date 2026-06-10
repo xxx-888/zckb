@@ -37,12 +37,22 @@ PLATFORM_REVIEW_CONFIG = {
         "entry_url": "https://ecom.meituan.com/emis/evaluation/poi",
         "page_size": 50,
         "max_pages": 1000,
+        "api_type": "post",  # POST + JSON body
     },
     "dianping": {
         "api_url": "https://ecom.meituan.com/emis/gw/rpc/TFeedbackListNewService/queryDPFeedbackPCNew",
         "entry_url": "https://ecom.meituan.com/emis/evaluation/poi",
         "page_size": 50,
         "max_pages": 1000,
+        "api_type": "post",
+    },
+    "douyin": {
+        "api_url": "https://life.douyin.com/life/infra/v1/review/get_review_list/",
+        "entry_url": "https://life.douyin.com/p/life_comment/management",
+        "page_size": 20,
+        "max_pages": 2000,
+        "api_type": "get",  # GET + query params
+        "cookie_domain": ".life.douyin.com",
     },
 }
 
@@ -71,6 +81,81 @@ async (args) => {
         let json;
         try { json = JSON.parse(text); } catch(e) { json = { error: text.substring(0, 500) }; }
         json._status = res.status;
+        return json;
+    } catch(e) {
+        return { error: e.message, _status: 0 };
+    }
+}
+"""
+
+
+# 抖音评论 API 请求 JS — GET + query params（在浏览器上下文中执行 fetch）
+# 按账号获取所有店铺评论，poi_id=0 表示不筛选具体店铺
+# 只需最小必要 headers，参考实际浏览器抓包
+DOUYIN_REVIEW_FETCH_JS = """
+async (args) => {
+    try {
+        const params = new URLSearchParams();
+        params.set('poi_id', '0');
+        params.set('tags', '1,2,3,9,5,4,10,8,7,50,');
+        params.set('sort_by', '2');
+        params.set('life_account_id', args.lifeAccountId);
+        params.set('count', String(args.count));
+        params.set('cursor', String(args.cursor));
+        params.set('top_rate_ids', '');
+        params.set('reply_display_by_level', '1');
+        params.set('root_life_account_id', args.lifeAccountId);
+        params.set('store_type', '1');
+        params.set('source', '1');
+        params.set('all_selected_params', JSON.stringify({
+            "SearchAllAccountPoiType": 0,
+            "ExpandToPoiAccount": true,
+            "SearchAllAccountPoiStatus": 0,
+            "RelationTypes": [1, 10],
+            "SettleStatusBeforeClaim": [],
+            "Selections": [],
+            "TagIDList": [],
+            "MainCategoryList": {},
+            "SubCategoryList": {},
+            "PermissionKeyList": ["hermes.shop.evaluation_manage_CloudBusiness"],
+            "StoreBizTagList": [],
+            "SxtSolutionStatusList": [],
+            "SxtSolutionPunishStatusList": []
+        }));
+        if (args.searchAfter) {
+            params.set('search_after', JSON.stringify(args.searchAfter));
+        }
+
+        const url = args.apiUrl + '?' + params.toString();
+        const res = await fetch(url, {
+            method: "GET",
+            headers: {
+                "ac-tag": "smb_m",
+                "accept": "application/json, text/plain, */*",
+                "agw-js-conv": "str",
+                "priority": "u=1, i",
+                "rpc-persist-life-biz-view-id": "0",
+                "rpc-persist-life-merchant-switch-role": "1",
+                "rpc-persist-life-platform": "pc",
+                "rpc-persist-lite-app-id": "100007",
+                "rpc-persist-terminal-type": "1",
+                "sec-ch-ua": '"Google Chrome";v="149", "Chromium";v="149", "Not)A;Brand";v="24"',
+                "sec-ch-ua-mobile": "?0",
+                "sec-ch-ua-platform": '"Windows"',
+                "sec-fetch-dest": "empty",
+                "sec-fetch-mode": "cors",
+                "sec-fetch-site": "same-origin",
+                "x-tt-trace-log": "01",
+            },
+            credentials: "include",
+            mode: "cors",
+        });
+        const text = await res.text();
+        let json;
+        try { json = JSON.parse(text); } catch(e) { json = { error: text.substring(0, 500) }; }
+        json._status = res.status;
+        json._raw_keys = Object.keys(json);
+        json._url = url.substring(0, 200);
         return json;
     } catch(e) {
         return { error: e.message, _status: 0 };
@@ -126,8 +211,8 @@ def _review_sync_worker(
 
         # 兼容：如果 cookies 是 dict {name: value}，转换成 Playwright 列表格式
         _cookies = storage_state.get("cookies")
+        cookie_domain = config.get("cookie_domain", ".meituan.com")
         if isinstance(_cookies, dict):
-            domain = ".meituan.com"  # 美团和大众点评评论 API 都在 ecom.meituan.com 域下
             pw_cookies = []
             for name, value in _cookies.items():
                 if str(name).startswith("_"):
@@ -135,7 +220,7 @@ def _review_sync_worker(
                 pw_cookies.append({
                     "name": str(name),
                     "value": str(value),
-                    "domain": domain,
+                    "domain": cookie_domain,
                     "path": "/",
                     "expires": -1,
                     "httpOnly": False,
@@ -143,7 +228,7 @@ def _review_sync_worker(
                     "sameSite": "Lax",
                 })
             storage_state["cookies"] = pw_cookies
-            logger.info(f"[ReviewSync Worker] Converted cookies dict → list: {len(pw_cookies)} cookies")
+            logger.info(f"[ReviewSync Worker] Converted cookies dict → list: {len(pw_cookies)} cookies (domain={cookie_domain})")
         elif isinstance(_cookies, list):
             # 已经是正确格式，无需转换
             pass
@@ -192,8 +277,18 @@ def _review_sync_worker(
         # 先访问评论管理页面，建立完整登录态
         entry_url = config["entry_url"]
         logger.info(f"[ReviewSync Worker] Navigating to {entry_url}")
-        page.goto(entry_url, wait_until="networkidle", timeout=30000)
-        page.wait_for_timeout(3000)
+
+        is_douyin = platform == "douyin"
+
+        # 抖音页面较重，使用 domcontentloaded 而非 networkidle 避免超时
+        wait_strategy = "domcontentloaded" if is_douyin else "networkidle"
+        goto_timeout = 60000 if is_douyin else 30000
+        try:
+            page.goto(entry_url, wait_until=wait_strategy, timeout=goto_timeout)
+        except Exception as e:
+            # 导航超时不一定失败，页面可能已加载，尝试继续
+            logger.warning(f"[ReviewSync Worker] page.goto warning: {e}, continuing anyway")
+        page.wait_for_timeout(3000 if not is_douyin else 5000)
 
         # 检查是否被重定向到登录页
         current_url = page.url
@@ -208,68 +303,173 @@ def _review_sync_worker(
         all_reviews = []
         page_size = config["page_size"]
         max_pages = config["max_pages"]
+        api_type = config.get("api_type", "post")
 
-        for store_idx, store_info in enumerate(stores):
-            poi_id = store_info["platform_store_id"]
-            store_name = store_info.get("platform_store_name", poi_id)
-            store_db_id = store_info.get("store_id", "")
+        # 抖音增量同步截止时间（30天前的 Unix 时间戳）
+        import datetime as _dt
+        _cutoff_ts = 0
+        if is_douyin and time_type != "全部":
+            _cutoff_dt = _dt.datetime.now(_dt.timezone(_dt.timedelta(hours=8))) - _dt.timedelta(days=30)
+            _cutoff_ts = int(_cutoff_dt.timestamp())
+            logger.info(f"[ReviewSync Worker] 抖音增量同步截止时间戳: {_cutoff_ts} ({_cutoff_dt.strftime('%Y-%m-%d %H:%M:%S')})")
 
-            logger.info(f"[ReviewSync Worker] [{store_idx+1}/{len(stores)}] 抓取: {store_name} (poi_id={poi_id})")
+        if is_douyin:
+            # ========== 抖音：一次性拉取账号下所有评论，按 poi_id 匹配店铺 ==========
+            # 构建 poi_id → store 映射
+            poi_store_map = {}
+            for s in stores:
+                pid = s.get("platform_store_id", "")
+                if pid:
+                    poi_store_map[str(pid)] = s
 
-            try:
-                store_reviews = []
-                api_total = None
+            # life_account_id 从第一个店铺的 account_id 字段取
+            life_account_id = ""
+            for s in stores:
+                lid = s.get("account_id", "")
+                if lid:
+                    life_account_id = lid
+                    break
 
-                for page_no in range(1, max_pages + 1):
-                    result = page.evaluate(REVIEW_FETCH_JS, {
-                        "apiUrl": config["api_url"],
-                        "poiId": poi_id,
-                        "pageNo": page_no,
-                        "pageSize": page_size,
-                        "timeType": time_type,
-                    })
+            if not life_account_id:
+                _write_result(done_file, {"status": "failed", "error": "抖音账号缺少 life_account_id"})
+                return
 
-                    if not result or result.get("error"):
-                        error_msg = result.get("error", "Unknown error") if result else "Empty result"
-                        logger.warning(f"[ReviewSync Worker] API error for {store_name} page {page_no}: {error_msg[:200]}")
+            logger.info(f"[ReviewSync Worker] 抖音: 使用 life_account_id={life_account_id}, 已绑定 {len(poi_store_map)} 个店铺")
+
+            cursor = 0
+            search_after = None
+            douyin_reviews = []
+
+            for page_no in range(1, max_pages + 1):
+                result = page.evaluate(DOUYIN_REVIEW_FETCH_JS, {
+                    "apiUrl": config["api_url"],
+                    "lifeAccountId": life_account_id,
+                    "count": page_size,
+                    "cursor": cursor,
+                    "searchAfter": search_after,
+                })
+
+                if not result or result.get("error"):
+                    error_msg = result.get("error", "Unknown error") if result else "Empty result"
+                    logger.warning(f"[ReviewSync Worker] 抖音 API error page {page_no}: {error_msg[:200]}")
+                    break
+
+                http_status = result.get("_status", 0)
+                raw_keys = result.get("_raw_keys", [])
+
+                # 尝试多种字段名获取评论列表（抖音数据在 data 层内）
+                outer_data = result.get("data") or {}
+                reviews_data = outer_data.get("reviews") or result.get("reviews") or result.get("review_list", []) or []
+                has_more = outer_data.get("has_more", False) or result.get("has_more", False)
+                filtered_count = outer_data.get("filtered_count") or result.get("filtered_count", "?")
+
+                # 每页都输出进度和评论概要
+                logger.info(
+                    f"[ReviewSync Worker] 抖音 第{page_no}页: http={http_status}, "
+                    f"filtered_count={filtered_count}, has_more={has_more}, "
+                    f"本页={len(reviews_data)}, 已累计={len(douyin_reviews) + len(reviews_data)}"
+                )
+
+                # 每页输出评论简要信息（时间+评分+内容前30字）
+                for idx, item in enumerate(reviews_data):
+                    pub_ts = item.get("publiced_time", 0)
+                    import datetime as _dt2
+                    pub_str = _dt2.datetime.fromtimestamp(int(pub_ts), tz=_dt2.timezone(_dt2.timedelta(hours=8))).strftime("%m-%d %H:%M") if pub_ts else "?"
+                    score = _extract_douyin_score(item.get("score_tags", []))
+                    poi = str(item.get("poi_id", ""))[:10]
+                    content = (item.get("review_content") or "")[:30]
+                    logger.info(f"  [{idx+1}] {pub_str} ★{score} poi={poi}... {content}")
+
+                for item in reviews_data:
+                    # 根据评论中的 poi_id 匹配绑定的店铺
+                    review_poi_id = str(item.get("poi_id", ""))
+                    matched_store = poi_store_map.get(review_poi_id)
+                    store_db_id = matched_store["store_id"] if matched_store else ""
+                    poi_id = matched_store["platform_store_id"] if matched_store else review_poi_id
+
+                    review = _convert_douyin_review(item, store_db_id, poi_id)
+                    if review:
+                        douyin_reviews.append(review)
+
+                # 增量同步：遇到超过30天的评论则停止
+                if _cutoff_ts > 0 and reviews_data:
+                    last_ts = int(reviews_data[-1].get("publiced_time", 0))
+                    if last_ts > 0 and last_ts < _cutoff_ts:
+                        logger.info(f"[ReviewSync Worker] 抖音: 已到达30天前截止，停止翻页")
+                        break
+
+                if not has_more or len(reviews_data) < page_size:
+                    break
+
+                # 下一页：用最后一条评论的时间戳作为 search_after，cursor 始终为 0
+                if reviews_data:
+                    last_ts = int(reviews_data[-1].get("publiced_time", 0))
+                    if last_ts > 0:
+                        search_after = [1, last_ts]
+                time.sleep(0.5)
+
+            logger.info(f"[ReviewSync Worker] 抖音: 共抓取 {len(douyin_reviews)} 条评论")
+            all_reviews.extend(douyin_reviews)
+
+        else:
+            # ========== 美团/大众点评：按店铺逐个查询 ==========
+            for store_idx, store_info in enumerate(stores):
+                poi_id = store_info["platform_store_id"]
+                store_name = store_info.get("platform_store_name", poi_id)
+                store_db_id = store_info.get("store_id", "")
+
+                logger.info(f"[ReviewSync Worker] [{store_idx+1}/{len(stores)}] 抓取: {store_name} (poi_id={poi_id})")
+
+                try:
+                    store_reviews = []
+                    api_total = None
+
+                    for page_no in range(1, max_pages + 1):
+                        result = page.evaluate(REVIEW_FETCH_JS, {
+                            "apiUrl": config["api_url"],
+                            "poiId": poi_id,
+                            "pageNo": page_no,
+                            "pageSize": page_size,
+                            "timeType": time_type,
+                        })
+
+                        if not result or result.get("error"):
+                            error_msg = result.get("error", "Unknown error") if result else "Empty result"
+                            logger.warning(f"[ReviewSync Worker] API error for {store_name} page {page_no}: {error_msg[:200]}")
+                            break
+
+                        http_status = result.get("_status", 0)
+                        data_outer = result.get("data") or {}
+                        data_inner = (data_outer.get("data") or {}) if data_outer else {}
+                        feedbacks = data_inner.get("feedbacks", []) or []
+
                         if page_no == 1:
-                            break  # 首页就失败，跳过此店铺
-                        break  # 后续页失败，停止翻页
+                            code = data_outer.get("code", "?") if data_outer else "?"
+                            msg = data_outer.get("msg", "") if data_outer else ""
+                            api_total = (data_inner or {}).get("total")
+                            logger.info(
+                                f"[ReviewSync Worker] {store_name}: code={code}, msg={msg}, "
+                                f"http={http_status}, total={api_total}, page_feedbacks={len(feedbacks)}"
+                            )
 
-                    http_status = result.get("_status", 0)
-                    data_outer = result.get("data") or {}
-                    data_inner = (data_outer.get("data") or {}) if data_outer else {}
-                    feedbacks = data_inner.get("feedbacks", []) or []
+                        for item in feedbacks:
+                            review = _convert_raw_review(item, store_db_id, platform, poi_id)
+                            if review:
+                                store_reviews.append(review)
 
-                    if page_no == 1:
-                        code = data_outer.get("code", "?") if data_outer else "?"
-                        msg = data_outer.get("msg", "") if data_outer else ""
-                        api_total = (data_inner or {}).get("total")
-                        logger.info(
-                            f"[ReviewSync Worker] {store_name}: code={code}, msg={msg}, "
-                            f"http={http_status}, total={api_total}, page_feedbacks={len(feedbacks)}"
-                        )
+                        if len(feedbacks) < page_size:
+                            break
+                        if api_total is not None and len(store_reviews) >= api_total:
+                            break
 
-                    for item in feedbacks:
-                        review = _convert_raw_review(item, store_db_id, platform, poi_id)
-                        if review:
-                            store_reviews.append(review)
+                        time.sleep(0.5)
 
-                    # 判断末页
-                    if len(feedbacks) < page_size:
-                        break
-                    if api_total is not None and len(store_reviews) >= api_total:
-                        break
+                    logger.info(f"[ReviewSync Worker] {store_name}: 共抓取 {len(store_reviews)} 条评论")
+                    all_reviews.extend(store_reviews)
 
-                    # 翻页间隔
-                    time.sleep(0.5)
-
-                logger.info(f"[ReviewSync Worker] {store_name}: 共抓取 {len(store_reviews)} 条评论")
-                all_reviews.extend(store_reviews)
-
-            except Exception as e:
-                logger.error(f"[ReviewSync Worker] {store_name} 异常: {e}", exc_info=True)
-                continue
+                except Exception as e:
+                    logger.error(f"[ReviewSync Worker] {store_name} 异常: {e}", exc_info=True)
+                    continue
 
         # 去重（按 store_id + platform + platform_review_id）
         seen = set()
@@ -378,6 +578,94 @@ def _convert_raw_review(raw_item: dict, store_db_id: str, platform: str, poi_id:
     except Exception as e:
         logger.warning(f"[ReviewSync Worker] 评论转换失败: {e}")
         return None
+
+
+def _convert_douyin_review(raw_item: dict, store_db_id: str, poi_id: str) -> Optional[dict]:
+    """将抖音评论转换为标准格式（与 meituan/dianping 格式对齐）"""
+    try:
+        from datetime import datetime, timezone, timedelta
+
+        _TZ = timezone(timedelta(hours=8))
+
+        # 评论时间（publiced_time 是 Unix 秒级时间戳）
+        comment_time = None
+        pub_ts = raw_item.get("publiced_time")
+        if pub_ts and isinstance(pub_ts, (int, float, str)):
+            try:
+                comment_time = datetime.fromtimestamp(int(pub_ts), tz=_TZ)
+            except (OSError, ValueError, OverflowError):
+                pass
+
+        # 评分：从 score_tags 中提取（type==20 的 sub_type 映射）
+        score = _extract_douyin_score(raw_item.get("score_tags", []))
+
+        # 情感判断
+        if score >= 4:
+            sentiment = "positive"
+        elif score <= 2:
+            sentiment = "negative"
+        else:
+            sentiment = "neutral"
+
+        # 图片（review_images 中的 url_list）
+        images_list = []
+        for img in (raw_item.get("review_images") or []):
+            url_list = img.get("url_list") if isinstance(img, dict) else None
+            if url_list and isinstance(url_list, list) and len(url_list) > 0:
+                images_list.append(url_list[0])  # 取第一张 URL
+        if not images_list:
+            images_list = None
+
+        # 回复
+        reply_text = None
+        replies = raw_item.get("replies") or []
+        if replies and isinstance(replies, list) and len(replies) > 0:
+            reply_text = replies[0].get("content", "")
+
+        # 关联的产品名称
+        spu_name = raw_item.get("spu_name") or ""
+
+        return {
+            "store_id": store_db_id,
+            "platform": "douyin",
+            "platform_store_id": raw_item.get("poi_id") or poi_id,
+            "platform_review_id": str(raw_item.get("review_id") or ""),
+            "user_name": (raw_item.get("cust_nick_name") or "")[:100] or None,
+            "user_avatar": (raw_item.get("avatar_uri") or "")[:500] or None,
+            "content": raw_item.get("review_content") or None,
+            "rating": score,
+            "images": images_list,
+            "sentiment": sentiment,
+            "platform_created_at": comment_time.isoformat() if comment_time else None,
+            "raw_json": {
+                "spu_name": spu_name,
+                "reply": reply_text,
+                "exposure_cnt": raw_item.get("exposure_cnt"),
+                "thumb_ups": raw_item.get("thumb_ups"),
+                "user_level": raw_item.get("user_level"),
+                "review_source": raw_item.get("review_source"),
+                **raw_item,
+            },
+        }
+    except Exception as e:
+        logger.warning(f"[ReviewSync Worker] 抖音评论转换失败: {e}")
+        return None
+
+
+def _extract_douyin_score(score_tags: list) -> int:
+    """从抖音 score_tags 提取评分（1-5）"""
+    if not score_tags or not isinstance(score_tags, list):
+        return 3  # 默认中评
+    for tag in score_tags:
+        if not isinstance(tag, dict):
+            continue
+        if tag.get("type") == 20:
+            sub = tag.get("sub_type", "")
+            # sub_type 映射：10=超赞(5), 8=好评(4), 6=中评(3), 4=差评(2), 2=很差(1)
+            score_map = {"10": 5, "8": 4, "6": 3, "4": 2, "2": 1}
+            return score_map.get(str(sub), 3)
+    # 没有 score_tags 时根据 attitude 字段判断
+    return 3
 
 
 def _write_result(filepath: str, data: dict):

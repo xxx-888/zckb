@@ -25,6 +25,52 @@ import { Input } from '../../components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '../../components/ui/tabs';
 import { MobileLayout, useStore } from '../../components/MobileLayout';
 import { cn, normalizeImageUrls, useSearchDebounce } from '../../lib/utils';
+
+// 格式化评论时间为友好字符串
+function formatReviewTime(dateStr?: string | null): string {
+  if (!dateStr) return '';
+  try {
+    const d = new Date(dateStr);
+    const now = new Date();
+    const diff = now.getTime() - d.getTime();
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+    const days = Math.floor(diff / 86400000);
+
+    if (minutes < 1) return '刚刚';
+    if (minutes < 60) return `${minutes}分钟前`;
+    if (hours < 24) return `${hours}小时前`;
+    if (days < 7) return `${days}天前`;
+    // 超过7天显示完整日期
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mi = String(d.getMinutes()).padStart(2, '0');
+    return `${mm}-${dd} ${hh}:${mi}`;
+  } catch {
+    return '';
+  }
+}
+// 清理 HTML 内容中不安全的标签，保留 img 和基本格式
+function sanitizeHtmlContent(html: string): string {
+  if (!html) return html;
+  if (!/<\w+[\s>]/.test(html)) return html;
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<iframe[\s\S]*?<\/iframe>/gi, '')
+    .replace(/<object[\s\S]*?<\/object>/gi, '')
+    .replace(/on\w+\s*=\s*"[^"]*"/gi, '')
+    .replace(/on\w+\s*=\s*'[^']*'/gi, '')
+    .replace(/on\w+\s*=\s*\S+/gi, '')
+    .replace(/javascript\s*:/gi, '');
+}
+
+// 检测内容是否包含 HTML
+function containsHtml(str: string): boolean {
+  return /<(img|br|p|div|span|b|i|em|strong|a)[\s>]/i.test(str);
+}
+
 import { useToast } from '../../hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { fetchReviews } from '../../api/reviews';
@@ -139,7 +185,8 @@ export const ReviewStream: React.FC = () => {
         ...r,
         user: r.user_name || '匿名用户',
         avatar: r.user_avatar || '',
-        time: r.created_at || r.platform_created_at || '',
+        // 格式化时间显示，优先用评论时间
+        time: formatReviewTime(r.platform_created_at || r.created_at),
         hasImage: !!(r.images && r.images.length > 0),
         imageUrls: normalizeImageUrls(r.images),
       }));
@@ -438,9 +485,16 @@ export const ReviewStream: React.FC = () => {
                 </div>
               </div>
 
-              <p className="text-sm text-slate-600 leading-relaxed mb-3">
-                {review.content}
-              </p>
+              {containsHtml(review.content || '') ? (
+                <div
+                  className="text-sm text-slate-600 leading-relaxed mb-3 break-words overflow-wrap-anywhere line-clamp-4 [&_img]:max-w-[1.2rem] [&_img]:h-[1.2rem] [&_img]:inline [&_img]:align-middle [&_img]:mx-[2px] [&_a]:text-orange-500 [&_a]:underline"
+                  dangerouslySetInnerHTML={{ __html: sanitizeHtmlContent(review.content || '') }}
+                />
+              ) : (
+                <p className="text-sm text-slate-600 leading-relaxed mb-3 break-words overflow-wrap-anywhere line-clamp-4">
+                  {review.content}
+                </p>
+              )}
 
               {/* 图片展示 */}
               {(review as any).imageUrls && (review as any).imageUrls.length > 0 && (

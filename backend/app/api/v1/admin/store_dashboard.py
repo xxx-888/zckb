@@ -1,13 +1,14 @@
 """
 后台经营数据管理 API
 管理员可录入/编辑/删除所有门店的营业额、套餐核销、运营指标、分析意见
+支持 Excel 周报文件一键导入
 """
 
 from datetime import date
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, UploadFile, File
 from sqlalchemy import select, func, delete as sa_delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -36,6 +37,8 @@ from app.schemas.store_dashboard import (
     StoreMetricUpdate,
 )
 from app.services import store_dashboard_service as svc
+from app.services.excel_parser import parse_excel
+from app.services.store_name_utils import find_best_matching_store
 
 router = APIRouter(prefix="/admin/store-dashboard", tags=["管理员-经营数据管理"])
 
@@ -428,3 +431,78 @@ async def delete_analysis(
     await db.execute(sa_delete(OperationAnalysis).where(OperationAnalysis.id == analysis_id))
     await db.commit()
     return success(None, "删除成功")
+
+
+# ==================== Excel 导入 ====================
+
+@router.post("/import-excel")
+async def import_excel(
+    file: UploadFile = File(...),
+    store_id: Optional[str] = Query(None, description="可选：指定导入到某个门店（不传则自动匹配Excel中的门店名）"),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_roles("HQ", "SUPER_ADMIN")),
+):
+    """
+    上传周报 Excel 文件，一键导入营业额/套餐/运营指标/分析意见
+
+    Excel 格式要求：
+    - 必须包含 '营业额情况' sheet（营业额数据）
+    - 必须包含 '套餐数据' sheet（套餐核销数据）
+    - 门店 sheet（如 '大学城店'）为可选，包含运营指标和分析意见
+    - 门店名称需与系统中的门店名匹配
+    """
+    if not file.filename or not file.filename.endswith(('.xlsx', '.xls')):
+        return error("请上传 .xlsx 格式的 Excel 文件")
+
+    file_bytes = await file.read()
+    if len(file_bytes) < 100:
+        return error("文件内容为空或太小")
+
+    # 构建门店名 -> UUID 映射
+    store_name_map: dict[str, UUID] = {}
+    result = await db.execute(select(Store.id, Store.name))
+    for row in result.all():
+        store_name_map[row[1]] = row[0]
+
+    if not store_name_map:
+        return error("系统中没有门店数据，请先创建门店")
+
+    # 解析 Excel
+    parsed = parse_excel(file_bytes, store_name_map)
+
+    # 批量写入数据库
+    counts = {"revenue": 0, "package": 0, "metric": 0, "analysis": 0}
+
+    # 营业额
+    if parsed.revenues:
+        records = [RevenueRecord(**r, created_by=user.id) for r in parsed.revenues]
+        db.add_all(records)
+        counts["revenue"] = len(records)
+
+    # 套餐
+    if parsed.packages:
+        records = [PackageRecord(**r, created_by=user.id) for r in parsed.packages]
+        db.add_all(records)
+        counts["package"] = len(records)
+
+    # 运营指标
+    if parsed.metrics:
+        records = [StoreMetric(**r, created_by=user.id) for r in parsed.metrics]
+        db.add_all(records)
+        counts["metric"] = len(records)
+
+    # 分析意见
+    if parsed.analyses:
+        records = [OperationAnalysis(**r, created_by=user.id) for r in parsed.analyses]
+        db.add_all(records)
+        counts["analysis"] = len(records)
+
+    await db.commit()
+
+    total = sum(counts.values())
+    return success({
+        "imported": counts,
+        "total": total,
+        "errors": parsed.errors,
+        "filename": file.filename,
+    }, f"成功导入 {total} 条数据")

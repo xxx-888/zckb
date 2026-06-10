@@ -16,7 +16,7 @@ import {
 import { Card } from '../../components/ui/card';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
-import { MobileLayout } from '../../components/MobileLayout';
+import { MobileLayout, useStore } from '../../components/MobileLayout';
 import { cn } from '../../lib/utils';
 import { useToast } from '../../hooks/use-toast';
 
@@ -63,6 +63,8 @@ const reportTemplates: ReportTemplate[] = [
 export const ReportPage: React.FC = () => {
   const { success } = useToast();
   const navigate = useNavigate();
+  const { selectedStore } = useStore();
+  const storeName = selectedStore?.name || '全部门店';
   const [generating, setGenerating] = useState<string | null>(null);
   const [generated, setGenerated] = useState<Record<string, boolean>>({});
   const [copiedPrompt, setCopiedPrompt] = useState(false);
@@ -83,7 +85,7 @@ export const ReportPage: React.FC = () => {
 
   const handleAIPrompt = () => {
     const prompt = `请基于以下门店数据生成运营分析报告：
-- 门店：犇犇牛牛牛（大学城店）
+- 门店：${storeName}
 - 时间：5.24-31号
 - 营业额：¥124,580（环比+43.4%）
 - 美团营业额：¥31,290 | 抖音营业额：¥78,900
@@ -128,7 +130,7 @@ export const ReportPage: React.FC = () => {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Store className="w-4 h-4 text-white/70" />
-              <span className="text-sm font-bold text-white">犇犇牛牛牛（大学城店）</span>
+              <span className="text-sm font-bold text-white">{storeName}</span>
             </div>
             <div className="flex items-center gap-1.5 text-white/60">
               <Clock className="w-3.5 h-3.5" />

@@ -11,7 +11,7 @@ import {
   UserRound,
   Package,
   BarChart3,
-  Store,
+  Store as StoreIcon,
   ChevronRight,
   CheckCircle2,
 } from 'lucide-react';
@@ -19,7 +19,8 @@ import { Card } from '../../components/ui/card';
 import { Badge } from '../../components/ui/badge';
 import { Skeleton } from '../../components/ui/skeleton';
 import { Button } from '../../components/ui/button';
-import { MobileLayout } from '../../components/MobileLayout';
+import { MobileLayout, useStore } from '../../components/MobileLayout';
+import type { Store } from '../../api/stores';
 import { cn } from '../../lib/utils';
 import { useToast } from '../../hooks/use-toast';
 import {
@@ -36,7 +37,7 @@ interface TimeOption { value: string; label: string; dateRange: string; startDat
 function getWeekOptions(): TimeOption[] {
   const now = new Date();
   const formatDate = (d: Date) => `${d.getMonth() + 1}.${d.getDate()}`;
-  const toISO = (d: Date) => d.toISOString().slice(0, 10);
+  const toISO = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   const getWeekRange = (weeksAgo: number) => {
     // 计算N周前的周一到周日
     const ref = new Date(now.getTime() - weeksAgo * 7 * 86400000);
@@ -58,23 +59,40 @@ function getWeekOptions(): TimeOption[] {
 export const Dashboard: React.FC = () => {
   const { success } = useToast();
   const navigate = useNavigate();
-  const [timePeriod, setTimePeriod] = useState('current');
+  const { selectedStore } = useStore();
+  const [timePeriod, setTimePeriodState] = useState(() => localStorage.getItem('zc_time_period') || 'current');
   const [showTimeDropdown, setShowTimeDropdown] = useState(false);
   const dropdownRef = React.useRef<HTMLDivElement>(null);
   const timeOptions = React.useMemo(() => getWeekOptions(), []);
+
+  const setTimePeriod = (value: string) => {
+    setTimePeriodState(value);
+    localStorage.setItem('zc_time_period', value);
+  };
 
   const [data, setData] = useState<StoreDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // 获取当前选中的门店ID
+  const getEffectiveStoreId = useCallback(() => {
+    return selectedStore?.id || localStorage.getItem('zc_selected_store_id') || undefined;
+  }, [selectedStore?.id]);
+
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      const option = timeOptions.find(o => o.value === timePeriod);
+      const idx = timeOptions.findIndex(o => o.value === timePeriod);
+      const option = timeOptions[idx];
+      const prevOption = idx < timeOptions.length - 1 ? timeOptions[idx + 1] : null;
+      const storeId = getEffectiveStoreId();
       const result = await fetchStoreDashboard({
+        store_id: storeId,
         start_date: option?.startDate,
         end_date: option?.endDate,
+        compare_start: prevOption?.startDate,
+        compare_end: prevOption?.endDate,
       });
       setData(result);
     } catch (err) {
@@ -82,9 +100,33 @@ export const Dashboard: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [timePeriod, timeOptions]);
+  }, [timePeriod, timeOptions, getEffectiveStoreId]);
 
+  // 店铺变化或时间变化都触发重新请求
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // 监听 zc-store-changed 自定义事件（双重保险）
+  useEffect(() => {
+    const handler = (e: CustomEvent<Store>) => {
+      const storeFromEvent = e.detail;
+      console.log('[Dashboard] zc-store-changed event:', storeFromEvent?.name, storeFromEvent?.id);
+      if (storeFromEvent?.id) {
+        // 事件触发后 selectedStore 会更新，fetchData 会自动重跑
+        // 这里作为兜底，确保即使 React 状态更新有延迟也能响应
+      }
+    };
+    window.addEventListener('zc-store-changed', handler as any);
+    return () => window.removeEventListener('zc-store-changed', handler as any);
+  }, []);
+
+  // 监听数据分析页面时间切换事件，保持双向同步
+  useEffect(() => {
+    const handler = (e: CustomEvent<string>) => {
+      setTimePeriod(e.detail);
+    };
+    window.addEventListener('zc-time-period-changed', handler as any);
+    return () => window.removeEventListener('zc-time-period-changed', handler as any);
+  }, []);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -98,13 +140,14 @@ export const Dashboard: React.FC = () => {
     setTimePeriod(value);
     setShowTimeDropdown(false);
     success('时间筛选', `已切换到${timeOptions.find(o => o.value === value)?.label}`);
+    window.dispatchEvent(new CustomEvent('zc-time-period-changed', { detail: value }));
   };
 
   // ===== 快捷入口卡片 =====
   const quickActions = [
     { label: '营业额分析', desc: '趋势/渠道/客流', icon: Wallet, color: 'bg-orange-500', path: '/mobile/data-analysis?tab=revenue' },
     { label: '套餐分析', desc: '核销率/爆款', icon: Package, color: 'bg-indigo-500', path: '/mobile/data-analysis?tab=package' },
-    { label: '门店分析', desc: '流量/转化/评价', icon: Store, color: 'bg-emerald-500', path: '/mobile/data-analysis?tab=store' },
+    { label: '门店分析', desc: '流量/转化/评价', icon: StoreIcon, color: 'bg-emerald-500', path: '/mobile/data-analysis?tab=store' },
     { label: '生成报告', desc: '周报/月报', icon: BarChart3, color: 'bg-purple-500', path: '/mobile/report' },
   ];
 
@@ -130,7 +173,8 @@ export const Dashboard: React.FC = () => {
       <MobileLayout title="经营看板">
         <div className="p-4">
           <Card className="p-6 text-center">
-            <p className="text-sm text-slate-600 mb-4">{error || '暂无数据'}</p>
+            <p className="text-sm text-slate-600 mb-2">{error || '暂无数据'}</p>
+            <p className="text-xs text-slate-400 mb-4">请确认已选择正确的门店和时间范围</p>
             <Button onClick={() => fetchData()} className="bg-orange-500 hover:bg-orange-600 text-white">重试</Button>
           </Card>
         </div>

@@ -21,30 +21,47 @@ import {
 import { Card } from '../../components/ui/card';
 import { Badge } from '../../components/ui/badge';
 import { cn } from '../../lib/utils';
+import { MobileLayout, useStore } from '../../components/MobileLayout';
 import { fetchPackageAnalysis, type PackageAnalysisData } from '../../api/analysis';
 
-export const PackageAnalysisTab: React.FC = () => {
+export const PackageAnalysisTab: React.FC<{ startDate?: string; endDate?: string }> = ({ startDate, endDate }) => {
+  const { selectedStore } = useStore();
   const [data, setData] = useState<PackageAnalysisData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<'top' | 'bottom' | 'all'>('top');
 
   useEffect(() => {
     const load = async () => {
       try {
         setLoading(true);
-        const result = await fetchPackageAnalysis();
+        setError(null);
+        const storeId = selectedStore?.id || localStorage.getItem('zc_selected_store_id') || undefined;
+        const result = await fetchPackageAnalysis({ store_id: storeId, start_date: startDate, end_date: endDate });
         setData(result);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : '获取数据失败');
       } finally {
         setLoading(false);
       }
     };
     load();
-  }, []);
+  }, [selectedStore?.id, startDate, endDate]);
 
-  if (loading || !data) {
+  if (loading) {
     return (
       <div className="space-y-4 p-4">
         {[1,2].map(i => <Card key={i} className="p-4 animate-pulse"><div className="h-48 bg-slate-100 rounded-lg" /></Card>)}
+      </div>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+        <Package className="w-12 h-12 mb-3 opacity-50" />
+        <p className="text-sm">{error || '暂无套餐核销数据'}</p>
+        <p className="text-xs mt-1">{error ? '' : '请确认已选择正确的门店和时间范围'}</p>
       </div>
     );
   }

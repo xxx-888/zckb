@@ -10,6 +10,7 @@ import json
 import logging
 import multiprocessing
 import os
+import threading
 import time
 from typing import Optional
 from uuid import uuid4
@@ -87,7 +88,6 @@ PLATFORM_STORE_CONFIG = {
         "api_extract_script": """
         async (accountId) => {
             try {
-                // 美团开店宝资质管理接口 - 需要 accountId 参数
                 const requestBody = accountId
                     ? { request: { accountId: parseInt(accountId), keyword: '', pageNo: 1, pageSize: 10 } }
                     : {};
@@ -108,7 +108,6 @@ PLATFORM_STORE_CONFIG = {
                 const status = res.status;
                 const text = await res.text();
 
-                // 输出原始响应用于调试
                 console.log('[API Extract] Status:', status, 'AccountId:', accountId);
                 console.log('[API Extract] Response (first 500):', text.substring(0, 500));
 
@@ -138,9 +137,12 @@ PLATFORM_STORE_CONFIG = {
         """,
     },
     "douyin": {
-        "store_list_url": "https://life.douyin.com/p/dashboard",
+        # 抖音来客 - 门店管理页面，页面会自动调用 poiAccountList 接口
+        "store_list_url": "https://life.douyin.com/p/poi-manage/home",
         "cookie_domain": ".douyin.com",
-        "extract_script": None,  # TODO: 抖音店铺列表抓取
+        # 拦截的 API URL 关键字（用于 page.on("response") 匹配）
+        "api_url_pattern": "poiAccountList",
+        "extract_script": None,
         "api_extract_script": None,
     },
 }
@@ -216,10 +218,71 @@ def _sync_worker(task_id: str, platform: str, storage_state: dict, headless: boo
         # 捕获浏览器 console.log 输出到 Python logger
         page.on("console", lambda msg: logger.info(f"[Browser Console] {msg.type}: {msg.text}"))
 
-        # 先访问店铺列表页面，确保浏览器上下文建立完整的登录态
+        # ═══════════════════════════════════════════════
+        # 抖音来客特殊处理: 注册 response 监听器在导航之前
+        # poiAccountList 请求会在页面加载过程中发出，必须在 goto 前注册
+        # ═══════════════════════════════════════════════
+        douyin_captured_stores = []
+        douyin_capture_event = None
+
+        if platform == "douyin":
+            douyin_capture_event = threading.Event()
+            api_pattern = config.get("api_url_pattern", "poiAccountList")
+
+            def _on_response(response):
+                """监听 poiAccountList API 响应"""
+                try:
+                    url = response.url
+                    if api_pattern in url:
+                        logger.info(f"[StoreSync] ✓ Response captured: status={response.status}, url={url[:120]}")
+                        if response.status == 200:
+                            try:
+                                body = response.json()
+                            except Exception as json_err:
+                                logger.warning(f"[StoreSync] Failed to parse response JSON: {json_err}")
+                                # 尝试用 text() 手动解析
+                                try:
+                                    text_body = response.text()
+                                    body = json.loads(text_body)
+                                    logger.info(f"[StoreSync] Fallback text() parse succeeded")
+                                except Exception as e2:
+                                    logger.error(f"[StoreSync] All parse attempts failed: {e2}")
+                                    return
+                            status_code = body.get("status_code")
+                            logger.info(f"[StoreSync] poiAccountList response: status_code={status_code}")
+                            store_list = body.get("data", {}).get("list", [])
+                            pagination = body.get("data", {}).get("pagination", {})
+                            logger.info(f"[StoreSync] poiAccountList: {len(store_list)} accounts, pagination={pagination}")
+                            for item in store_list:
+                                poi_id = str(item.get("poi_id") or "")
+                                account_name = item.get("account_name") or item.get("detail", {}).get("life_account_name") or ""
+                                account_id = str(item.get("account_id") or "")
+                                status = item.get("status")
+                                logger.info(f"[StoreSync]   → account_name={account_name}, poi_id={poi_id}, status={status}")
+                                # 过滤无效门店：poi_id 为 "0" 或空
+                                if not poi_id or poi_id == "0":
+                                    logger.info(f"[StoreSync]   ✗ Skipping invalid store (poi_id=0 or empty)")
+                                    continue
+                                douyin_captured_stores.append({
+                                    "platform_store_id": poi_id,
+                                    "platform_store_name": account_name,
+                                    "platform_account_id": account_id,
+                                    "status": status,
+                                })
+                            douyin_capture_event.set()
+                        else:
+                            logger.warning(f"[StoreSync] poiAccountList HTTP status={response.status}")
+                except Exception as e:
+                    logger.warning(f"[StoreSync] Response handler error: {e}")
+
+            page.on("response", _on_response)
+            logger.info(f"[StoreSync] Response listener registered for pattern: '{api_pattern}' (BEFORE navigation)")
+
+        # 导航到店铺列表页面（抖音用 domcontentloaded 因为 SPA 有持续监控请求，美团用 networkidle）
         store_url = config["store_list_url"]
-        logger.info(f"[StoreSync Worker] Navigating to {store_url}")
-        page.goto(store_url, wait_until="networkidle", timeout=30000)
+        wait_mode = "domcontentloaded" if platform == "douyin" else "networkidle"
+        logger.info(f"[StoreSync Worker] Navigating to {store_url} (wait_until={wait_mode})")
+        page.goto(store_url, wait_until=wait_mode, timeout=30000)
 
         # 等待页面和接口响应充分完成
         page.wait_for_timeout(3000)
@@ -276,7 +339,47 @@ def _sync_worker(task_id: str, platform: str, storage_state: dict, headless: boo
                 logger.warning(f"[StoreSync Worker] DOM extraction failed: {e}")
 
         # ═══════════════════════════════════════════════
-        # 策略3: 拦截页面请求 — 用 route 拦截 API 响应获取数据
+        # 策略3: 抖音来客 — 使用预注册的 poiAccountList API 响应数据
+        # 监听器在 page.goto() 之前已注册，这里检查捕获结果
+        # ═══════════════════════════════════════════════
+        if not stores and platform == "douyin" and douyin_capture_event is not None:
+            try:
+                # 等待 API 响应被捕获（最多 15 秒）
+                captured = douyin_capture_event.wait(timeout=15)
+                # 额外等待 3 秒，给 SPA 分页请求留出时间
+                page.wait_for_timeout(3000)
+
+                # 如果首次未捕获到，尝试 reload 触发（SPA 可能因路由未变化而不重新请求）
+                if not captured:
+                    logger.info(f"[StoreSync] First pass no capture, reloading page to re-trigger API...")
+                    # reload 前重置 event，以便捕获新的响应
+                    douyin_capture_event.clear()
+                    page.reload(wait_until="domcontentloaded", timeout=30000)
+                    captured = douyin_capture_event.wait(timeout=15)
+                    page.wait_for_timeout(3000)  # 同样给分页请求留时间
+
+                if douyin_captured_stores:
+                    stores = douyin_captured_stores
+                    extract_method = "api_intercept"
+                    logger.info(f"[StoreSync] ✓ Douyin API intercept: {len(stores)} valid stores captured")
+                    # 打印所有捕获的店铺名
+                    for s in stores:
+                        logger.info(f"[StoreSync]   ✓ {s.get('platform_store_name', '')} (poi_id={s.get('platform_store_id', '')})")
+                else:
+                    logger.warning(f"[StoreSync] ✗ Douyin API intercept: no stores captured (captured={captured})")
+                    logger.warning(f"[StoreSync] Current page URL: {page.url}")
+
+            except Exception as e:
+                logger.error(f"[StoreSync] Douyin API intercept error: {e}", exc_info=True)
+
+            # 移除监听器
+            try:
+                page.remove_listener("response", _on_response)
+            except Exception:
+                pass
+
+        # ═══════════════════════════════════════════════
+        # 策略4: 拦截页面请求 — 用 route 拦截 API 响应获取数据（美团）
         # 当页面本身会调用 pagePoiQualificationForMerchant 时，直接拿响应
         # ═══════════════════════════════════════════════
         if not stores and platform == "meituan":

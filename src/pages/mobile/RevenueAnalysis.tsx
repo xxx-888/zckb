@@ -31,13 +31,15 @@ import { Card } from '../../components/ui/card';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { cn } from '../../lib/utils';
+import { MobileLayout, useStore } from '../../components/MobileLayout';
 import { fetchRevenueTrend, type RevenueTrendData } from '../../api/analysis';
 import { useToast } from '../../hooks/use-toast';
 
 const COLORS = ['#f59e0b', '#111827', '#6366f1'];
 
-export const RevenueAnalysis: React.FC = () => {
+export const RevenueAnalysis: React.FC<{ startDate?: string; endDate?: string }> = ({ startDate, endDate }) => {
   const { success } = useToast();
+  const { selectedStore } = useStore();
   const [data, setData] = useState<RevenueTrendData | null>(null);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<'daily' | 'weekly'>('daily');
@@ -46,14 +48,15 @@ export const RevenueAnalysis: React.FC = () => {
     const load = async () => {
       try {
         setLoading(true);
-        const result = await fetchRevenueTrend();
+        const storeId = selectedStore?.id || localStorage.getItem('zc_selected_store_id') || undefined;
+        const result = await fetchRevenueTrend({ store_id: storeId, start_date: startDate, end_date: endDate });
         setData(result);
       } finally {
         setLoading(false);
       }
     };
     load();
-  }, []);
+  }, [selectedStore?.id, startDate, endDate]);
 
   if (loading || !data) {
     return (

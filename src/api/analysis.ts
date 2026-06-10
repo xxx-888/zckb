@@ -135,12 +135,12 @@ export async function fetchRevenueTrend(params?: AnalysisParams): Promise<Revenu
 }
 
 /** 获取套餐分析排行 */
-export async function fetchPackageAnalysis(params?: AnalysisParams): Promise<PackageAnalysisData> {
+export async function fetchPackageAnalysis(params?: AnalysisParams): Promise<PackageAnalysisData | null> {
   try {
     const res = await api.get<any>(`${API_BASE}/packages/ranking`, { params });
     const data = res?.data || res;
     if (!data) {
-      return { top_ranking: [], bottom_ranking: [], overall_summary: { total_buy: 0, total_verify: 0, avg_verify_rate: 0 } };
+      return null;
     }
     return {
       top_ranking: (data.top_ranking || []).map((r: any) => ({
@@ -164,7 +164,7 @@ export async function fetchPackageAnalysis(params?: AnalysisParams): Promise<Pac
       overall_summary: data.overall_summary || { total_buy: 0, total_verify: 0, avg_verify_rate: 0 },
     };
   } catch {
-    return { top_ranking: [], bottom_ranking: [], overall_summary: { total_buy: 0, total_verify: 0, avg_verify_rate: 0 } };
+    return null;
   }
 }
 

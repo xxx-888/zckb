@@ -15,6 +15,7 @@ import {
   fetchPackageList, createPackage, updatePackage, deletePackage, batchCreatePackages,
   fetchMetricList, createMetric, updateMetric, deleteMetric, batchCreateMetrics,
   fetchAnalysisList, createAnalysis, updateAnalysis, deleteAnalysis,
+  importExcel, type ExcelImportResult,
   type StoreOption,
   type RevenueRecord,
   type PackageRecord,
@@ -36,11 +37,37 @@ export const DashboardDataManager: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('revenue');
   const [stores, setStores] = useState<StoreOption[]>([]);
   const [loadingStores, setLoadingStores] = useState(true);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<ExcelImportResult | null>(null);
 
   // 加载门店列表
   useEffect(() => {
     fetchStores().then(list => { setStores(list); setLoadingStores(false); }).catch(() => setLoadingStores(false));
   }, []);
+
+  // Excel 导入
+  const handleImportExcel = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const result = await importExcel(file);
+      setImportResult(result);
+      if (result.total > 0) {
+        toastSuccess(`成功导入 ${result.total} 条数据`);
+      }
+      if (result.errors.length > 0) {
+        toastError(`${result.errors.length} 个警告: ${result.errors[0]}`);
+      }
+    } catch (err: any) {
+      toastError(err?.message || '导入失败');
+    } finally {
+      setImporting(false);
+      // 重置 input
+      e.target.value = '';
+    }
+  }, [toastSuccess, toastError]);
 
   const storeMap = React.useMemo(() => {
     const m: Record<string, string> = {};
@@ -63,6 +90,36 @@ export const DashboardDataManager: React.FC = () => {
             </div>
           </div>
           {loadingStores && <Loader2 className="w-5 h-5 animate-spin text-slate-400" />}
+        </div>
+
+        {/* Excel 导入区域 */}
+        <div className="flex items-center gap-3">
+          <label className="cursor-pointer">
+            <input
+              type="file"
+              accept=".xlsx,.xls"
+              className="hidden"
+              onChange={handleImportExcel}
+              disabled={importing}
+            />
+            <div className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-700 rounded-lg hover:bg-emerald-100 transition-colors border border-emerald-200 text-sm font-medium">
+              {importing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+              {importing ? '导入中...' : '导入周报 Excel'}
+            </div>
+          </label>
+          {importResult && (
+            <div className="flex items-center gap-3 text-sm">
+              <span className="text-emerald-600 font-medium">
+                {importResult.total} 条已导入
+              </span>
+              <span className="text-slate-400">
+                营业额 {importResult.imported.revenue} | 套餐 {importResult.imported.package} | 指标 {importResult.imported.metric} | 分析 {importResult.imported.analysis}
+              </span>
+              <button onClick={() => setImportResult(null)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Tab 切换 */}

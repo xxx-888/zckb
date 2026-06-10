@@ -15,6 +15,7 @@ import {
 import { Card } from '../../components/ui/card';
 import { Badge } from '../../components/ui/badge';
 import { cn } from '../../lib/utils';
+import { MobileLayout, useStore } from '../../components/MobileLayout';
 import { fetchStoreHealth, type StoreHealthData } from '../../api/analysis';
 
 const platformColors: Record<string, string> = {
@@ -29,7 +30,8 @@ const platformTextColors: Record<string, string> = {
   '抖音': 'text-slate-900',
 };
 
-export const StoreAnalysis: React.FC = () => {
+export const StoreAnalysis: React.FC<{ startDate?: string; endDate?: string }> = ({ startDate, endDate }) => {
+  const { selectedStore } = useStore();
   const [data, setData] = useState<StoreHealthData | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -37,14 +39,15 @@ export const StoreAnalysis: React.FC = () => {
     const load = async () => {
       try {
         setLoading(true);
-        const result = await fetchStoreHealth();
+        const storeId = selectedStore?.id || localStorage.getItem('zc_selected_store_id') || undefined;
+        const result = await fetchStoreHealth({ store_id: storeId, start_date: startDate, end_date: endDate });
         setData(result);
       } finally {
         setLoading(false);
       }
     };
     load();
-  }, []);
+  }, [selectedStore?.id, startDate, endDate]);
 
   if (loading || !data) {
     return (

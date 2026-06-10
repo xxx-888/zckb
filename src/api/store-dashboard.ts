@@ -202,11 +202,11 @@ function mapPackagePeriod(raw: any): PackagePeriodData {
 // ==================== 看板查询 API ====================
 
 /** 获取看板完整数据（聚合接口） */
-export async function fetchStoreDashboard(params?: DashboardParams): Promise<StoreDashboardData> {
+export async function fetchStoreDashboard(params?: DashboardParams): Promise<StoreDashboardData | null> {
   const res = await api.get<any>(`${API_BASE}/overview`, { params });
   const data = res?.data || res;
   if (!data) {
-    return getFallbackData();
+    return null;
   }
   return {
     revenue: mapRevenueData(data.revenue || {}),

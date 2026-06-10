@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Link2, Unlink, CheckCircle2, AlertCircle, Plus,
   Loader2, RefreshCw, X, Eye, EyeOff, Pencil, FileText,
-  QrCode, Clock, Smartphone, ShieldCheck, MessageSquare, Keyboard
+  QrCode, Clock, Smartphone, ShieldCheck, MessageSquare, Keyboard, History
 } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { useToast } from '../../hooks/use-toast';
@@ -359,6 +359,7 @@ export default function PlatformConnection() {
   // 同步评论数据（轮询模式，跟扫码登录一样的体验）
   const syncReviewsTaskRef = useRef<{ accountId: string; taskId: string } | null>(null);
   const syncReviewsPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [syncReviewsReady, setSyncReviewsReady] = useState(false);
 
   const cleanupSyncReviews = () => {
     if (syncReviewsPollRef.current) {
@@ -368,10 +369,11 @@ export default function PlatformConnection() {
     syncReviewsTaskRef.current = null;
     setSyncingReviewsId(null);
     setSyncReviewsProgress('');
+    setSyncReviewsReady(false);
   };
 
   useEffect(() => {
-    if (!syncingReviewsId || !syncReviewsTaskRef.current) return;
+    if (!syncReviewsReady || !syncingReviewsId || !syncReviewsTaskRef.current) return;
 
     const poll = async () => {
       const { accountId, taskId } = syncReviewsTaskRef.current!;
@@ -386,7 +388,6 @@ export default function PlatformConnection() {
         }
 
         if (status.status === 'success') {
-          // 同步完成（入库已在后台完成），直接从 status.result 取统计
           clearInterval(syncReviewsPollRef.current!);
           syncReviewsPollRef.current = null;
           const result = status.result || {};
@@ -398,7 +399,6 @@ export default function PlatformConnection() {
           } else {
             success('评论同步完成', `新增 ${created} 条评论${skipped > 0 ? `，跳过 ${skipped} 条重复` : ''}${errs.length > 0 ? `\n${errs.join('; ')}` : ''}`);
           }
-          window.dispatchEvent(new Event('visibilitychange'));
           cleanupSyncReviews();
         } else if (status.status === 'failed') {
           clearInterval(syncReviewsPollRef.current!);
@@ -412,7 +412,8 @@ export default function PlatformConnection() {
       }
     };
 
-    // 2秒轮询
+    // 首次立即执行一次，然后 2秒轮询
+    poll();
     syncReviewsPollRef.current = setInterval(poll, 2000);
 
     return () => {
@@ -421,28 +422,24 @@ export default function PlatformConnection() {
         syncReviewsPollRef.current = null;
       }
     };
-  }, [syncingReviewsId, syncReviewsTaskRef.current]);
+  }, [syncReviewsReady]);
 
-  const handleSyncReviews = async (accountId: string) => {
+  const handleSyncReviews = async (accountId: string, syncMode: 'incremental' | 'full' = 'incremental') => {
     try {
       setSyncingReviewsId(accountId);
-      setSyncReviewsProgress('准备中...');
-      const result = await platformsApi.syncAccountReviews(accountId);
+      setSyncReviewsProgress(syncMode === 'full' ? '全量同步中...' : '增量同步中...');
+      const result = await platformsApi.syncAccountReviews(accountId, syncMode);
       const taskId = result.task_id;
       if (!taskId) {
         toastError('评论同步失败', '未返回任务 ID');
-        setSyncingReviewsId(null);
+        cleanupSyncReviews();
         return;
       }
-      // 保存任务信息，触发轮询 effect
       syncReviewsTaskRef.current = { accountId, taskId };
-      // 手动触发 re-render 让 useEffect 重新绑定
-      setSyncingReviewsId(accountId);
-      setSyncReviewsProgress('同步中...');
+      setSyncReviewsReady(true);
     } catch (err: any) {
       toastError('评论同步失败', err.message || '网络错误');
-      setSyncingReviewsId(null);
-      setSyncReviewsProgress('');
+      cleanupSyncReviews();
     }
   };
 
@@ -494,7 +491,7 @@ export default function PlatformConnection() {
                           </div>
                           <div className="min-w-0 flex-1">
                             <p className="text-sm font-semibold text-slate-900 truncate">{account.platform_username || '未获取用户名'}</p>
-                            <p className="text-xs text-slate-500">{pInfo.label}</p>
+                            <p className="text-xs text-slate-500">{pInfo.label}{account.platform_account_id ? ` · ID: ${account.platform_account_id}` : ''}</p>
                           </div>
                         </div>
                         {getStatusBadge(account)}
@@ -510,9 +507,13 @@ export default function PlatformConnection() {
                           {syncingId === account.id ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <RefreshCw className="w-3 h-3 mr-1" />}
                           {syncingId === account.id ? '同步中' : '同步状态'}
                         </Button>
-                        <Button size="sm" variant="outline" onClick={() => handleSyncReviews(account.id)} disabled={syncingReviewsId === account.id || account.cookies_status !== 'valid'} className="rounded-lg border-orange-200 text-orange-600 hover:bg-orange-50 text-xs">
+                        <Button size="sm" variant="outline" onClick={() => handleSyncReviews(account.id, 'incremental')} disabled={syncingReviewsId === account.id || account.cookies_status !== 'valid'} className="rounded-lg border-orange-200 text-orange-600 hover:bg-orange-50 text-xs">
                           {syncingReviewsId === account.id ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <FileText className="w-3 h-3 mr-1" />}
-                          {syncingReviewsId === account.id ? (syncReviewsProgress || '同步中...').split(' - ')[0] : '同步评论'}
+                          {syncingReviewsId === account.id ? (syncReviewsProgress || '同步中...').split(' - ')[0] : '增量同步'}
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => handleSyncReviews(account.id, 'full')} disabled={syncingReviewsId === account.id || account.cookies_status !== 'valid'} className="rounded-lg border-violet-200 text-violet-600 hover:bg-violet-50 text-xs">
+                          <History className="w-3 h-3 mr-1" />
+                          全量同步
                         </Button>
                         <Button size="sm" variant="outline" className="border-rose-200 text-rose-600 hover:bg-rose-50 rounded-lg" onClick={() => handleUnbind(account.id)} disabled={actionLoading}>
                           <Unlink className="w-3.5 h-3.5" />
@@ -669,7 +670,10 @@ export default function PlatformConnection() {
             {smsStep === 'phone' ? (
               /* 第一步：输入手机号 */
               <div>
-                <p className="text-sm text-slate-500 mb-6">我们将向您的手机号发送验证码，请在抖音来客后台完成登录绑定。</p>
+                <p className="text-sm text-slate-500 mb-6">
+                  系统将自动打开抖音来客登录页并填入手机号、点击发送验证码。
+                  请确保您的手机号已注册抖音来客商家账号。
+                </p>
 
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-slate-700 mb-2">手机号码</label>
@@ -712,6 +716,9 @@ export default function PlatformConnection() {
                   <span>验证码已发送至</span>
                   <span className="font-medium text-slate-700">{smsPhone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2')}</span>
                 </div>
+                <p className="text-xs text-slate-400 mb-4">
+                  系统将自动填入验证码、勾选协议并完成登录，请输入手机收到的验证码即可。
+                </p>
                 <button onClick={handleSMSBack} className="text-sm text-indigo-600 mb-4 hover:underline">
                   更换手机号
                 </button>

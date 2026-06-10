@@ -109,17 +109,21 @@ async def get_reviews(
             )
         )
 
-    # 日期范围
+    # 日期范围（按平台评论时间筛选，无评论时间则按入库时间）
     if filters.get("start_date"):
         try:
             start = datetime.strptime(filters["start_date"], "%Y-%m-%d")
-            conditions.append(Review.created_at >= start)
+            conditions.append(
+                or_(Review.platform_created_at >= start, and_(Review.platform_created_at.is_(None), Review.created_at >= start))
+            )
         except ValueError:
             pass
     if filters.get("end_date"):
         try:
             end = datetime.strptime(filters["end_date"], "%Y-%m-%d") + timedelta(days=1)
-            conditions.append(Review.created_at < end)
+            conditions.append(
+                or_(Review.platform_created_at < end, and_(Review.platform_created_at.is_(None), Review.created_at < end))
+            )
         except ValueError:
             pass
 
@@ -138,7 +142,7 @@ async def get_reviews(
         select(Review)
         .options(joinedload(Review.store))
         .where(where_clause)
-        .order_by(Review.created_at.desc())
+        .order_by(Review.platform_created_at.desc().nullslast(), Review.created_at.desc())
         .offset(offset)
         .limit(page_size)
     )

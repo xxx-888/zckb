@@ -293,9 +293,13 @@ async def get_similar_reviews(
         data = SimilarReviewResponse(
             id=review.id,
             user_name=review.user_name,
+            user_avatar=review.user_avatar,
             content=review.content,
             rating=review.rating,
             sentiment=review.sentiment,
+            platform=review.platform,
+            platform_created_at=review.platform_created_at,
+            images=review.images,
             similarity_score=round(1.0 - idx * 0.15, 2),  # 简化的相似度计算
         ).model_dump(mode="json")
         items.append(data)

@@ -288,7 +288,20 @@ export const ReviewManagement: React.FC = () => {
                         {r.platform && <span className="text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">{r.platform}</span>}
                       </div>
                     </td>
-                    <td className="p-3 text-xs text-slate-600">{r.user_name || r.user || '匿名'}</td>
+                    <td className="p-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg overflow-hidden bg-slate-100 flex-shrink-0 border border-slate-50">
+                          {r.user_avatar ? (
+                            <img src={r.user_avatar} alt={r.user_name || '用户'} className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-[10px] font-bold text-slate-400">
+                              {(r.user_name || r.user || '?')[0]}
+                            </div>
+                          )}
+                        </div>
+                        <span className="text-xs text-slate-600 truncate max-w-[80px]">{r.user_name || r.user || '匿名'}</span>
+                      </div>
+                    </td>
                     <td className="p-3 max-w-[300px]"><p className="text-xs text-slate-700 line-clamp-2">{r.content}</p></td>
                     <td className="p-3 text-center">{normalizeImageUrls(r.images).length > 0 && <Badge className="bg-emerald-50 text-emerald-600 text-[10px]">{normalizeImageUrls(r.images).length}图</Badge>}</td>
                     <td className="p-3 text-center text-amber-500 text-xs">{starRating(r.rating)}</td>

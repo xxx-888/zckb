@@ -182,3 +182,26 @@ export async function updateAnalysis(id: string, data: any): Promise<any> {
 export async function deleteAnalysis(id: string): Promise<any> {
   return api.delete(`${API_BASE}/analysis/${id}`);
 }
+
+// ==================== Excel 导入 ====================
+
+export interface ExcelImportResult {
+  imported: {
+    revenue: number;
+    package: number;
+    metric: number;
+    analysis: number;
+  };
+  total: number;
+  errors: string[];
+  filename: string;
+}
+
+export async function importExcel(file: File): Promise<ExcelImportResult> {
+  const formData = new FormData();
+  formData.append('file', file);
+  const res = await api.post<any>(`${API_BASE}/import-excel`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return res?.data || res;
+}

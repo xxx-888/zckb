@@ -118,9 +118,13 @@ class SimilarReviewResponse(BaseModel):
 
     id: UUID
     user_name: Optional[str] = None
+    user_avatar: Optional[str] = None
     content: Optional[str] = None
     rating: int
     sentiment: Optional[str] = None
+    platform: Optional[str] = None
+    platform_created_at: Optional[datetime] = None
+    images: Optional[list[Union[str, dict]]] = None
     similarity_score: float = 0.0
 
     model_config = {"from_attributes": True}

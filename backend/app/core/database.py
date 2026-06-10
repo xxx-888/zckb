@@ -105,6 +105,7 @@ async def init_db() -> None:
     import app.models.verification_code  # 导入验证码模型
     import app.models.region  # 导入区域模型
     import app.models.user_region  # 导入用户-区域关联表
+    import app.models.store_dashboard  # 导入经营看板模型（revenue/package/metric/analysis）
     
     async with async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

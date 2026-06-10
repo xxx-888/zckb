@@ -84,8 +84,9 @@ export const platformsApi = {
   },
 
   // 同步平台评论数据（异步，返回 task_id）
-  syncAccountReviews: async (accountId: string): Promise<{ task_id: string; platforms: string[]; store_count: number }> => {
-    const response = await api.post<any>(`/v1/platforms/accounts/${accountId}/sync-reviews`);
+  // sync_mode: 'incremental'(增量，近30天) | 'full'(全量，所有历史)
+  syncAccountReviews: async (accountId: string, syncMode: 'incremental' | 'full' = 'incremental'): Promise<{ task_id: string; platforms: string[]; store_count: number }> => {
+    const response = await api.post<any>(`/v1/platforms/accounts/${accountId}/sync-reviews`, null, { params: { sync_mode: syncMode } });
     return response.data || response;
   },
 
