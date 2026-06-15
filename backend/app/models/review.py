@@ -154,3 +154,4 @@ class ReplyAudit(BaseModel):
 
     # -- 关系 --
     review: Mapped[Review] = relationship("Review", back_populates="reply_audits")
+    store: Mapped[Store] = relationship("Store")
