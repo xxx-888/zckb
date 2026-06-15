@@ -20,12 +20,21 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const { success } = useToast();
 
   const fetchStores = useCallback(async () => {
+    // 无 token 时跳过请求，避免 401 循环
+    if (!localStorage.getItem('auth_token')) {
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
       const response = await storesApi.getStores({ page: 1, page_size: 100 });
       const storeList = response.items || [];
       setStores(storeList);
-    } catch (err) {
+    } catch (err: any) {
+      // 401 错误由 api.ts 拦截器统一处理（清除 token + 跳转登录页），这里不重复处理
+      if (err?.isAuthError || err?.status === 401) {
+        return;
+      }
       console.error('[StoreContext] 获取店铺列表失败:', err);
     } finally {
       setLoading(false);

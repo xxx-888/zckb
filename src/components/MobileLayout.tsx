@@ -91,6 +91,12 @@ export const MobileLayout: React.FC<MobileLayoutProps> = ({ children, title }) =
 
   // 获取平台账号状态
   useEffect(() => {
+    // 无 token 时跳过请求，避免 401 循环
+    if (!localStorage.getItem('auth_token')) {
+      setHasPlatformAccount(false);
+      setAccountCheckDone(true);
+      return;
+    }
     if (!hasValidSubscription) {
       setHasPlatformAccount(false);
       setAccountCheckDone(true);
@@ -106,6 +112,10 @@ export const MobileLayout: React.FC<MobileLayoutProps> = ({ children, title }) =
         console.log('[MobileLayout] getAccounts 返回:', data);
         setHasPlatformAccount(data.length > 0);
       } catch (err: any) {
+        // 401 由 api.ts 拦截器统一处理（清除 token + 跳转登录页），不重复处理
+        if (err?.isAuthError || err?.status === 401) {
+          return;
+        }
         console.error('[MobileLayout] getAccounts 失败:', err);
         setHasPlatformAccount(false);
       } finally {

@@ -3,7 +3,7 @@ import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
 /**
  * 统一API客户端配置
  * 包含所有请求/响应拦截器、错误处理
- * 
+ *
  * 请求流程:
  * 1. 前端请求路径: /api/dashboard/xxx
  * 2. Vite代理匹配 /api 前缀，转发到 http://localhost:8000/dashboard/xxx
@@ -11,6 +11,42 @@ import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
  */
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
+
+// ═══════════════════════════════════════════════════════════
+// 401 处理：防止多个并行 401 响应同时触发多次重定向
+// 使用模块级标志位 + 延迟跳转，确保只执行一次清理+跳转
+// ═══════════════════════════════════════════════════════════
+let isHandling401 = false;
+
+function handle401Unauthorized(responseData?: any) {
+  if (isHandling401) return; // 已在处理中，跳过
+  isHandling401 = true;
+
+  const message = responseData?.message || '登录已过期，请重新登录';
+  console.warn('[API] 401 未授权:', message);
+
+  // 清除本地存储的认证信息
+  localStorage.removeItem('auth_token');
+  localStorage.removeItem('user_info');
+
+  // 根据当前路径决定跳转到哪个登录页
+  const currentPath = window.location.pathname;
+  const isAdmin = currentPath.startsWith('/admin');
+  const loginPath = isAdmin ? '/admin' : '/mobile/login';
+
+  // 如果当前不在登录页，则跳转
+  if (currentPath !== loginPath && currentPath !== '/mobile/login' && currentPath !== '/admin') {
+    // 延迟跳转，让其他并行请求的 401 也能被捕获（避免中断）
+    setTimeout(() => {
+      window.location.href = loginPath;
+      // 跳转完成后重置标志位（页面会重新加载，但以防万一）
+      setTimeout(() => { isHandling401 = false; }, 1000);
+    }, 300);
+  } else {
+    // 已在登录页，只需重置标志位
+    isHandling401 = false;
+  }
+}
 
 class ApiClient {
   private client: AxiosInstance;
@@ -49,6 +85,20 @@ class ApiClient {
         const statusCode = error.response?.status;
         const responseData = error.response?.data;
         const suppress404 = error.config?._suppress404;
+
+        // ═══════════════════════════════════════════════
+        // 401 未授权：token 过期或无效，清除凭据并重定向到登录页
+        // ═══════════════════════════════════════════════
+        if (statusCode === 401) {
+          handle401Unauthorized(responseData);
+
+          const message = responseData?.message || '登录已过期，请重新登录';
+          const err: any = new Error(message);
+          err.response = error.response;
+          err.status = 401;
+          err.isAuthError = true;
+          return Promise.reject(err);
+        }
 
         // 402 订阅过期：延迟跳转，避免立即 location.href 中断所有并行请求
         if (statusCode === 402) {

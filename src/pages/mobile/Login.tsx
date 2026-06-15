@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Brain, Lock, User, ArrowRight, Eye, EyeOff } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { useToast } from '../../hooks/use-toast';
@@ -12,6 +12,7 @@ export const Login: React.FC = () => {
   const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { success, error } = useToast();
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -43,8 +44,11 @@ export const Login: React.FC = () => {
         localStorage.setItem('rememberedPhone', phone);
       }
       
-      // 根据角色跳转
-      if (response.user.role === 'HQ' || response.user.role === 'OPERATOR') {
+      // 登录后跳转：优先跳回原页面，否则按角色跳转
+      const redirect = searchParams.get('redirect');
+      if (redirect) {
+        navigate(decodeURIComponent(redirect), { replace: true });
+      } else if (response.user.role === 'HQ' || response.user.role === 'OPERATOR') {
         navigate('/mobile/dashboard');
       } else {
         navigate('/mobile/dashboard');

@@ -9,12 +9,17 @@ interface AdminGuardProps {
 /**
  * 管理后台路由守卫
  * 仅 SUPER_ADMIN 角色可以访问，其他角色重定向到移动端首页
+ * 同时检查 auth_token 和 user_info 是否存在
  */
 export const AdminGuard: React.FC<AdminGuardProps> = ({ children }) => {
+  const token = localStorage.getItem('auth_token');
   const user = authApi.getStoredUser();
 
-  // 未登录 → 跳转登录页
-  if (!user) {
+  // 未登录（无 token 或无用户信息）→ 跳转登录页
+  if (!token || !user) {
+    // 清除可能残留的不一致数据
+    localStorage.removeItem('auth_token');
+    localStorage.removeItem('user_info');
     return <Navigate to="/admin" replace />;
   }
 

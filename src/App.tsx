@@ -7,6 +7,7 @@ import { SubscriptionProvider } from './hooks/use-subscription-check';
 // 后台管理页面
 import { AdminLogin } from './pages/admin/AdminLogin';
 import { AdminGuard } from './components/AdminGuard';
+import { MobileGuard } from './components/MobileGuard';
 import { AdminDashboard } from './pages/admin/AdminDashboard';
 import { AIConfig } from './pages/admin/AIConfig';
 import { CompetitorAnalysis } from './pages/admin/CompetitorAnalysis';
@@ -79,34 +80,37 @@ function AppContent() {
           <Route path="/" element={<Navigate to="/mobile" replace />} />
 
           {/* ==================== 移动端路由 ==================== */}
-          <Route path="/mobile" element={<Dashboard />} />
+          {/* 公开页面（无需登录） */}
           <Route path="/mobile/login" element={<Login />} />
           <Route path="/mobile/register" element={<Register />} />
           <Route path="/mobile/forgot-password" element={<ForgotPassword />} />
-          <Route path="/mobile/store-list" element={<StoreList />} />
-          <Route path="/mobile/store-detail/:id" element={<StoreDetail />} />
-          <Route path="/mobile/dashboard" element={<Dashboard />} />
-          <Route path="/mobile/ai-analysis" element={<AIAnalysis />} />
-          <Route path="/mobile/insights" element={<Insights />} />
-          <Route path="/mobile/data-analysis" element={<DataAnalysis />} />
-          <Route path="/mobile/report" element={<ReportPage />} />
-          <Route path="/mobile/negative-reply" element={<NegativeReply />} />
-          <Route path="/mobile/positive-activation" element={<PositiveActivation />} />
-          <Route path="/mobile/review-stream" element={<ReviewStream />} />
-          <Route path="/mobile/review-detail/:id" element={<MobileReviewDetail />} />
-          <Route path="/mobile/platform-detail/:platform" element={<PlatformDetail />} />
-          <Route path="/mobile/annual-report" element={<MobileAnnualReport />} />
-          <Route path="/mobile/competitor-analysis" element={<MobileCompetitorAnalysis />} />
-          <Route path="/mobile/settings" element={<Settings />} />
-          <Route path="/mobile/store-settings" element={<StoreSettings />} />
-          <Route path="/mobile/reply-template" element={<ReplyTemplate />} />
-          <Route path="/mobile/platform-connection" element={<PlatformConnection />} />
-          <Route path="/mobile/notification-settings" element={<NotificationSettings />} />
-          <Route path="/mobile/auto-reply-settings" element={<AutoReplySettings />} />
-          <Route path="/mobile/help-center" element={<HelpCenter />} />
-          <Route path="/mobile/subscription" element={<Subscription />} />
-          <Route path="/mobile/dish-elimination" element={<DishElimination />} />
-          <Route path="/mobile/traceability-detail/:reportId" element={<TraceabilityDetail />} />
+
+          {/* 需要登录的移动端页面 */}
+          <Route path="/mobile" element={<MobileGuard><Dashboard /></MobileGuard>} />
+          <Route path="/mobile/store-list" element={<MobileGuard><StoreList /></MobileGuard>} />
+          <Route path="/mobile/store-detail/:id" element={<MobileGuard><StoreDetail /></MobileGuard>} />
+          <Route path="/mobile/dashboard" element={<MobileGuard><Dashboard /></MobileGuard>} />
+          <Route path="/mobile/ai-analysis" element={<MobileGuard><AIAnalysis /></MobileGuard>} />
+          <Route path="/mobile/insights" element={<MobileGuard><Insights /></MobileGuard>} />
+          <Route path="/mobile/data-analysis" element={<MobileGuard><DataAnalysis /></MobileGuard>} />
+          <Route path="/mobile/report" element={<MobileGuard><ReportPage /></MobileGuard>} />
+          <Route path="/mobile/negative-reply" element={<MobileGuard><NegativeReply /></MobileGuard>} />
+          <Route path="/mobile/positive-activation" element={<MobileGuard><PositiveActivation /></MobileGuard>} />
+          <Route path="/mobile/review-stream" element={<MobileGuard><ReviewStream /></MobileGuard>} />
+          <Route path="/mobile/review-detail/:id" element={<MobileGuard><MobileReviewDetail /></MobileGuard>} />
+          <Route path="/mobile/platform-detail/:platform" element={<MobileGuard><PlatformDetail /></MobileGuard>} />
+          <Route path="/mobile/annual-report" element={<MobileGuard><MobileAnnualReport /></MobileGuard>} />
+          <Route path="/mobile/competitor-analysis" element={<MobileGuard><MobileCompetitorAnalysis /></MobileGuard>} />
+          <Route path="/mobile/settings" element={<MobileGuard><Settings /></MobileGuard>} />
+          <Route path="/mobile/store-settings" element={<MobileGuard><StoreSettings /></MobileGuard>} />
+          <Route path="/mobile/reply-template" element={<MobileGuard><ReplyTemplate /></MobileGuard>} />
+          <Route path="/mobile/platform-connection" element={<MobileGuard><PlatformConnection /></MobileGuard>} />
+          <Route path="/mobile/notification-settings" element={<MobileGuard><NotificationSettings /></MobileGuard>} />
+          <Route path="/mobile/auto-reply-settings" element={<MobileGuard><AutoReplySettings /></MobileGuard>} />
+          <Route path="/mobile/help-center" element={<MobileGuard><HelpCenter /></MobileGuard>} />
+          <Route path="/mobile/subscription" element={<MobileGuard><Subscription /></MobileGuard>} />
+          <Route path="/mobile/dish-elimination" element={<MobileGuard><DishElimination /></MobileGuard>} />
+          <Route path="/mobile/traceability-detail/:reportId" element={<MobileGuard><TraceabilityDetail /></MobileGuard>} />
 
           {/* ==================== 后台管理路由 ==================== */}
           <Route path="/admin" element={<AdminLogin />} />

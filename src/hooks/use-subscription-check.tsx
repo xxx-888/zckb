@@ -21,6 +21,12 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
   }, [subscription]);
 
   const fetchSubscription = useCallback(async () => {
+    // 无 token 时跳过请求，避免 401 循环
+    if (!localStorage.getItem('auth_token')) {
+      setLoading(false);
+      setSubscription(null);
+      return;
+    }
     try {
       setLoading(true);
       setError(null);
@@ -28,7 +34,12 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
       setSubscription(data);
     } catch (err: any) {
       const status = err?.response?.status || err?.status;
-      if (status === 401 || status === 404) {
+      // 401 由 api.ts 拦截器统一处理，这里不再重复跳转
+      if (status === 401 || err?.isAuthError) {
+        setSubscription(null);
+        return;
+      }
+      if (status === 404) {
         setSubscription(null);
       } else {
         setError(err instanceof Error ? err : new Error('获取订阅信息失败'));
@@ -75,9 +86,9 @@ interface SubscriptionPromptProps {
  * 订阅升级提示组件
  * 当没有有效订阅时显示
  */
-export function SubscriptionPrompt({ 
-  featureName = '此功能', 
-  onUpgrade 
+export function SubscriptionPrompt({
+  featureName = '此功能',
+  onUpgrade
 }: SubscriptionPromptProps) {
   const handleUpgrade = () => {
     if (onUpgrade) {
