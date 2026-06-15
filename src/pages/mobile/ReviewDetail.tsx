@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Star, ThumbsUp, MessageSquare, Share2, Flag, CheckCircle, Sparkles, RefreshCw, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Star, ThumbsUp, MessageSquare, Share2, Flag, CheckCircle, Sparkles, RefreshCw, X, ChevronLeft, ChevronRight, Clock } from 'lucide-react';
 import { Card } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
@@ -231,10 +231,13 @@ export const ReviewDetail: React.FC = () => {
 
   const handleApproveReply = async () => {
     if (!review) return;
-    // 如果用户编辑了回复内容，先更新
+    // 如果用户编辑了回复内容，先更新 ai_reply_draft
     if (replyDraft && replyDraft !== (review.ai_reply_draft || '')) {
       try {
+        // 将编辑后的内容写回 ai_reply_draft，以便审核记录使用
         await reviewsApi.updateReview(review.id, { reply: replyDraft });
+        // 更新本地 review 对象
+        setReview(prev => prev ? { ...prev, ai_reply_draft: replyDraft } : prev);
       } catch (err: any) {
         toastError('更新失败', err?.message || '请重试');
         return;
@@ -242,11 +245,13 @@ export const ReviewDetail: React.FC = () => {
     }
     try {
       await reviewsApi.approveReply(review.id);
-      success('审核通过', '回复已发送，用户将收到通知');
+      success('已提交审核', '回复已提交，待管理员审核通过后发布');
       const data = await fetchReviewById(id!);
       setReview(data);
+      // 清空草稿输入（已提交审核）
+      setReplyDraft('');
     } catch (err: any) {
-      toastError('发送失败', err?.message || '请重试');
+      toastError('提交失败', err?.message || '请重试');
     }
   };
 
@@ -473,23 +478,32 @@ export const ReviewDetail: React.FC = () => {
               <Sparkles className="w-3.5 h-3.5 mr-1" />
               {generatingReply ? '生成中...' : displayReply ? '重新生成' : '生成AI回复'}
             </Button>
-            {replyDraft && !review.replied && (
+            {replyDraft && !review.reply && !review.replied && (
               <Button
                 className="flex-1 h-10 text-xs bg-orange-500 hover:bg-orange-600 text-white"
                 onClick={handleApproveReply}
                 disabled={generatingReply}
               >
                 <CheckCircle className="w-3.5 h-3.5 mr-1" />
-                发送回复
+                提交审核
               </Button>
             )}
-            {review.replied && (
+            {review.reply && (
               <Button
                 className="flex-1 h-10 text-xs bg-emerald-500 hover:bg-emerald-600 text-white"
                 disabled
               >
                 <CheckCircle className="w-3.5 h-3.5 mr-1" />
                 已回复
+              </Button>
+            )}
+            {!replyDraft && !review.reply && !review.replied && review.ai_reply_draft && (
+              <Button
+                className="flex-1 h-10 text-xs bg-amber-500 hover:bg-amber-600 text-white"
+                disabled
+              >
+                <Clock className="w-3.5 h-3.5 mr-1" />
+                审核中
               </Button>
             )}
           </div>

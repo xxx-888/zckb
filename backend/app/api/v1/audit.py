@@ -36,16 +36,17 @@ async def get_audit_stats(
     - 待审核数量
     - 已通过数量
     - 已拒绝数量
+    - 已发送数量
     - 平均处理时间
     """
     stats = await audit_service.get_audit_stats(db)
     return success(data=stats)
 
 
-@router.get("/list", summary="待审核列表")
+@router.get("/list", summary="审核列表")
 async def get_audit_list(
     status: Optional[str] = Query(None, description="状态筛选: pending/approved/rejected/sent"),
-    keyword: Optional[str] = Query(None, description="关键词搜索"),
+    keyword: Optional[str] = Query(None, description="关键词搜索(评论内容/用户名/门店名)"),
     page: int = Query(1, ge=1, description="页码"),
     limit: int = Query(20, ge=1, le=100, description="每页数量"),
     db: AsyncSession = Depends(get_db),
@@ -54,16 +55,14 @@ async def get_audit_list(
     """
     获取AI回复审核列表
     - 支持按状态筛选
-    - 支持关键词搜索（评论内容、用户名等）
+    - 支持关键词搜索（评论内容、用户名、门店名）
+    - 关联查询 Review + Store + User 返回完整数据
     """
-    audits, total = await audit_service.get_audit_list(
+    items, total = await audit_service.get_audit_list(
         db, status, keyword, page, limit
     )
     return paginated(
-        items=[
-            AuditItemResponse.model_validate(audit).model_dump(mode="json")
-            for audit in audits
-        ],
+        items=items,
         total=total,
         page=page,
         page_size=limit,
@@ -77,12 +76,10 @@ async def get_audit_detail(
     current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
-    获取审核记录详情
+    获取审核记录详情（关联查询评论、门店、审核人完整数据）
     """
-    audit = await audit_service.get_audit_by_id(db, audit_id)
-    return success(
-        data=AuditItemResponse.model_validate(audit).model_dump(mode="json")
-    )
+    item = await audit_service.get_audit_by_id(db, audit_id)
+    return success(data=item)
 
 
 @router.post("/{audit_id}/approve", summary="审核通过")
@@ -99,7 +96,11 @@ async def approve_audit(
     """
     audit = await audit_service.approve_audit(db, audit_id, current_user.id)
     return success(
-        data=AuditActionResponse.model_validate(audit).model_dump(mode="json"),
+        data={
+            "id": str(audit.id),
+            "status": audit.status,
+            "reviewed_at": audit.reviewed_at.isoformat() if audit.reviewed_at else None,
+        },
         message="审核已通过",
     )
 
@@ -120,7 +121,12 @@ async def reject_audit(
         db, audit_id, current_user.id, request.reason
     )
     return success(
-        data=AuditActionResponse.model_validate(audit).model_dump(mode="json"),
+        data={
+            "id": str(audit.id),
+            "status": audit.status,
+            "reject_reason": audit.reject_reason,
+            "reviewed_at": audit.reviewed_at.isoformat() if audit.reviewed_at else None,
+        },
         message="审核已拒绝",
     )
 
@@ -134,11 +140,16 @@ async def regenerate_reply(
 ) -> dict:
     """
     重新生成AI回复
-    - 基于评论内容生成新的AI回复
-    - 重新计算风险等级和评分
+    - 调用真实 AI 服务重新生成回复
+    - 重新计算风险等级
+    - 状态重置为 pending
     """
     audit = await audit_service.regenerate_reply(db, audit_id)
     return success(
-        data=AuditActionResponse.model_validate(audit).model_dump(mode="json"),
+        data={
+            "id": str(audit.id),
+            "ai_reply": audit.ai_reply_content,
+            "status": audit.status,
+        },
         message="回复已重新生成",
     )

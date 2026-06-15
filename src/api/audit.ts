@@ -3,32 +3,35 @@ import { api } from '@/lib/api';
 export interface AuditItem {
   id: string;
   review_id: string;
-  store_name: string;
-  user_name: string;
-  rating: number;
-  content: string;
-  platform: string;
-  ai_reply: string;
+  store_name: string | null;
+  store_id?: string;
+  user_name: string | null;
+  user_avatar?: string | null;
+  rating: number | null;
+  content: string | null;
+  platform: string | null;
+  ai_reply: string | null;
   status: 'pending' | 'approved' | 'rejected' | 'sent';
-  risk_level: string;
+  risk_level: string | null;
   scores: {
     realism: number;
     empathy: number;
     concreteness: number;
     consistency: number;
-  };
-  reject_reason?: string;
-  auditor_name?: string;
-  reviewed_at?: string;
-  created_at: string;
+  } | null;
+  reject_reason?: string | null;
+  auditor_name?: string | null;
+  reviewed_at?: string | null;
+  created_at: string | null;
 }
 
 export interface AuditStats {
   pending_count: number;
   approved_count: number;
   rejected_count: number;
+  sent_count: number;
   total_count: number;
-  avg_processing_time: number;
+  avg_processing_time: number | null;
 }
 
 export const auditApi = {
@@ -55,19 +58,19 @@ export const auditApi = {
     return response.data || response;
   },
 
-  approveAudit: async (id: string): Promise<void> => {
-    const response = await api.post(`/v1/audit/${id}/approve`);
-    return response.data;
+  approveAudit: async (id: string): Promise<any> => {
+    const response = await api.post(`/v1/audit/${id}/approve`, {});
+    return response.data || response;
   },
 
-  rejectAudit: async (id: string, reason: string): Promise<void> => {
+  rejectAudit: async (id: string, reason: string): Promise<any> => {
     const response = await api.post(`/v1/audit/${id}/reject`, { reason });
-    return response.data;
+    return response.data || response;
   },
 
-  regenerateReply: async (id: string): Promise<void> => {
-    const response = await api.post(`/v1/audit/${id}/regenerate`);
-    return response.data;
+  regenerateReply: async (id: string): Promise<any> => {
+    const response = await api.post(`/v1/audit/${id}/regenerate`, {});
+    return response.data || response;
   },
 
   getStats: async (): Promise<AuditStats> => {

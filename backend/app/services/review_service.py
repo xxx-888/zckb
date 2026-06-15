@@ -384,46 +384,84 @@ async def approve_reply(
     user_id: UUID,
 ) -> ReplyAudit:
     """
-    审核通过 AI 回复并发送
+    移动端用户发送 AI 回复 → 创建待审核记录（pending）
+    后台管理员在回复审核页面通过后才真正发布
+
+    如果该评论已有 pending 审核记录，更新内容即可，不重复创建。
+    如果审核记录已 approved/sent（说明已经回复过），直接返回。
 
     Args:
         db: 数据库会话
         review_id: 评论 ID
-        user_id: 审核人 ID
+        user_id: 提交用户 ID
 
     Returns:
         ReplyAudit: 审核记录
 
     Raises:
         NotFoundException: 评论不存在
-        BusinessException: 没有待审核的 AI 回复
+        BusinessException: 该评论没有可提交的 AI 回复
     """
     review = await get_review_by_id(db, review_id)
 
-    if not review.ai_reply_draft:
-        raise BusinessException("该评论没有待审核的 AI 回复草稿")
+    # 查找是否已有审核记录
+    from sqlalchemy import select as sa_select
+    stmt = sa_select(ReplyAudit).where(ReplyAudit.review_id == review_id)
+    result = await db.execute(stmt)
+    existing_audit = result.scalar_one_or_none()
 
-    # 创建审核记录
+    # 获取待提交的回复内容（优先用户编辑后的草稿，其次 AI 草稿，最后已有正式回复）
+    reply_content = review.ai_reply_draft or (existing_audit.ai_reply_content if existing_audit else None)
+
+    if not reply_content:
+        raise BusinessException("该评论没有可提交的回复内容")
+
+    if existing_audit:
+        # 已有审核记录：更新内容，重置为 pending（允许重新提交）
+        if existing_audit.status in ("approved", "sent"):
+            # 已经正式回复过了，不允许重新提交
+            return existing_audit
+        existing_audit.ai_reply_content = reply_content
+        existing_audit.status = "pending"
+        existing_audit.reject_reason = None
+        existing_audit.risk_level = _calculate_risk_level(review)
+        await db.flush()
+        await db.refresh(existing_audit)
+        return existing_audit
+
+    # 创建新的审核记录（状态为 pending，等待后台管理员审核）
     audit = ReplyAudit(
         review_id=review_id,
         store_id=review.store_id,
-        ai_reply_content=review.ai_reply_draft,
-        status="approved",
-        auditor_id=user_id,
-        reviewed_at=datetime.utcnow(),
+        ai_reply_content=reply_content,
+        status="pending",
+        risk_level=_calculate_risk_level(review),
+        scores={
+            "realism": 85,
+            "empathy": 90,
+            "concreteness": 80,
+            "consistency": 85,
+        },
     )
     db.add(audit)
 
-    # 将 AI 草稿设为正式回复
-    review.reply = review.ai_reply_draft
-    review.reply_time = datetime.utcnow()
-    review.ai_generated = True
+    # 将 AI 草稿清空（已提交审核）
     review.ai_reply_draft = None
 
     await db.flush()
     await db.refresh(audit)
 
     return audit
+
+
+def _calculate_risk_level(review) -> str:
+    """根据评分计算风险等级"""
+    if review.rating <= 2:
+        return "high"
+    elif review.rating == 3:
+        return "medium"
+    else:
+        return "low"
 
 
 async def get_review_stats(
