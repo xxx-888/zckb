@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   FileCheck, Search, CheckCircle, XCircle,
-  MessageSquare, User, ShieldAlert, RefreshCw,
-  AlertCircle, Sparkles, ChevronLeft, ChevronRight,
-  Store, Clock, Filter,
+  RefreshCw, AlertCircle, Sparkles, ChevronLeft, ChevronRight,
+  Clock, Eye,
 } from 'lucide-react';
 import { Card } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
@@ -28,7 +27,15 @@ const platformLabels: Record<string, string> = {
   jd: '京东',
 };
 
+const riskLabels: Record<string, { text: string; cls: string }> = {
+  high:   { text: '高', cls: 'bg-rose-100 text-rose-700' },
+  medium: { text: '中', cls: 'bg-amber-100 text-amber-700' },
+  low:    { text: '低', cls: 'bg-emerald-100 text-emerald-700' },
+};
+
 const PAGE_SIZE = 15;
+
+type DialogType = 'approve' | 'reject' | 'regenerate' | 'detail' | null;
 
 export const ReplyAudit: React.FC = () => {
   const [audits, setAudits] = useState<AuditItem[]>([]);
@@ -36,13 +43,14 @@ export const ReplyAudit: React.FC = () => {
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [stats, setStats] = useState<AuditStats | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
   const { inputValue: searchInput, debouncedValue: debouncedSearch, handleChange: handleSearchInput } = useSearchDebounce();
-  const [showRejectDialog, setShowRejectDialog] = useState(false);
-  const [rejectReason, setRejectReason] = useState('');
-  const [rejectTargetId, setRejectTargetId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  // 弹窗状态
+  const [dialogType, setDialogType] = useState<DialogType>(null);
+  const [dialogTarget, setDialogTarget] = useState<AuditItem | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
 
   const { success, error: toastError } = useToast();
 
@@ -80,17 +88,29 @@ export const ReplyAudit: React.FC = () => {
   }, [page, statusFilter, debouncedSearch]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
-
-  // 切换筛选条件时重置页码
   useEffect(() => { setPage(1); }, [statusFilter, debouncedSearch]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  const handleApprove = async (id: string) => {
-    setActionLoading(id);
+  // ── 操作处理 ──
+  const openDialog = (type: DialogType, item: AuditItem) => {
+    setDialogType(type);
+    setDialogTarget(item);
+    if (type === 'reject') setRejectReason('');
+  };
+  const closeDialog = () => {
+    setDialogType(null);
+    setDialogTarget(null);
+    setRejectReason('');
+  };
+
+  const handleApprove = async () => {
+    if (!dialogTarget) return;
+    setActionLoading(dialogTarget.id);
     try {
-      await auditApi.approveAudit(id);
+      await auditApi.approveAudit(dialogTarget.id);
       success('审核通过', '该回复已通过并发布');
+      closeDialog();
       fetchData();
     } catch (err: any) {
       toastError('操作失败', err.message);
@@ -100,17 +120,15 @@ export const ReplyAudit: React.FC = () => {
   };
 
   const handleReject = async () => {
-    if (!rejectTargetId || !rejectReason.trim()) {
+    if (!dialogTarget || !rejectReason.trim()) {
       toastError('拒绝失败', '请填写拒绝原因');
       return;
     }
-    setActionLoading(rejectTargetId);
+    setActionLoading(dialogTarget.id);
     try {
-      await auditApi.rejectAudit(rejectTargetId, rejectReason);
-      setShowRejectDialog(false);
-      setRejectReason('');
-      setRejectTargetId(null);
+      await auditApi.rejectAudit(dialogTarget.id, rejectReason);
       success('已拒绝', '该回复已拒绝');
+      closeDialog();
       fetchData();
     } catch (err: any) {
       toastError('操作失败', err.message);
@@ -119,11 +137,13 @@ export const ReplyAudit: React.FC = () => {
     }
   };
 
-  const handleRegenerate = async (id: string) => {
-    setActionLoading(id);
+  const handleRegenerate = async () => {
+    if (!dialogTarget) return;
+    setActionLoading(dialogTarget.id);
     try {
-      await auditApi.regenerateReply(id);
+      await auditApi.regenerateReply(dialogTarget.id);
       success('重新生成', 'AI 回复已重新生成');
+      closeDialog();
       fetchData();
     } catch (err: any) {
       toastError('操作失败', err.message);
@@ -131,27 +151,25 @@ export const ReplyAudit: React.FC = () => {
       setActionLoading(null);
     }
   };
-
-  const openRejectDialog = (id: string) => {
-    setRejectTargetId(id);
-    setShowRejectDialog(true);
-  };
-
-  const selected = audits.find(a => a.id === selectedId);
 
   const formatTime = (dateStr?: string | null) => {
-    if (!dateStr) return '';
+    if (!dateStr) return '-';
     try {
       const d = new Date(dateStr);
       return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
     } catch {
-      return '';
+      return '-';
     }
+  };
+
+  const truncate = (str: string | null, len: number) => {
+    if (!str) return '-';
+    return str.length > len ? str.slice(0, len) + '...' : str;
   };
 
   return (
     <AdminLayout>
-      <div className="space-y-6 pb-8">
+      <div className="space-y-5 pb-8">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
@@ -190,7 +208,7 @@ export const ReplyAudit: React.FC = () => {
           </div>
         )}
 
-        {/* Filters: Status Tabs + Search */}
+        {/* Filters */}
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-1 bg-slate-100 rounded-xl p-1">
             <button
@@ -229,60 +247,151 @@ export const ReplyAudit: React.FC = () => {
           </span>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* List */}
-          <div className="lg:col-span-1 space-y-2 max-h-[70vh] overflow-y-auto pr-1">
-            {loading && audits.length === 0 ? (
-              <div className="flex items-center justify-center h-48">
-                <RefreshCw className="w-6 h-6 text-slate-400 animate-spin" />
-              </div>
-            ) : audits.length === 0 ? (
-              <div className="text-center py-12 text-slate-400">
-                <FileCheck className="w-10 h-10 mx-auto mb-3 opacity-50" />
-                <p>{debouncedSearch || statusFilter ? '无匹配结果' : '暂无审核项'}</p>
-              </div>
-            ) : (
-              audits.map(a => {
-                const StatusIcon = statusConfig[a.status]?.icon || AlertCircle;
-                return (
-                  <Card
-                    key={a.id}
-                    className={`p-3.5 cursor-pointer transition-all border-slate-100 shadow-sm hover:shadow-md ${
-                      selectedId === a.id ? 'ring-2 ring-indigo-400 border-indigo-200 bg-indigo-50/30' : 'hover:border-slate-200'
-                    }`}
-                    onClick={() => setSelectedId(a.id)}
-                  >
-                    <div className="flex items-center justify-between mb-1.5">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <Store className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-                        <span className="font-medium text-slate-900 text-sm truncate">{a.store_name || '未知门店'}</span>
-                      </div>
-                      <Badge className={`text-[10px] px-1.5 py-0 ${statusConfig[a.status]?.color || ''}`}>
-                        {statusConfig[a.status]?.label || a.status}
-                      </Badge>
-                    </div>
-                    <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed">{a.content || '无评论内容'}</p>
-                    <div className="flex items-center gap-2 mt-2 text-xs text-slate-400">
-                      <User className="w-3 h-3" />
-                      <span>{a.user_name || '匿名'}</span>
-                      {a.platform && (
-                        <>
-                          <span>·</span>
-                          <span>{platformLabels[a.platform] || a.platform}</span>
-                        </>
-                      )}
-                      <span>·</span>
-                      <Clock className="w-3 h-3" />
-                      <span>{formatTime(a.created_at)}</span>
-                    </div>
-                  </Card>
-                );
-              })
-            )}
+        {/* ── 表格 ── */}
+        <Card className="overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200">
+                  <th className="text-left px-4 py-3 font-medium text-slate-500 whitespace-nowrap">门店</th>
+                  <th className="text-left px-4 py-3 font-medium text-slate-500 whitespace-nowrap">用户</th>
+                  <th className="text-left px-4 py-3 font-medium text-slate-500 whitespace-nowrap">平台</th>
+                  <th className="text-left px-4 py-3 font-medium text-slate-500 whitespace-nowrap">评分</th>
+                  <th className="text-left px-4 py-3 font-medium text-slate-500 whitespace-nowrap">评论内容</th>
+                  <th className="text-left px-4 py-3 font-medium text-slate-500 whitespace-nowrap">AI 回复</th>
+                  <th className="text-left px-4 py-3 font-medium text-slate-500 whitespace-nowrap">风险</th>
+                  <th className="text-left px-4 py-3 font-medium text-slate-500 whitespace-nowrap">状态</th>
+                  <th className="text-left px-4 py-3 font-medium text-slate-500 whitespace-nowrap">提交时间</th>
+                  <th className="text-center px-4 py-3 font-medium text-slate-500 whitespace-nowrap">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading && audits.length === 0 ? (
+                  <tr>
+                    <td colSpan={10} className="text-center py-16">
+                      <RefreshCw className="w-6 h-6 text-slate-400 animate-spin mx-auto" />
+                      <p className="text-slate-400 mt-2">加载中...</p>
+                    </td>
+                  </tr>
+                ) : audits.length === 0 ? (
+                  <tr>
+                    <td colSpan={10} className="text-center py-16">
+                      <FileCheck className="w-10 h-10 mx-auto mb-3 text-slate-300" />
+                      <p className="text-slate-400">{debouncedSearch || statusFilter ? '无匹配结果' : '暂无审核项'}</p>
+                    </td>
+                  </tr>
+                ) : (
+                  audits.map(a => {
+                    const risk = a.risk_level ? riskLabels[a.risk_level] : null;
+                    const isActing = actionLoading === a.id;
+                    return (
+                      <tr
+                        key={a.id}
+                        className="border-b border-slate-100 hover:bg-slate-50/60 transition-colors"
+                      >
+                        {/* 门店 */}
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <span className="font-medium text-slate-800">{a.store_name || '-'}</span>
+                        </td>
+                        {/* 用户 */}
+                        <td className="px-4 py-3 whitespace-nowrap text-slate-600">
+                          {a.user_name || '-'}
+                        </td>
+                        {/* 平台 */}
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <span className="text-slate-600">{platformLabels[a.platform || ''] || a.platform || '-'}</span>
+                        </td>
+                        {/* 评分 */}
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <span className="text-amber-500">{'★'.repeat(a.rating || 0)}{'☆'.repeat(5 - (a.rating || 0))}</span>
+                        </td>
+                        {/* 评论内容 */}
+                        <td className="px-4 py-3 max-w-[200px]">
+                          <span className="text-slate-600 line-clamp-2">{truncate(a.content, 40)}</span>
+                        </td>
+                        {/* AI 回复 */}
+                        <td className="px-4 py-3 max-w-[200px]">
+                          <span className="text-slate-600 line-clamp-2">{truncate(a.ai_reply, 40)}</span>
+                        </td>
+                        {/* 风险 */}
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          {risk ? (
+                            <Badge className={`text-[10px] px-1.5 py-0 ${risk.cls}`}>{risk.text}</Badge>
+                          ) : '-'}
+                        </td>
+                        {/* 状态 */}
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <Badge className={`text-[10px] px-1.5 py-0 ${statusConfig[a.status]?.color || ''}`}>
+                            {statusConfig[a.status]?.label || a.status}
+                          </Badge>
+                        </td>
+                        {/* 提交时间 */}
+                        <td className="px-4 py-3 whitespace-nowrap text-slate-400 text-xs">
+                          {formatTime(a.created_at)}
+                        </td>
+                        {/* 操作 */}
+                        <td className="px-4 py-3 whitespace-nowrap text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 px-2 text-xs text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50"
+                              onClick={() => openDialog('detail', a)}
+                            >
+                              <Eye className="w-3.5 h-3.5 mr-0.5" />
+                              详情
+                            </Button>
+                            {a.status === 'pending' && (
+                              <>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 px-2 text-xs text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50"
+                                  onClick={() => openDialog('approve', a)}
+                                  disabled={isActing}
+                                >
+                                  <CheckCircle className="w-3.5 h-3.5 mr-0.5" />
+                                  通过
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 px-2 text-xs text-rose-600 hover:text-rose-800 hover:bg-rose-50"
+                                  onClick={() => openDialog('reject', a)}
+                                  disabled={isActing}
+                                >
+                                  <XCircle className="w-3.5 h-3.5 mr-0.5" />
+                                  驳回
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 px-2 text-xs text-slate-500 hover:text-slate-700 hover:bg-slate-50"
+                                  onClick={() => openDialog('regenerate', a)}
+                                  disabled={isActing}
+                                >
+                                  <Sparkles className="w-3.5 h-3.5 mr-0.5" />
+                                  重新生成
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
 
-            {/* Pagination */}
-            {totalPages > 1 && (
-              <div className="flex items-center justify-center gap-2 pt-3">
+          {/* 分页 */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100 bg-slate-50/50">
+              <span className="text-xs text-slate-400">
+                第 {(page - 1) * PAGE_SIZE + 1}-{Math.min(page * PAGE_SIZE, total)} 条，共 {total} 条
+              </span>
+              <div className="flex items-center gap-2">
                 <Button
                   variant="outline"
                   size="sm"
@@ -292,7 +401,7 @@ export const ReplyAudit: React.FC = () => {
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </Button>
-                <span className="text-xs text-slate-500 min-w-[80px] text-center">
+                <span className="text-xs text-slate-500 min-w-[60px] text-center">
                   {page} / {totalPages}
                 </span>
                 <Button
@@ -305,147 +414,208 @@ export const ReplyAudit: React.FC = () => {
                   <ChevronRight className="w-4 h-4" />
                 </Button>
               </div>
-            )}
-          </div>
+            </div>
+          )}
+        </Card>
 
-          {/* Detail */}
-          <div className="lg:col-span-2">
-            {selected ? (
-              <Card className="p-6 border-slate-100 shadow-sm space-y-5">
-                {/* Header */}
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <Store className="w-4 h-4 text-slate-400" />
-                      <h3 className="font-bold text-slate-900">{selected.store_name || '未知门店'}</h3>
-                    </div>
-                    <p className="text-sm text-slate-500 mt-1">
-                      {(selected.platform && platformLabels[selected.platform]) || selected.platform || '未知平台'} · {selected.user_name || '匿名用户'}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {selected.risk_level && (
-                      <Badge className={`text-xs ${
-                        selected.risk_level === 'high' ? 'bg-rose-100 text-rose-700' :
-                        selected.risk_level === 'medium' ? 'bg-amber-100 text-amber-700' :
-                        'bg-emerald-100 text-emerald-700'
-                      }`}>
-                        {selected.risk_level === 'high' ? '高风险' : selected.risk_level === 'medium' ? '中风险' : '低风险'}
-                      </Badge>
-                    )}
-                    <Badge className={statusConfig[selected.status]?.color}>
-                      {statusConfig[selected.status]?.label || selected.status}
+        {/* ── 弹窗：详情 ── */}
+        {dialogType === 'detail' && dialogTarget && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={closeDialog}>
+            <Card
+              className="w-[560px] max-h-[80vh] overflow-y-auto p-6 space-y-5 shadow-2xl"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-slate-900 text-lg">审核详情</h3>
+                <div className="flex items-center gap-2">
+                  {dialogTarget.risk_level && (
+                    <Badge className={`text-xs ${
+                      riskLabels[dialogTarget.risk_level]?.cls || ''
+                    }`}>
+                      {riskLabels[dialogTarget.risk_level]?.text || dialogTarget.risk_level}风险
                     </Badge>
-                  </div>
+                  )}
+                  <Badge className={statusConfig[dialogTarget.status]?.color}>
+                    {statusConfig[dialogTarget.status]?.label || dialogTarget.status}
+                  </Badge>
                 </div>
-
-                {/* Original Review */}
-                <div className="bg-slate-50 rounded-xl p-4">
-                  <p className="text-xs text-slate-400 mb-1.5 font-medium">用户评价</p>
-                  <p className="text-sm text-slate-700 leading-relaxed">{selected.content || '无内容'}</p>
-                  <div className="flex items-center gap-3 mt-2">
-                    {selected.rating && (
-                      <span className="text-amber-500 text-sm">{'★'.repeat(selected.rating)}{'☆'.repeat(5 - selected.rating)}</span>
-                    )}
-                    {selected.created_at && (
-                      <span className="text-xs text-slate-400">{formatTime(selected.created_at)}</span>
-                    )}
-                  </div>
-                </div>
-
-                {/* AI Reply */}
-                <div className="bg-indigo-50 rounded-xl p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Sparkles className="w-4 h-4 text-indigo-500" />
-                    <p className="text-xs text-indigo-500 font-medium">AI 生成回复</p>
-                  </div>
-                  <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{selected.ai_reply || '暂无'}</p>
-                </div>
-
-                {/* Scores */}
-                {selected.scores && (
-                  <div className="grid grid-cols-4 gap-2 text-center text-xs">
-                    {[
-                      { key: 'realism', label: '真实性' },
-                      { key: 'empathy', label: '共情度' },
-                      { key: 'concreteness', label: '具体性' },
-                      { key: 'consistency', label: '一致性' },
-                    ].map(({ key, label }) => {
-                      const val = (selected.scores as any)?.[key];
-                      if (val == null) return null;
-                      const pct = typeof val === 'number' && val <= 1 ? Math.round(val * 100) : val;
-                      return (
-                        <div key={key} className="bg-slate-50 rounded-lg p-2.5">
-                          <p className="text-slate-400 text-[10px]">{label}</p>
-                          <p className="font-bold text-slate-700">{pct}{typeof val === 'number' && val <= 1 ? '%' : ''}</p>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {/* Reject reason */}
-                {selected.reject_reason && (
-                  <div className="bg-rose-50 rounded-xl p-3 border border-rose-100">
-                    <p className="text-xs text-rose-600"><span className="font-medium">拒绝原因：</span>{selected.reject_reason}</p>
-                  </div>
-                )}
-
-                {/* Audit info */}
-                {selected.reviewed_at && (
-                  <div className="text-xs text-slate-400">
-                    {selected.auditor_name && <span>审核人: {selected.auditor_name} · </span>}
-                    <span>审核时间: {formatTime(selected.reviewed_at)}</span>
-                  </div>
-                )}
-
-                {/* Actions */}
-                {selected.status === 'pending' && (
-                  <div className="flex items-center gap-3 pt-2 border-t border-slate-100">
-                    <Button
-                      size="sm"
-                      className="bg-emerald-500 hover:bg-emerald-600 text-white"
-                      onClick={() => handleApprove(selected.id)}
-                      disabled={actionLoading === selected.id}
-                    >
-                      {actionLoading === selected.id ? <RefreshCw className="w-4 h-4 mr-1 animate-spin" /> : <CheckCircle className="w-4 h-4 mr-1" />}
-                      通过并发布
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="text-rose-500 border-rose-200 hover:bg-rose-50"
-                      onClick={() => openRejectDialog(selected.id)}
-                      disabled={actionLoading === selected.id}
-                    >
-                      <XCircle className="w-4 h-4 mr-1" />驳回
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => handleRegenerate(selected.id)}
-                      disabled={actionLoading === selected.id}
-                    >
-                      {actionLoading === selected.id ? <RefreshCw className="w-4 h-4 mr-1 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-1" />}
-                      重新生成
-                    </Button>
-                  </div>
-                )}
-              </Card>
-            ) : (
-              <div className="flex flex-col items-center justify-center h-64 text-slate-400">
-                <ShieldAlert className="w-10 h-10 mb-3 opacity-50" />
-                <p>{audits.length > 0 ? '选择左侧审核项查看详情' : '暂无审核数据'}</p>
               </div>
-            )}
-          </div>
-        </div>
 
-        {/* Reject Dialog */}
-        {showRejectDialog && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-            <Card className="w-96 p-6 space-y-4 shadow-2xl">
-              <h3 className="font-bold text-slate-900">驳回原因</h3>
+              {/* 基本信息 */}
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <span className="text-slate-400">门店：</span>
+                  <span className="text-slate-800 font-medium">{dialogTarget.store_name || '-'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400">用户：</span>
+                  <span className="text-slate-800">{dialogTarget.user_name || '-'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400">平台：</span>
+                  <span className="text-slate-800">{platformLabels[dialogTarget.platform || ''] || dialogTarget.platform || '-'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400">评分：</span>
+                  <span className="text-amber-500">{'★'.repeat(dialogTarget.rating || 0)}{'☆'.repeat(5 - (dialogTarget.rating || 0))}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400">提交时间：</span>
+                  <span className="text-slate-800">{formatTime(dialogTarget.created_at)}</span>
+                </div>
+                {dialogTarget.reviewed_at && (
+                  <div>
+                    <span className="text-slate-400">审核时间：</span>
+                    <span className="text-slate-800">{formatTime(dialogTarget.reviewed_at)}</span>
+                  </div>
+                )}
+                {dialogTarget.auditor_name && (
+                  <div>
+                    <span className="text-slate-400">审核人：</span>
+                    <span className="text-slate-800">{dialogTarget.auditor_name}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* 评论内容 */}
+              <div className="bg-slate-50 rounded-xl p-4">
+                <p className="text-xs text-slate-400 mb-1.5 font-medium">用户评价</p>
+                <p className="text-sm text-slate-700 leading-relaxed break-words">{dialogTarget.content || '无内容'}</p>
+              </div>
+
+              {/* AI 回复 */}
+              <div className="bg-indigo-50 rounded-xl p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Sparkles className="w-4 h-4 text-indigo-500" />
+                  <p className="text-xs text-indigo-500 font-medium">AI 生成回复</p>
+                </div>
+                <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap break-words">{dialogTarget.ai_reply || '暂无'}</p>
+              </div>
+
+              {/* 评分 */}
+              {dialogTarget.scores && (
+                <div className="grid grid-cols-4 gap-2 text-center text-xs">
+                  {[
+                    { key: 'realism', label: '真实性' },
+                    { key: 'empathy', label: '共情度' },
+                    { key: 'concreteness', label: '具体性' },
+                    { key: 'consistency', label: '一致性' },
+                  ].map(({ key, label }) => {
+                    const val = (dialogTarget.scores as any)?.[key];
+                    if (val == null) return null;
+                    const pct = typeof val === 'number' && val <= 1 ? Math.round(val * 100) : val;
+                    return (
+                      <div key={key} className="bg-slate-50 rounded-lg p-2.5">
+                        <p className="text-slate-400 text-[10px]">{label}</p>
+                        <p className="font-bold text-slate-700">{pct}{typeof val === 'number' && val <= 1 ? '%' : ''}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* 拒绝原因 */}
+              {dialogTarget.reject_reason && (
+                <div className="bg-rose-50 rounded-xl p-3 border border-rose-100">
+                  <p className="text-xs text-rose-600"><span className="font-medium">拒绝原因：</span>{dialogTarget.reject_reason}</p>
+                </div>
+              )}
+
+              {/* 操作按钮（仅 pending） */}
+              {dialogTarget.status === 'pending' && (
+                <div className="flex items-center gap-3 pt-2 border-t border-slate-100">
+                  <Button
+                    size="sm"
+                    className="bg-emerald-500 hover:bg-emerald-600 text-white"
+                    onClick={() => { setDialogType('approve'); }}
+                    disabled={actionLoading === dialogTarget.id}
+                  >
+                    <CheckCircle className="w-4 h-4 mr-1" />
+                    通过并发布
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-rose-500 border-rose-200 hover:bg-rose-50"
+                    onClick={() => { setDialogType('reject'); setRejectReason(''); }}
+                    disabled={actionLoading === dialogTarget.id}
+                  >
+                    <XCircle className="w-4 h-4 mr-1" />驳回
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => { setDialogType('regenerate'); }}
+                    disabled={actionLoading === dialogTarget.id}
+                  >
+                    <Sparkles className="w-4 h-4 mr-1" />
+                    重新生成
+                  </Button>
+                </div>
+              )}
+
+              <div className="flex justify-end">
+                <Button variant="outline" size="sm" onClick={closeDialog}>关闭</Button>
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {/* ── 弹窗：确认通过 ── */}
+        {dialogType === 'approve' && dialogTarget && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={closeDialog}>
+            <Card className="w-96 p-6 space-y-5 shadow-2xl" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center">
+                  <CheckCircle className="w-5 h-5 text-emerald-600" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900">确认通过</h3>
+                  <p className="text-xs text-slate-500">通过后 AI 回复将正式发布到平台</p>
+                </div>
+              </div>
+
+              <div className="bg-slate-50 rounded-lg p-3 text-xs text-slate-600 space-y-1">
+                <p><span className="text-slate-400">门店：</span>{dialogTarget.store_name || '-'}</p>
+                <p><span className="text-slate-400">用户：</span>{dialogTarget.user_name || '-'}</p>
+                <p><span className="text-slate-400">回复：</span>{truncate(dialogTarget.ai_reply, 60)}</p>
+              </div>
+
+              <div className="flex justify-end gap-3">
+                <Button variant="ghost" onClick={closeDialog}>取消</Button>
+                <Button
+                  className="bg-emerald-500 hover:bg-emerald-600 text-white"
+                  onClick={handleApprove}
+                  disabled={actionLoading === dialogTarget.id}
+                >
+                  {actionLoading === dialogTarget.id ? <RefreshCw className="w-4 h-4 mr-1 animate-spin" /> : <CheckCircle className="w-4 h-4 mr-1" />}
+                  确认通过
+                </Button>
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {/* ── 弹窗：驳回 ── */}
+        {dialogType === 'reject' && dialogTarget && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={closeDialog}>
+            <Card className="w-96 p-6 space-y-5 shadow-2xl" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-rose-100 flex items-center justify-center">
+                  <XCircle className="w-5 h-5 text-rose-600" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900">驳回回复</h3>
+                  <p className="text-xs text-slate-500">请填写驳回原因</p>
+                </div>
+              </div>
+
+              <div className="bg-slate-50 rounded-lg p-3 text-xs text-slate-600 space-y-1">
+                <p><span className="text-slate-400">门店：</span>{dialogTarget.store_name || '-'}</p>
+                <p><span className="text-slate-400">用户：</span>{dialogTarget.user_name || '-'}</p>
+                <p><span className="text-slate-400">回复：</span>{truncate(dialogTarget.ai_reply, 60)}</p>
+              </div>
+
               <textarea
                 className="w-full p-3 border border-slate-200 rounded-xl text-sm outline-none resize-none focus:border-rose-300 focus:ring-2 focus:ring-rose-100 transition-all"
                 rows={3}
@@ -455,9 +625,48 @@ export const ReplyAudit: React.FC = () => {
                 autoFocus
               />
               <div className="flex justify-end gap-3">
-                <Button variant="ghost" onClick={() => { setShowRejectDialog(false); setRejectReason(''); setRejectTargetId(null); }}>取消</Button>
-                <Button className="bg-rose-500 hover:bg-rose-600 text-white" onClick={handleReject} disabled={!rejectReason.trim()}>
+                <Button variant="ghost" onClick={closeDialog}>取消</Button>
+                <Button
+                  className="bg-rose-500 hover:bg-rose-600 text-white"
+                  onClick={handleReject}
+                  disabled={!rejectReason.trim() || actionLoading === dialogTarget.id}
+                >
+                  {actionLoading === dialogTarget.id ? <RefreshCw className="w-4 h-4 mr-1 animate-spin" /> : <XCircle className="w-4 h-4 mr-1" />}
                   确认驳回
+                </Button>
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {/* ── 弹窗：重新生成 ── */}
+        {dialogType === 'regenerate' && dialogTarget && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={closeDialog}>
+            <Card className="w-96 p-6 space-y-5 shadow-2xl" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center">
+                  <Sparkles className="w-5 h-5 text-indigo-600" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900">重新生成 AI 回复</h3>
+                  <p className="text-xs text-slate-500">将覆盖当前 AI 回复内容</p>
+                </div>
+              </div>
+
+              <div className="bg-slate-50 rounded-lg p-3 text-xs text-slate-600 space-y-1">
+                <p><span className="text-slate-400">门店：</span>{dialogTarget.store_name || '-'}</p>
+                <p><span className="text-slate-400">当前回复：</span>{truncate(dialogTarget.ai_reply, 60)}</p>
+              </div>
+
+              <div className="flex justify-end gap-3">
+                <Button variant="ghost" onClick={closeDialog}>取消</Button>
+                <Button
+                  className="bg-indigo-500 hover:bg-indigo-600 text-white"
+                  onClick={handleRegenerate}
+                  disabled={actionLoading === dialogTarget.id}
+                >
+                  {actionLoading === dialogTarget.id ? <RefreshCw className="w-4 h-4 mr-1 animate-spin" /> : <Sparkles className="w-4 h-4 mr-1" />}
+                  确认重新生成
                 </Button>
               </div>
             </Card>
