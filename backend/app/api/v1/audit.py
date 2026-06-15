@@ -26,6 +26,29 @@ from app.services import audit_service
 router = APIRouter(prefix="/audit", tags=["回复审核"])
 
 
+def _audit_to_dict(audit) -> dict:
+    """将 ORM 对象转为 API 响应字典，利用预加载的关联数据"""
+    return {
+        "id": audit.id,
+        "review_id": audit.review_id,
+        "store_name": audit.store.name if audit.store else None,
+        "store_id": str(audit.store_id) if audit.store_id else None,
+        "user_name": audit.review.user_name if audit.review else None,
+        "user_avatar": audit.review.user_avatar if audit.review else None,
+        "rating": audit.review.rating if audit.review else None,
+        "content": audit.review.content if audit.review else None,
+        "platform": audit.review.platform if audit.review else None,
+        "ai_reply": audit.ai_reply_content,
+        "status": audit.status,
+        "risk_level": audit.risk_level,
+        "scores": audit.scores,
+        "reject_reason": audit.reject_reason,
+        "auditor_name": audit.auditor.username if audit.auditor else None,
+        "reviewed_at": audit.reviewed_at,
+        "created_at": audit.created_at,
+    }
+
+
 @router.get("/stats", summary="审核统计")
 async def get_audit_stats(
     db: AsyncSession = Depends(get_db),
@@ -56,11 +79,12 @@ async def get_audit_list(
     获取AI回复审核列表
     - 支持按状态筛选
     - 支持关键词搜索（评论内容、用户名、门店名）
-    - 关联查询 Review + Store + User 返回完整数据
+    - ORM 预加载关联数据
     """
-    items, total = await audit_service.get_audit_list(
+    audits, total = await audit_service.get_audit_list(
         db, status, keyword, page, limit
     )
+    items = [_audit_to_dict(audit) for audit in audits]
     return paginated(
         items=items,
         total=total,
@@ -76,10 +100,10 @@ async def get_audit_detail(
     current_user: User = Depends(require_valid_subscription),
 ) -> dict:
     """
-    获取审核记录详情（关联查询评论、门店、审核人完整数据）
+    获取审核记录详情（预加载评论、门店、审核人关联数据）
     """
-    item = await audit_service.get_audit_by_id(db, audit_id)
-    return success(data=item)
+    audit = await audit_service.get_audit_by_id(db, audit_id)
+    return success(data=_audit_to_dict(audit))
 
 
 @router.post("/{audit_id}/approve", summary="审核通过")
