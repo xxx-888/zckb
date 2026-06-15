@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import and_, desc, func, select
+from sqlalchemy import and_, desc, or_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -45,7 +45,7 @@ async def get_audit_list(
     if keyword:
         search_pattern = f"%{keyword}%"
         conditions.append(
-            func.or_(
+            or_(
                 Review.content.ilike(search_pattern),
                 Review.user_name.ilike(search_pattern),
                 Store.name.ilike(search_pattern),
