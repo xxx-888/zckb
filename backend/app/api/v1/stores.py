@@ -3,6 +3,7 @@
 处理门店的增删改查、统计、激活等接口
 """
 
+import logging
 from typing import Optional
 from uuid import UUID
 
@@ -18,6 +19,8 @@ from app.schemas.store import (
     StoreUpdateRequest,
 )
 from app.services import store_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/stores", tags=["门店管理"])
 
@@ -232,16 +235,19 @@ async def sync_store_reviews(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """
-    同步指定门店的平台评论数据
-    1. 查找该店铺绑定的所有平台账号（store_platforms）
-    2. 通过 Playwright 调用平台评论 API
-    3. 将评论数据导入 reviews 表（自动去重）
+    智能增量同步指定门店的平台评论数据。
+
+    自动检测用户关联的平台账号：
+    - 只关联了抖音来客 → 只同步抖音评论
+    - 关联了美团开店宝 → 同步美团+点评评论
+    - 都关联了 → 同步全平台评论
+
+    采用增量同步（近30天），自动去重。
     """
-    import json
     from sqlalchemy import select
     from app.models.store import StorePlatform, PlatformAccount
-    from app.models.review import Review
     from app.services.review_sync_service import ReviewSyncService
+    from app.services.platform_service import PlatformService
     from app.core.exceptions import NotFoundException
 
     # 验证店铺归属
@@ -258,42 +264,34 @@ async def sync_store_reviews(
     if not store_platforms:
         return success(data={"created": 0, "skipped": 0, "total": 0}, message="该店铺暂未绑定平台账号")
 
-    # 支持的平台列表：美团和点评都从开店宝后台获取，只是接口不同
-    platforms_to_sync = ["meituan", "dianping"]
-    
-    # 按 account_id 分组同步（每个账号同步一次，包含多个店铺）
+    # 按 account_id 分组，去重
+    account_ids = list({str(sp.account_id) for sp in store_platforms if sp.account_id})
+
+    # 为每个账号触发增量同步
     total_created = 0
     total_skipped = 0
-    synced_accounts = set()
+    synced_platforms = set()
 
     review_service = ReviewSyncService.get_instance()
+    platform_service = PlatformService(db)
 
-    for sp in store_platforms:
-        if not sp.account_id or str(sp.account_id) in synced_accounts:
-            continue
+    for account_id_str in account_ids:
+        from uuid import UUID as UUIDType
+        account_id_uuid = UUIDType(account_id_str)
 
-        # 获取平台账号信息
-        account_stmt = select(PlatformAccount).where(PlatformAccount.id == sp.account_id)
-        account_result = await db.execute(account_stmt)
-        account = account_result.scalar_one_or_none()
-
+        # 获取平台账号
+        account = await platform_service.get_account_by_id(account_id_uuid)
         if not account or not account.cookies_encrypted:
-            logger.warning(f"[sync_store_reviews] Account {sp.account_id}: no cookies_encrypted, skipping")
+            logger.warning(f"[sync_store_reviews] Account {account_id_str}: no cookies, skipping")
             continue
 
-        # 解密 cookies_encrypted，结果直接是 Playwright storage_state
-        from app.services.platform_service import PlatformService
-        platform_service = PlatformService(db)
+        # 解密 cookies
         storage_state = await platform_service._decrypt_credentials(account.cookies_encrypted)
-        if not storage_state:
-            logger.warning(f"[sync_store_reviews] Account {sp.account_id}: decryption failed, skipping")
+        if not storage_state or not isinstance(storage_state, dict) or not storage_state.get("cookies"):
+            logger.warning(f"[sync_store_reviews] Account {account_id_str}: invalid storage_state, skipping")
             continue
 
-        if not isinstance(storage_state, dict) or not storage_state.get("cookies"):
-            logger.warning(f"[sync_store_reviews] Account {sp.account_id}: invalid storage_state format, skipping")
-            continue
-
-        # 获取该账号下所有绑定到当前用户的店铺（一次同步拉取该账号下所有店铺评论）
+        # 获取该账号下所有绑定店铺
         all_sp_stmt = select(StorePlatform).where(
             StorePlatform.account_id == account.id,
             StorePlatform.store_id.isnot(None),
@@ -301,109 +299,113 @@ async def sync_store_reviews(
         all_sp_result = await db.execute(all_sp_stmt)
         all_store_platforms = all_sp_result.scalars().all()
 
-        stores = [
-            {
-                "platform_store_id": p.platform_store_id,
-                "platform_store_name": p.platform_store_name,
-                "store_id": str(p.store_id) if p.store_id else "",
+        # 按 platform 分组店铺
+        stores_by_platform: dict[str, list] = {}
+        for sp in all_store_platforms:
+            if not sp.platform_store_id:
+                continue
+            store_info = {
+                "platform_store_id": sp.platform_store_id,
+                "platform_store_name": sp.platform_store_name,
+                "store_id": str(sp.store_id) if sp.store_id else "",
             }
-            for p in all_store_platforms
-            if p.platform_store_id
-        ]
+            # 抖音需要 life_account_id
+            if sp.platform == "douyin" and account.platform_account_id:
+                store_info["account_id"] = account.platform_account_id
+            stores_by_platform.setdefault(sp.platform, []).append(store_info)
 
-        if not stores:
+        if not stores_by_platform:
             continue
 
-        # 对美团和点评两个平台分别同步（同一套 cookies，不同接口）
-        # 注意：每次 sync_reviews 会启动独立子进程，两次调用共用同一套 storage_state
-        all_platform_reviews = []  # 合并两个平台的评论
-        print(f"[PRINT] 开始同步平台列表: {platforms_to_sync}", flush=True)
-        logger.error(f"[TRACE] 开始同步平台列表: {platforms_to_sync}")
+        # 增量同步（近30天）
+        time_type = "近30天"
 
-        for platform in platforms_to_sync:
-            print(f"[PRINT] >>> 正在同步平台: {platform}", flush=True)
-            logger.error(f"[TRACE] >>> 正在同步平台: {platform}")
+        for platform, stores in stores_by_platform.items():
+            if platform in synced_platforms:
+                continue
+
+            logger.info(f"[sync_store_reviews] 开始同步: account={account_id_str}, platform={platform}, stores={len(stores)}")
+
             try:
                 sync_result = await review_service.sync_reviews(
                     platform=platform,
                     storage_state=storage_state,
                     stores=stores,
+                    time_type=time_type,
                 )
-                print(f"[PRINT] <<< {platform} 同步结果: status={sync_result.get('status')}, error={sync_result.get('error', '')}", flush=True)
-                logger.error(f"[TRACE] <<< {platform} 同步结果: status={sync_result.get('status')}, error={sync_result.get('error', '')}")
+
+                if sync_result.get("status") == "success":
+                    platform_reviews = sync_result.get("reviews", [])
+                    logger.info(f"[sync_store_reviews] {platform} 返回 {len(platform_reviews)} 条评论")
+
+                    # 去重入库
+                    from app.models.review import Review
+                    platform_review_ids = [r.get("platform_review_id") for r in platform_reviews if r.get("platform_review_id")]
+                    existing_ids = set()
+                    if platform_review_ids:
+                        exist_stmt = select(Review.platform_review_id).where(
+                            Review.platform_review_id.in_(platform_review_ids),
+                        )
+                        exist_result = await db.execute(exist_stmt)
+                        existing_ids = set(exist_result.scalars().all())
+
+                    created_count = 0
+                    for raw in platform_reviews:
+                        feedback_id = raw.get("platform_review_id")
+                        if not feedback_id or feedback_id in existing_ids:
+                            total_skipped += 1
+                            continue
+
+                        # 匹配门店
+                        poi_id = raw.get("platform_store_id")
+                        store_id_for_review = None
+                        for p in all_store_platforms:
+                            if p.platform_store_id == poi_id:
+                                store_id_for_review = p.store_id
+                                break
+
+                        if not store_id_for_review:
+                            total_skipped += 1
+                            continue
+
+                        review = Review(
+                            store_id=store_id_for_review,
+                            platform=raw.get("platform", "unknown"),
+                            platform_review_id=feedback_id,
+                            user_name=raw.get("user_name", "匿名用户"),
+                            user_avatar=raw.get("user_avatar"),
+                            rating=raw.get("rating", 3),
+                            content=raw.get("content", ""),
+                            images=raw.get("images", []),
+                            sentiment=raw.get("sentiment", "neutral"),
+                            platform_created_at=raw.get("platform_created_at"),
+                        )
+                        db.add(review)
+                        created_count += 1
+
+                    await db.commit()
+                    total_created += created_count
+                else:
+                    logger.warning(f"[sync_store_reviews] {platform} 同步失败: {sync_result.get('error', 'unknown')}")
             except Exception as e:
-                print(f"[PRINT] XXX {platform} 同步异常: {e}", flush=True)
-                logger.error(f"[TRACE] XXX {platform} 同步异常: {e}", exc_info=True)
-                continue
-            if sync_result.get("status") == "success":
-                platform_reviews = sync_result.get("reviews", [])
-                logger.info(f"[sync_store_reviews] {platform} 返回 {len(platform_reviews)} 条评论")
-                all_platform_reviews.extend(platform_reviews)
-            else:
-                logger.warning(
-                    f"[sync_store_reviews] {platform} 同步失败: {sync_result.get('error', 'unknown')}"
-                )
-
-        if not all_platform_reviews:
-            synced_accounts.add(str(sp.account_id))
-            continue
-
-        # 去重：批量查询已存在的 platform_review_id（跨平台去重）
-        platform_review_ids = [r.get("platform_review_id") for r in all_platform_reviews if r.get("platform_review_id")]
-        if platform_review_ids:
-            exist_stmt = select(Review.platform_review_id).where(
-                Review.platform_review_id.in_(platform_review_ids),
-            )
-            exist_result = await db.execute(exist_stmt)
-            existing_ids = set(exist_result.scalars().all())
-        else:
-            existing_ids = set()
-
-        # 批量创建评论
-        created_count = 0
-        for raw in all_platform_reviews:
-            feedback_id = raw.get("platform_review_id")
-            if not feedback_id or feedback_id in existing_ids:
-                total_skipped += 1
+                logger.error(f"[sync_store_reviews] {platform} 同步异常: {e}", exc_info=True)
                 continue
 
-            # 查找对应的 store_id（用 platform_store_id 匹配）
-            poi_id = raw.get("platform_store_id")
-            store_id_for_review = None
-            for p in all_store_platforms:
-                if p.platform_store_id == poi_id:
-                    store_id_for_review = p.store_id
-                    break
+            synced_platforms.add(platform)
 
-            if not store_id_for_review:
-                total_skipped += 1
-                continue
-
-            # sentiment 已由 worker 判断好，直接用
-            review = Review(
-                store_id=store_id_for_review,
-                platform=raw.get("platform", "unknown"),
-                platform_review_id=feedback_id,
-                user_name=raw.get("user_name", "匿名用户"),
-                user_avatar=raw.get("user_avatar"),
-                rating=raw.get("rating", 3),
-                content=raw.get("content", ""),
-                images=raw.get("images", []),
-                sentiment=raw.get("sentiment", "neutral"),
-                platform_created_at=raw.get("platform_created_at"),
-            )
-            db.add(review)
-            created_count += 1
-
-        await db.commit()
-        total_created += created_count
-        synced_accounts.add(str(sp.account_id))
+    platform_names = {
+        "meituan": "美团",
+        "dianping": "大众点评",
+        "douyin": "抖音",
+    }
+    synced_names = [platform_names.get(p, p) for p in synced_platforms]
 
     return success(
         data={
             "created": total_created,
             "skipped": total_skipped,
             "total": total_created + total_skipped,
+            "platforms": list(synced_platforms),
         },
-        message=f"评论同步完成，新增 {total_created} 条（含美团+点评）",
+        message=f"评论增量同步完成（{'+'.join(synced_names)}），新增 {total_created} 条",
     )

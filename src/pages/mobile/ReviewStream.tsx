@@ -75,8 +75,10 @@ import { useToast } from '../../hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { fetchReviews } from '../../api/reviews';
 import { storesApi } from '../../api/stores';
+import { platformsApi } from '../../api/platforms';
 import type { Review } from '../../api/reviews';
 import type { Store } from '../../api/stores';
+import type { PlatformAccount } from '../../api/platforms';
 import { useSubscription, SubscriptionPrompt } from '../../hooks/use-subscription-check';
 
 export const ReviewStream: React.FC = () => {
@@ -225,7 +227,7 @@ export const ReviewStream: React.FC = () => {
     success('刷新完成', '已重新加载评论数据');
   };
 
-  // 同步评论数据（调用平台 API）
+  // 同步评论数据 — 自动检测关联平台，增量同步
   const handleSyncReviews = async () => {
     const effectiveStoreId = selectedStore?.id || localStorage.getItem('zc_selected_store_id');
     if (!effectiveStoreId) {
@@ -235,10 +237,80 @@ export const ReviewStream: React.FC = () => {
 
     setSyncingReviews(true);
     try {
-      const result = await storesApi.syncStoreReviews(effectiveStoreId);
-      const created = result.created || 0;
-      const skipped = result.skipped || 0;
-      success('评论同步完成', `新增 ${created} 条评论${skipped > 0 ? `，跳过 ${skipped} 条重复` : ''}`);
+      // 第一步：获取用户关联的平台账号
+      const accounts: PlatformAccount[] = await platformsApi.getAccounts();
+      if (!accounts || accounts.length === 0) {
+        toastError('暂无平台账号', '请先在"平台连接"中绑定平台账号');
+        return;
+      }
+
+      // 按平台分组，确定需要同步哪些平台
+      const platformNames: Record<string, string> = {
+        meituan: '美团',
+        dianping: '大众点评',
+        douyin: '抖音',
+      };
+
+      let totalCreated = 0;
+      let totalSkipped = 0;
+      let syncErrors: string[] = [];
+      const syncedPlatforms: string[] = [];
+
+      // 第二步：对每个账号触发异步增量同步，轮询等待结果
+      for (const account of accounts) {
+        try {
+          // 启动异步同步任务
+          const { task_id } = await platformsApi.syncAccountReviews(account.id, 'incremental');
+
+          // 轮询等待结果（最多 10 分钟）
+          const maxPolls = 120; // 120 * 5s = 600s
+          let pollCount = 0;
+          let syncDone = false;
+
+          while (pollCount < maxPolls && !syncDone) {
+            await new Promise(r => setTimeout(r, 5000)); // 5 秒轮询
+            pollCount++;
+
+            const status = await platformsApi.getSyncReviewsStatus(account.id, task_id);
+            if (status.status === 'success' || status.status === 'failed') {
+              syncDone = true;
+
+              if (status.status === 'success' && status.result) {
+                totalCreated += status.result.created || 0;
+                totalSkipped += status.result.skipped || 0;
+                if (status.result.errors && status.result.errors.length > 0) {
+                  syncErrors.push(...status.result.errors);
+                }
+                // 记录同步的平台
+                if (account.platform && !syncedPlatforms.includes(account.platform)) {
+                  syncedPlatforms.push(account.platform);
+                }
+              } else {
+                syncErrors.push(status.error || `${platformNames[account.platform] || account.platform} 同步失败`);
+              }
+            }
+          }
+
+          if (!syncDone) {
+            syncErrors.push(`${platformNames[account.platform] || account.platform} 同步超时`);
+          }
+        } catch (err: any) {
+          // 单个账号同步失败不影响其他账号
+          syncErrors.push(`${platformNames[account.platform] || account.platform}: ${err.message || '未知错误'}`);
+        }
+      }
+
+      // 第三步：显示结果
+      if (syncedPlatforms.length > 0) {
+        const names = syncedPlatforms.map(p => platformNames[p] || p).join('+');
+        success(
+          '评论增量同步完成',
+          `${names}：新增 ${totalCreated} 条${totalSkipped > 0 ? `，跳过 ${totalSkipped} 条重复` : ''}${syncErrors.length > 0 ? `，${syncErrors.length} 个错误` : ''}`
+        );
+      } else if (syncErrors.length > 0) {
+        toastError('评论同步失败', syncErrors[0]);
+      }
+
       // 刷新评论列表
       await loadReviews(undefined, false, activeTab);
       // 触发 StoreContext 刷新店铺数据（评论数会变）
