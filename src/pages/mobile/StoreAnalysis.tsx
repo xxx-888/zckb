@@ -11,12 +11,17 @@ import {
   CheckCircle,
   AlertTriangle,
   Store,
+  RefreshCw,
+  Zap,
 } from 'lucide-react';
 import { Card } from '../../components/ui/card';
 import { Badge } from '../../components/ui/badge';
+import { Button } from '../../components/ui/button';
 import { cn } from '../../lib/utils';
 import { MobileLayout, useStore } from '../../components/MobileLayout';
 import { fetchStoreHealth, type StoreHealthData } from '../../api/analysis';
+import { syncDashboard } from '../../api/store-dashboard';
+import { useToast } from '../../hooks/use-toast';
 
 const platformColors: Record<string, string> = {
   '美团': 'bg-yellow-400',
@@ -32,8 +37,10 @@ const platformTextColors: Record<string, string> = {
 
 export const StoreAnalysis: React.FC<{ startDate?: string; endDate?: string }> = ({ startDate, endDate }) => {
   const { selectedStore } = useStore();
+  const { success: toastSuccess } = useToast();
   const [data, setData] = useState<StoreHealthData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -48,6 +55,24 @@ export const StoreAnalysis: React.FC<{ startDate?: string; endDate?: string }> =
     };
     load();
   }, [selectedStore?.id, startDate, endDate]);
+
+  // 同步门店运营数据
+  const handleSync = async () => {
+    if (syncing) return;
+    setSyncing(true);
+    try {
+      const storeId = selectedStore?.id || localStorage.getItem('zc_selected_store_id') || undefined;
+      const result = await syncDashboard({ store_id: storeId, start_date: startDate, end_date: endDate });
+      if (result.success) {
+        toastSuccess('同步完成', '门店运营数据已更新');
+        const storeId2 = selectedStore?.id || localStorage.getItem('zc_selected_store_id') || undefined;
+        const healthResult = await fetchStoreHealth({ store_id: storeId2, start_date: startDate, end_date: endDate });
+        setData(healthResult);
+      }
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   if (loading || !data) {
     return (
@@ -70,13 +95,32 @@ export const StoreAnalysis: React.FC<{ startDate?: string; endDate?: string }> =
   return (
     <div className="space-y-4">
 
+      {/* 同步按钮 */}
+      <div className="flex justify-end px-1">
+        <Button
+          variant="outline"
+          size="sm"
+          className={cn("h-8 gap-1.5 text-xs border-orange-200 text-orange-600", syncing && "opacity-70")}
+          onClick={handleSync}
+          disabled={syncing}
+        >
+          <RefreshCw className={cn("w-3 h-3", syncing && "animate-spin")} />
+          {syncing ? '同步中' : '同步平台数据'}
+        </Button>
+      </div>
+
       {/* 流量漏斗 */}
       <Card className="p-4 bg-white border-slate-100 shadow-sm">
-        <div className="flex items-center gap-2 mb-4">
-          <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center">
-            <Funnel className="w-3.5 h-3.5 text-blue-500" />
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center">
+              <Funnel className="w-3.5 h-3.5 text-blue-500" />
+            </div>
+            <span className="text-sm font-bold text-slate-700">线上流量漏斗</span>
           </div>
-          <span className="text-sm font-bold text-slate-700">线上流量漏斗</span>
+          <Badge variant="outline" className="text-[9px] text-orange-500 border-orange-200">
+            <Zap className="w-2.5 h-2.5 mr-0.5" />平台数据
+          </Badge>
         </div>
         <div className="space-y-4">
           {data.funnels.map((funnel) => {

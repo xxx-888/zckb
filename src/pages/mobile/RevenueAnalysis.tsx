@@ -26,6 +26,8 @@ import {
   Calendar,
   ChevronDown,
   CheckCircle2,
+  RefreshCw,
+  Zap,
 } from 'lucide-react';
 import { Card } from '../../components/ui/card';
 import { Badge } from '../../components/ui/badge';
@@ -33,16 +35,18 @@ import { Button } from '../../components/ui/button';
 import { cn } from '../../lib/utils';
 import { MobileLayout, useStore } from '../../components/MobileLayout';
 import { fetchRevenueTrend, type RevenueTrendData } from '../../api/analysis';
+import { syncDashboard } from '../../api/store-dashboard';
 import { useToast } from '../../hooks/use-toast';
 
 const COLORS = ['#f59e0b', '#111827', '#6366f1'];
 
 export const RevenueAnalysis: React.FC<{ startDate?: string; endDate?: string }> = ({ startDate, endDate }) => {
-  const { success } = useToast();
+  const { success: toastSuccess } = useToast();
   const { selectedStore } = useStore();
   const [data, setData] = useState<RevenueTrendData | null>(null);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<'daily' | 'weekly'>('daily');
+  const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -57,6 +61,25 @@ export const RevenueAnalysis: React.FC<{ startDate?: string; endDate?: string }>
     };
     load();
   }, [selectedStore?.id, startDate, endDate]);
+
+  // 同步营业额数据
+  const handleSync = async () => {
+    if (syncing) return;
+    setSyncing(true);
+    try {
+      const storeId = selectedStore?.id || localStorage.getItem('zc_selected_store_id') || undefined;
+      const result = await syncDashboard({ store_id: storeId, start_date: startDate, end_date: endDate });
+      if (result.success) {
+        toastSuccess('同步完成', `营业额数据已更新`);
+        // 重新加载数据
+        const storeId2 = selectedStore?.id || localStorage.getItem('zc_selected_store_id') || undefined;
+        const trendResult = await fetchRevenueTrend({ store_id: storeId2, start_date: startDate, end_date: endDate });
+        setData(trendResult);
+      }
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   if (loading || !data) {
     return (
@@ -104,22 +127,39 @@ export const RevenueAnalysis: React.FC<{ startDate?: string; endDate?: string }>
 
   return (
     <div className="space-y-4">
-      {/* 周/日切换 */}
-      <div className="flex gap-2 px-1">
-        {(['daily', 'weekly'] as const).map(p => (
-          <Button key={p} size="sm" variant={period === p ? 'default' : 'outline'}
-            className={cn("text-xs", period === p && "bg-slate-900")}
-            onClick={() => setPeriod(p)}>
-            {p === 'daily' ? '日维度' : '周维度'}
-          </Button>
-        ))}
+      {/* 日/周切换 + 同步 */}
+      <div className="flex items-center justify-between px-1">
+        <div className="flex gap-2">
+          {(['daily', 'weekly'] as const).map(p => (
+            <Button key={p} size="sm" variant={period === p ? 'default' : 'outline'}
+              className={cn("text-xs", period === p && "bg-slate-900")}
+              onClick={() => setPeriod(p)}>
+              {p === 'daily' ? '日维度' : '周维度'}
+            </Button>
+          ))}
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className={cn("h-8 gap-1.5 text-xs border-orange-200 text-orange-600", syncing && "opacity-70")}
+          onClick={handleSync}
+          disabled={syncing}
+        >
+          <RefreshCw className={cn("w-3 h-3", syncing && "animate-spin")} />
+          {syncing ? '同步中' : '同步数据'}
+        </Button>
       </div>
 
       {/* 营业额趋势图 */}
       <Card className="p-4 bg-white border-slate-100 shadow-sm">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <p className="text-sm font-bold text-slate-700">营业额趋势</p>
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-bold text-slate-700">营业额趋势</p>
+              <Badge variant="outline" className="text-[9px] text-orange-500 border-orange-200">
+                <Zap className="w-2.5 h-2.5 mr-0.5" />平台数据
+              </Badge>
+            </div>
             <p className="text-[10px] text-slate-400">
               {period === 'daily' ? data.daily[0]?.date + ' ~ ' + data.daily[data.daily.length - 1]?.date : '周度对比'}
             </p>

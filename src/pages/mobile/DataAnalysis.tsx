@@ -7,6 +7,7 @@ import {
   Calendar,
   ChevronDown,
   CheckCircle2,
+  RefreshCw,
 } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { cn } from '../../lib/utils';
@@ -15,6 +16,7 @@ import { RevenueAnalysis } from './RevenueAnalysis';
 import { PackageAnalysisTab } from './PackageAnalysisTab';
 import { StoreAnalysis } from './StoreAnalysis';
 import { useToast } from '../../hooks/use-toast';
+import { syncDashboard } from '../../api/store-dashboard';
 
 const tabs = [
   { key: 'revenue', label: '营业额分析', icon: Wallet, color: 'text-orange-500' },
@@ -122,22 +124,24 @@ export const DataAnalysis: React.FC = () => {
         </div>
 
         {/* Tab 栏 */}
-        <div className="bg-white rounded-2xl p-1.5 flex gap-1 shadow-sm border border-slate-100">
-          {tabs.map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={cn(
-                "flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold transition-all duration-200",
-                activeTab === tab.key
-                  ? "bg-slate-900 text-white shadow-sm"
-                  : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
-              )}
-            >
-              <tab.icon className={cn("w-4 h-4", activeTab === tab.key ? "text-white" : tab.color)} />
-              {tab.label}
-            </button>
-          ))}
+        <div className="flex items-center gap-2">
+          <div className="bg-white rounded-2xl p-1.5 flex gap-1 shadow-sm border border-slate-100 flex-1">
+            {tabs.map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={cn(
+                  "flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold transition-all duration-200",
+                  activeTab === tab.key
+                    ? "bg-slate-900 text-white shadow-sm"
+                    : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
+                )}
+              >
+                <tab.icon className={cn("w-4 h-4", activeTab === tab.key ? "text-white" : tab.color)} />
+                {tab.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Tab 内容 - 传递日期参数 */}

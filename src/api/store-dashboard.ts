@@ -389,6 +389,80 @@ export async function listStoreMetrics(params?: {
   return api.get(`${API_BASE}/metrics`, { params });
 }
 
+// ==================== 仪表盘数据同步 API ====================
+
+export interface DashboardSyncResult {
+  success: boolean;
+  platform?: string;
+  error?: string;
+  revenue_records?: number;
+  metric_records?: number;
+  package_records?: number;
+}
+
+export interface DashboardSyncAllResult {
+  success: boolean;
+  error?: string;
+  results: DashboardSyncResult[];
+  summary?: {
+    platforms_synced: number;
+    total_revenue_records: number;
+    total_metric_records: number;
+    total_package_records: number;
+  };
+}
+
+/** 同步仪表盘数据（全部平台或指定平台）
+ *  注意：此接口使用 Playwright 浏览器环境调用平台 API，启动浏览器约需 10-30 秒，
+ *  数据获取约需 30-120 秒，超时设置为 180 秒。
+ */
+export async function syncDashboard(params?: {
+  store_id?: string;
+  start_date?: string;
+  end_date?: string;
+  platform?: string;
+}): Promise<DashboardSyncAllResult> {
+  try {
+    const res = await api.post<any>(`${API_BASE}/sync`, null, {
+      params,
+      timeout: 180000,  // 180 秒超时（启动浏览器 + 数据获取）
+    });
+    return res?.data || res || { success: false, results: [], error: '同步失败' };
+  } catch (err: any) {
+    // 如果是超时错误，给出更友好的提示
+    const isTimeout = err?.code === 'ECONNABORTED' || err?.message?.includes('timeout');
+    return {
+      success: false,
+      results: [],
+      error: isTimeout ? '同步超时，浏览器启动或数据获取耗时过长，请稍后重试' : (err?.message || '同步失败'),
+    };
+  }
+}
+
+/** 按平台账号ID同步仪表盘数据 */
+export async function syncAccountDashboard(
+  accountId: string,
+  params?: {
+    start_date?: string;
+    end_date?: string;
+    store_id?: string;
+  },
+): Promise<DashboardSyncResult> {
+  try {
+    const res = await api.post<any>(`${API_BASE}/sync/${accountId}`, null, {
+      params,
+      timeout: 180000,  // 180 秒超时
+    });
+    return res?.data || res || { success: false, error: '同步失败' };
+  } catch (err: any) {
+    const isTimeout = err?.code === 'ECONNABORTED' || err?.message?.includes('timeout');
+    return {
+      success: false,
+      error: isTimeout ? '同步超时，浏览器启动或数据获取耗时过长，请稍后重试' : (err?.message || '同步失败'),
+    };
+  }
+}
+
 // ==================== Fallback 数据 ====================
 
 function getFallbackData(): StoreDashboardData {

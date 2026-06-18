@@ -17,19 +17,26 @@ import {
   Trophy,
   AlertTriangle,
   ArrowDown,
+  RefreshCw,
+  Zap,
 } from 'lucide-react';
 import { Card } from '../../components/ui/card';
 import { Badge } from '../../components/ui/badge';
+import { Button } from '../../components/ui/button';
 import { cn } from '../../lib/utils';
 import { MobileLayout, useStore } from '../../components/MobileLayout';
 import { fetchPackageAnalysis, type PackageAnalysisData } from '../../api/analysis';
+import { syncDashboard } from '../../api/store-dashboard';
+import { useToast } from '../../hooks/use-toast';
 
 export const PackageAnalysisTab: React.FC<{ startDate?: string; endDate?: string }> = ({ startDate, endDate }) => {
   const { selectedStore } = useStore();
+  const { success: toastSuccess } = useToast();
   const [data, setData] = useState<PackageAnalysisData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<'top' | 'bottom' | 'all'>('top');
+  const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -47,6 +54,24 @@ export const PackageAnalysisTab: React.FC<{ startDate?: string; endDate?: string
     };
     load();
   }, [selectedStore?.id, startDate, endDate]);
+
+  // 同步套餐数据
+  const handleSync = async () => {
+    if (syncing) return;
+    setSyncing(true);
+    try {
+      const storeId = selectedStore?.id || localStorage.getItem('zc_selected_store_id') || undefined;
+      const result = await syncDashboard({ store_id: storeId, start_date: startDate, end_date: endDate });
+      if (result.success) {
+        toastSuccess('同步完成', '套餐核销数据已更新');
+        const storeId2 = selectedStore?.id || localStorage.getItem('zc_selected_store_id') || undefined;
+        const trendResult = await fetchPackageAnalysis({ store_id: storeId2, start_date: startDate, end_date: endDate });
+        setData(trendResult);
+      }
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -100,25 +125,42 @@ export const PackageAnalysisTab: React.FC<{ startDate?: string; endDate?: string
 
   return (
     <div className="space-y-4">
-      {/* 概览卡片 */}
-      <div className="grid grid-cols-3 gap-3">
-        <Card className="p-3 bg-white border-slate-100 text-center">
-          <p className="text-[10px] text-slate-400 mb-1">总购买</p>
-          <p className="text-xl font-black text-slate-900">{data.overall_summary.total_buy}</p>
-        </Card>
-        <Card className="p-3 bg-white border-slate-100 text-center">
-          <p className="text-[10px] text-slate-400 mb-1">总核销</p>
-          <p className="text-xl font-black text-slate-900">{data.overall_summary.total_verify}</p>
-        </Card>
-        <Card className="p-3 bg-white border-slate-100 text-center">
-          <p className="text-[10px] text-slate-400 mb-1">平均核销率</p>
-          <p className="text-xl font-black text-indigo-600">{data.overall_summary.avg_verify_rate}%</p>
-        </Card>
+      {/* 概览卡片 + 同步 */}
+      <div className="flex items-start gap-3">
+        <div className="grid grid-cols-3 gap-3 flex-1">
+          <Card className="p-3 bg-white border-slate-100 text-center">
+            <p className="text-[10px] text-slate-400 mb-1">总购买</p>
+            <p className="text-xl font-black text-slate-900">{data.overall_summary.total_buy}</p>
+          </Card>
+          <Card className="p-3 bg-white border-slate-100 text-center">
+            <p className="text-[10px] text-slate-400 mb-1">总核销</p>
+            <p className="text-xl font-black text-slate-900">{data.overall_summary.total_verify}</p>
+          </Card>
+          <Card className="p-3 bg-white border-slate-100 text-center">
+            <p className="text-[10px] text-slate-400 mb-1">平均核销率</p>
+            <p className="text-xl font-black text-indigo-600">{data.overall_summary.avg_verify_rate}%</p>
+          </Card>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className={cn("h-9 w-9 rounded-xl border-orange-200 flex-shrink-0 p-0", syncing && "opacity-70")}
+          onClick={handleSync}
+          disabled={syncing}
+          title="同步平台数据"
+        >
+          <RefreshCw className={cn("w-3.5 h-3.5 text-orange-500", syncing && "animate-spin")} />
+        </Button>
       </div>
 
       {/* 核销率柱状图 */}
       <Card className="p-4 bg-white border-slate-100 shadow-sm">
-        <p className="text-sm font-bold text-slate-700 mb-1">核销率对比</p>
+        <div className="flex items-center justify-between mb-1">
+          <p className="text-sm font-bold text-slate-700">核销率对比</p>
+          <Badge variant="outline" className="text-[9px] text-orange-500 border-orange-200">
+            <Zap className="w-2.5 h-2.5 mr-0.5" />平台同步
+          </Badge>
+        </div>
         <p className="text-[10px] text-slate-400 mb-4">虚线为平均核销率，低于平均值需关注</p>
         <ResponsiveContainer width="100%" height={220}>
           <BarChart data={chartData} layout="vertical" margin={{ left: 70, right: 20 }}>

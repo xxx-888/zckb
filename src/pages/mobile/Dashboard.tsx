@@ -14,6 +14,8 @@ import {
   Store as StoreIcon,
   ChevronRight,
   CheckCircle2,
+  RefreshCw,
+  Zap,
 } from 'lucide-react';
 import { Card } from '../../components/ui/card';
 import { Badge } from '../../components/ui/badge';
@@ -25,6 +27,7 @@ import { cn } from '../../lib/utils';
 import { useToast } from '../../hooks/use-toast';
 import {
   fetchStoreDashboard,
+  syncDashboard,
   type StoreDashboardData,
   type RevenueData,
   type BusinessMetrics,
@@ -73,6 +76,8 @@ export const Dashboard: React.FC = () => {
   const [data, setData] = useState<StoreDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<string | null>(null);
 
   // 获取当前选中的门店ID
   const getEffectiveStoreId = useCallback(() => {
@@ -143,6 +148,57 @@ export const Dashboard: React.FC = () => {
     window.dispatchEvent(new CustomEvent('zc-time-period-changed', { detail: value }));
   };
 
+  // ===== 同步仪表盘数据 =====
+  const handleSyncDashboard = async () => {
+    if (syncing) return;
+    setSyncing(true);
+    setSyncResult(null);
+
+    try {
+      const idx = timeOptions.findIndex(o => o.value === timePeriod);
+      const option = timeOptions[idx];
+      const storeId = getEffectiveStoreId();
+
+      setSyncResult('🔄 正在启动浏览器环境同步数据，预计需要 30-120 秒...');
+      console.log('[Dashboard] 🚀 开始同步仪表盘数据', { storeId, startDate: option?.startDate, endDate: option?.endDate });
+
+      const result = await syncDashboard({
+        store_id: storeId,
+        start_date: option?.startDate,
+        end_date: option?.endDate,
+      });
+
+      console.log('[Dashboard] 📊 同步结果:', result);
+
+      if (result.success) {
+        const summary = result.summary;
+        const details: string[] = [];
+        for (const r of result.results) {
+          if (r.success) {
+            details.push(`${r.platform === 'meituan' ? '美团' : '抖音'}: 营业额${r.revenue_records || 0}条, 指标${r.metric_records || 0}条${r.package_records ? `, 套餐${r.package_records}条` : ''}`);
+          } else {
+            details.push(`${r.platform === 'meituan' ? '美团' : '抖音'}: ❌ ${r.error || '同步失败'}`);
+          }
+        }
+        setSyncResult(`✅ ${details.join(' | ')}`);
+        console.log('[Dashboard] ✅ 同步成功详情:', details);
+        success('同步完成', `已从${summary?.platforms_synced || 0}个平台同步数据`);
+        // 重新加载看板数据
+        await fetchData();
+      } else {
+        const errMsg = result.error || '同步失败';
+        setSyncResult(`❌ ${errMsg}`);
+        console.error('[Dashboard] ❌ 同步失败:', errMsg, result);
+      }
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : '同步异常';
+      setSyncResult(`❌ ${errMsg}`);
+      console.error('[Dashboard] ❌ 同步异常:', err);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   // ===== 快捷入口卡片 =====
   const quickActions = [
     { label: '营业额分析', desc: '趋势/渠道/客流', icon: Wallet, color: 'bg-orange-500', path: '/mobile/data-analysis?tab=revenue' },
@@ -190,19 +246,31 @@ export const Dashboard: React.FC = () => {
     <MobileLayout title="经营看板">
       <div className="pb-20 space-y-4">
 
-        {/* 时间筛选 + 运营分析摘要 */}
+        {/* 时间筛选 + 同步按钮 */}
         <div className="relative" ref={dropdownRef}>
-          <div className="flex items-center justify-between bg-white p-3 rounded-2xl shadow-sm border border-slate-100">
-            <div className="flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-slate-400" />
-              <span className="text-sm font-medium text-slate-600">
-                {timeOptions.find(opt => opt.value === timePeriod)?.dateRange}
-              </span>
+          <div className="flex items-center gap-2">
+            <div className="flex-1 flex items-center justify-between bg-white p-3 rounded-2xl shadow-sm border border-slate-100">
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-slate-400" />
+                <span className="text-sm font-medium text-slate-600">
+                  {timeOptions.find(opt => opt.value === timePeriod)?.dateRange}
+                </span>
+              </div>
+              <Button variant="ghost" size="sm" className="h-8 text-orange-600 font-semibold gap-1"
+                onClick={() => setShowTimeDropdown(!showTimeDropdown)}>
+                {timeOptions.find(opt => opt.value === timePeriod)?.label}
+                <ChevronDown className={cn("w-3.5 h-3.5 transition-transform", showTimeDropdown && "rotate-180")} />
+              </Button>
             </div>
-            <Button variant="ghost" size="sm" className="h-8 text-orange-600 font-semibold gap-1"
-              onClick={() => setShowTimeDropdown(!showTimeDropdown)}>
-              {timeOptions.find(opt => opt.value === timePeriod)?.label}
-              <ChevronDown className={cn("w-3.5 h-3.5 transition-transform", showTimeDropdown && "rotate-180")} />
+            <Button
+              variant="outline"
+              size="sm"
+              className={cn("h-12 w-12 rounded-2xl border-orange-200 flex-shrink-0", syncing && "animate-spin")}
+              onClick={handleSyncDashboard}
+              disabled={syncing}
+              title="同步平台数据"
+            >
+              <RefreshCw className={cn("w-4 h-4", syncing ? "text-orange-500" : "text-orange-400")} />
             </Button>
           </div>
           {showTimeDropdown && (
@@ -278,9 +346,64 @@ export const Dashboard: React.FC = () => {
           </Card>
         </div>
 
-        {/* 分渠道营业额 */}
+        {/* 平台数据对比 */}
         <Card className="p-4 bg-white border-slate-100 shadow-sm">
-          <p className="text-xs font-bold text-slate-700 mb-3">渠道构成</p>
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs font-bold text-slate-700">平台数据对比</p>
+            <Badge variant="outline" className="text-[9px] text-orange-500 border-orange-200">
+              <Zap className="w-2.5 h-2.5 mr-0.5" />同步数据
+            </Badge>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            {/* 美团 */}
+            <div className="bg-yellow-50/80 rounded-xl p-3">
+              <div className="flex items-center gap-1.5 mb-2">
+                <div className="w-5 h-5 rounded bg-yellow-400 flex items-center justify-center">
+                  <span className="text-[8px] font-bold text-white">美</span>
+                </div>
+                <span className="text-[10px] font-bold text-yellow-700">美团</span>
+              </div>
+              <p className="text-lg font-black text-slate-900">{formatMoney(rev.meituan_revenue)}</p>
+              <p className="text-[9px] text-slate-500 mt-0.5">
+                占比 {rev.total_revenue > 0 ? ((rev.meituan_revenue / rev.total_revenue) * 100).toFixed(1) : 0}%
+              </p>
+            </div>
+            {/* 抖音 */}
+            <div className="bg-slate-50/80 rounded-xl p-3">
+              <div className="flex items-center gap-1.5 mb-2">
+                <div className="w-5 h-5 rounded bg-slate-900 flex items-center justify-center">
+                  <span className="text-[8px] font-bold text-white">抖</span>
+                </div>
+                <span className="text-[10px] font-bold text-slate-700">抖音</span>
+              </div>
+              <p className="text-lg font-black text-slate-900">{formatMoney(rev.douyin_revenue)}</p>
+              <p className="text-[9px] text-slate-500 mt-0.5">
+                占比 {rev.total_revenue > 0 ? ((rev.douyin_revenue / rev.total_revenue) * 100).toFixed(1) : 0}%
+              </p>
+            </div>
+          </div>
+        </Card>
+
+        {/* 同步结果提示 */}
+        {syncResult && (
+          <Card className={cn("p-3 border text-xs",
+            syncResult.includes('成功') ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-rose-50 border-rose-200 text-rose-700"
+          )}>
+            <div className="flex items-center gap-2">
+              {syncResult.includes('成功') ? <CheckCircle2 className="w-4 h-4 flex-shrink-0" /> : <Zap className="w-4 h-4 flex-shrink-0" />}
+              <span>{syncResult}</span>
+            </div>
+          </Card>
+        )}
+
+        {/* 渠道构成 + 数据来源 */}
+        <Card className="p-4 bg-white border-slate-100 shadow-sm">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs font-bold text-slate-700">渠道构成</p>
+            <Badge variant="outline" className="text-[9px] text-orange-500 border-orange-200">
+              <Zap className="w-2.5 h-2.5 mr-0.5" />平台同步
+            </Badge>
+          </div>
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -328,13 +451,25 @@ export const Dashboard: React.FC = () => {
               <BarChart3 className="w-3.5 h-3.5 text-amber-500" />
             </div>
             <span className="text-xs font-bold text-slate-700">运营分析</span>
+            <Badge variant="outline" className="text-[9px] text-orange-500 border-orange-200 ml-auto">
+              <Zap className="w-2.5 h-2.5 mr-0.5" />AI洞察
+            </Badge>
           </div>
-          <p className="text-xs text-slate-600 leading-relaxed line-clamp-3">{data.operation_analysis?.analysis_opinion}</p>
-          <div className="mt-2 flex items-center gap-2">
-            {(data.operation_analysis?.goals || []).slice(0, 2).map((g, i) => (
-              <Badge key={i} variant="secondary" className="text-[9px]">{g.slice(0, 12)}...</Badge>
-            ))}
-          </div>
+          {data.operation_analysis?.analysis_opinion ? (
+            <>
+              <p className="text-xs text-slate-600 leading-relaxed line-clamp-3">{data.operation_analysis.analysis_opinion}</p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {(data.operation_analysis?.goals || []).slice(0, 3).map((g, i) => (
+                  <Badge key={i} variant="secondary" className="text-[9px]">{g.length > 14 ? g.slice(0, 14) + '...' : g}</Badge>
+                ))}
+              </div>
+            </>
+          ) : (
+            <div className="text-center py-3">
+              <p className="text-[10px] text-slate-400">暂无运营分析</p>
+              <p className="text-[9px] text-slate-300 mt-1">同步平台数据后自动生成</p>
+            </div>
+          )}
         </Card>
 
         {/* 快捷入口 */}
