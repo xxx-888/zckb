@@ -20,6 +20,7 @@ import os
 import time
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional
+from urllib.parse import urlparse, parse_qs
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
@@ -345,6 +346,24 @@ def _dashboard_sync_worker(
 
         # 抖音专属：第二步跳转到 life-data.cn 触发 SSO 自动登录
         if is_douyin and dashboard_url:
+            # 🔧 修复：从第一步跳转后的 URL 中提取正确的 groupid
+            # 原因：platform_account_id 可能不正确，需要使用浏览器中实际使用的 groupid
+            try:
+                from urllib.parse import urlparse, parse_qs
+                current_url = page.url
+                parsed = urlparse(current_url)
+                query_params = parse_qs(parsed.query)
+                actual_groupid = query_params.get("groupid", [life_account_id])[0]
+                
+                if actual_groupid and actual_groupid != life_account_id:
+                    print(f"[DashboardSync Worker] 🔧 修复 groupid: {life_account_id} → {actual_groupid}", flush=True)
+                    life_account_id = actual_groupid
+                    # 重新构建 dashboard_url
+                    dashboard_url = f"https://www.life-data.cn/?channel_id=laike_data_first_menu&groupid={life_account_id}"
+                    print(f"[DashboardSync Worker] 🔧 重新构建 dashboard_url: {dashboard_url}", flush=True)
+            except Exception as e:
+                print(f"[DashboardSync Worker] ⚠️ 提取 groupid 失败: {e}, 使用原值", flush=True)
+            
             print(f"\n[DashboardSync Worker] 🔗 第二步（抖音SSO）：跳转到 {dashboard_url}...", flush=True)
             try:
                 page.goto(dashboard_url, wait_until="domcontentloaded", timeout=60000)
