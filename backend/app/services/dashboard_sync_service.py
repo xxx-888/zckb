@@ -31,7 +31,8 @@ from app.services.platform_service import PlatformService
 
 logger = logging.getLogger(__name__)
 
-HEADLESS = os.getenv("QR_HEADLESS", "true").lower() in ("true", "1", "yes")
+HEADLESS = False  # 🔧 临时开启有头模式，便于调试 SSO 认证问题
+# HEADLESS = os.getenv("QR_HEADLESS", "true").lower() in ("true", "1", "yes")
 DASHBOARD_SYNC_TIMEOUT = 300  # 仪表盘同步超时（秒）
 
 _RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".qr_results")
@@ -352,19 +353,38 @@ def _dashboard_sync_worker(
                 print(f"[DashboardSync Worker] ⚠️ 第二步跳转警告: {e}, 继续执行", flush=True)
 
             # 等待 SSO 完成（关键！）
-            print(f"[DashboardSync Worker] ⏳ 等待 SSO 登录完成...", flush=True)
-            page.wait_for_timeout(8000)  # 等待 8 秒让 SSO 完成
+            print(f"[DashboardSync Worker] ⏳ 等待 SSO 登录完成（15秒）...", flush=True)
+            page.wait_for_timeout(15000)  # 等待 15 秒让 SSO 完成
+
+            # 🔧 增强：检查页面是否包含登录表单（如果被重定向到登录页）
+            try:
+                is_login_page = page.evaluate("""() => {
+                    // 检查是否有登录表单
+                    const loginForm = document.querySelector('input[type="password"], .login-form, .login-container, [class*="login"]');
+                    const hasLoginText = document.body.innerText.includes('登录') || document.body.innerText.includes('Login');
+                    return !!(loginForm || hasLoginText);
+                }""")
+                print(f"[DashboardSync Worker] 🔍 SSO 检查结果: is_login_page={is_login_page}", flush=True)
+            except Exception as e:
+                print(f"[DashboardSync Worker] ⚠️ SSO 检查失败: {e}", flush=True)
+                is_login_page = False
 
             # 检查跳转后是否被重定向到登录页
             current_url = page.url
             print(f"[DashboardSync Worker] 📍 第二步后当前页面URL: {current_url}", flush=True)
-            if "login" in current_url.lower() or "passport" in current_url.lower():
+            
+            # 增强检查：URL 包含 login 或页面包含登录表单
+            is_redirected_to_login = "login" in current_url.lower() or "passport" in current_url.lower() or is_login_page
+            
+            if is_redirected_to_login:
                 print(f"[DashboardSync Worker] ❌ SSO 跳转失败! 被重定向到: {current_url}", flush=True)
                 print(f"[DashboardSync Worker] 💡 提示: 请确认 life_account_id={life_account_id} 是否正确", flush=True)
+                print(f"[DashboardSync Worker] 💡 提示: 请尝试重新登录抖音来客并保存 cookie", flush=True)
                 _write_result(done_file, {
                     "status": "failed",
                     "error": "SSO 跳转失败，请重新登录抖音来客并保存 cookie",
                     "current_url": current_url,
+                    "is_login_page": is_login_page,
                 })
                 return
 
