@@ -217,12 +217,20 @@ def _dashboard_sync_worker(
         entry_url = "https://ecom.meituan.com/bizguide/trade-analysis/overview"
         cookie_domain = ".meituan.com"
     elif platform == "douyin":
-        # 抖音登录是在 life.douyin.com 下完成的，_storage_state 的 cookies 都在 .life.douyin.com 域名下
-        # 而仪表盘 API 在 life-data.cn 域名下，需要先建立 SSO 登录态
-        # 方案：先导航 life.douyin.com 建立 SSO → 再导航 life-data.cn 自动获得认证 cookie
-        entry_url = "https://life.douyin.com/"  # 先到抖音主站建立登录态
-        dashboard_url = f"https://www.life-data.cn/home?groupid={life_account_id}" if life_account_id else "https://www.life-data.cn/home"
-        cookie_domain = ".life-data.cn"
+        # 抖音来客仪表盘数据在 life-data.cn，但登录态在 life.douyin.com
+        # 需要先访问 life.douyin.com 建立 SSO 登录态，再跳转到 life-data.cn 自动获得认证
+        # 用户提供的正确跳转路径：
+        #   1. 先访问 https://life.douyin.com/p/home
+        #   2. 再跳转到 https://www.life-data.cn/?channel_id=laike_data_first_menu&groupid=...
+        douyin_home_url = "https://life.douyin.com/p/home"
+        douyin_dashboard_url = (
+            f"https://www.life-data.cn/?channel_id=laike_data_first_menu&groupid={life_account_id}"
+            if life_account_id
+            else "https://www.life-data.cn/?channel_id=laike_data_first_menu"
+        )
+        entry_url = douyin_home_url  # 先到抖音主站建立登录态
+        dashboard_url = douyin_dashboard_url  # 再跳转到仪表盘
+        cookie_domain = ".life.douyin.com"
     else:
         _write_result(done_file, {"status": "failed", "error": f"不支持的平台: {platform}"})
         return
@@ -312,18 +320,19 @@ def _dashboard_sync_worker(
         wait_strategy = "domcontentloaded" if is_douyin else "networkidle"
         goto_timeout = 60000 if is_douyin else 30000
 
-        print(f"[DashboardSync Worker] 🔗 导航到 {entry_url}...", flush=True)
+        # 第一步：导航到入口 URL（美团直接到目标页，抖音先到 life.douyin.com 建立 SSO）
+        print(f"[DashboardSync Worker] 🔗 第一步：导航到 {entry_url}...", flush=True)
         try:
             page.goto(entry_url, wait_until=wait_strategy, timeout=goto_timeout)
-            print(f"[DashboardSync Worker] ✅ 页面加载完成: {page.url}", flush=True)
+            print(f"[DashboardSync Worker] ✅ 第一步页面加载完成: {page.url}", flush=True)
         except Exception as e:
             print(f"[DashboardSync Worker] ⚠️ page.goto 警告: {e}, 继续执行", flush=True)
 
         page.wait_for_timeout(3000 if not is_douyin else 5000)
 
-        # 检查是否被重定向到登录页
+        # 检查是否被重定向到登录页（第一步）
         current_url = page.url
-        print(f"[DashboardSync Worker] 📍 当前页面URL: {current_url}", flush=True)
+        print(f"[DashboardSync Worker] 📍 第一步后当前页面URL: {current_url}", flush=True)
         if "login" in current_url.lower() or "passport" in current_url.lower():
             print(f"[DashboardSync Worker] ❌ 登录态已失效! 被重定向到: {current_url}", flush=True)
             _write_result(done_file, {
@@ -332,6 +341,34 @@ def _dashboard_sync_worker(
                 "current_url": current_url,
             })
             return
+
+        # 抖音专属：第二步跳转到 life-data.cn 触发 SSO 自动登录
+        if is_douyin and dashboard_url:
+            print(f"\n[DashboardSync Worker] 🔗 第二步（抖音SSO）：跳转到 {dashboard_url}...", flush=True)
+            try:
+                page.goto(dashboard_url, wait_until="domcontentloaded", timeout=60000)
+                print(f"[DashboardSync Worker] ✅ 第二步页面加载完成: {page.url}", flush=True)
+            except Exception as e:
+                print(f"[DashboardSync Worker] ⚠️ 第二步跳转警告: {e}, 继续执行", flush=True)
+
+            # 等待 SSO 完成（关键！）
+            print(f"[DashboardSync Worker] ⏳ 等待 SSO 登录完成...", flush=True)
+            page.wait_for_timeout(8000)  # 等待 8 秒让 SSO 完成
+
+            # 检查跳转后是否被重定向到登录页
+            current_url = page.url
+            print(f"[DashboardSync Worker] 📍 第二步后当前页面URL: {current_url}", flush=True)
+            if "login" in current_url.lower() or "passport" in current_url.lower():
+                print(f"[DashboardSync Worker] ❌ SSO 跳转失败! 被重定向到: {current_url}", flush=True)
+                print(f"[DashboardSync Worker] 💡 提示: 请确认 life_account_id={life_account_id} 是否正确", flush=True)
+                _write_result(done_file, {
+                    "status": "failed",
+                    "error": "SSO 跳转失败，请重新登录抖音来客并保存 cookie",
+                    "current_url": current_url,
+                })
+                return
+
+            print(f"[DashboardSync Worker] ✅ SSO 登录成功! 当前页面: {current_url}", flush=True)
 
         # ==================== 执行同步 ====================
 
