@@ -325,12 +325,28 @@ def _dashboard_sync_worker(
         # 第一步：导航到入口 URL（美团直接到目标页，抖音先到 life.douyin.com 建立 SSO）
         print(f"[DashboardSync Worker] 🔗 第一步：导航到 {entry_url}...", flush=True)
         try:
+            # 抖音需要等待网络空闲，确保登录态完全建立
+            wait_strategy = "networkidle" if is_douyin else "domcontentloaded"
+            goto_timeout = 90000 if is_douyin else 30000
+            
             page.goto(entry_url, wait_until=wait_strategy, timeout=goto_timeout)
             print(f"[DashboardSync Worker] ✅ 第一步页面加载完成: {page.url}", flush=True)
         except Exception as e:
             print(f"[DashboardSync Worker] ⚠️ page.goto 警告: {e}, 继续执行", flush=True)
 
-        page.wait_for_timeout(3000 if not is_douyin else 5000)
+        # 抖音专属：等待登录态完全建立
+        if is_douyin:
+            print(f"[DashboardSync Worker] ⏳ 等待抖音登录态建立（10秒）...", flush=True)
+            page.wait_for_timeout(10000)  # 等待 10 秒让 cookie 完全设置
+            
+            # 检查页面是否完全加载
+            try:
+                page.wait_for_load_state("networkidle", timeout=30000)
+                print(f"[DashboardSync Worker] ✅ 页面网络请求完成", flush=True)
+            except Exception as e:
+                print(f"[DashboardSync Worker] ⚠️ 等待 networkidle 超时: {e}", flush=True)
+        else:
+            page.wait_for_timeout(3000)
 
         # 检查是否被重定向到登录页（第一步）
         current_url = page.url
@@ -346,38 +362,84 @@ def _dashboard_sync_worker(
 
         # 抖音专属：第二步跳转到 life-data.cn 触发 SSO 自动登录
         if is_douyin and dashboard_url:
-            # 🔧 修复：从第一步跳转后的 URL 中提取正确的 groupid
-            # 原因：platform_account_id 可能不正确，需要使用浏览器中实际使用的 groupid
-            try:
-                from urllib.parse import urlparse, parse_qs
-                current_url = page.url
-                parsed = urlparse(current_url)
-                query_params = parse_qs(parsed.query)
-                actual_groupid = query_params.get("groupid", [life_account_id])[0]
-                
-                if actual_groupid and actual_groupid != life_account_id:
-                    print(f"[DashboardSync Worker] 🔧 修复 groupid: {life_account_id} → {actual_groupid}", flush=True)
-                    life_account_id = actual_groupid
-                    # 重新构建 dashboard_url
-                    dashboard_url = f"https://www.life-data.cn/?channel_id=laike_data_first_menu&groupid={life_account_id}"
-                    print(f"[DashboardSync Worker] 🔧 重新构建 dashboard_url: {dashboard_url}", flush=True)
-            except Exception as e:
-                print(f"[DashboardSync Worker] ⚠️ 提取 groupid 失败: {e}, 使用原值", flush=True)
+            # 🔧 关键修复：新开标签页跳转（模拟真实用户行为）
+            # 原因：真实浏览器中点击"生意经"会自动打开新标签页，
+            # 直接在当前页面覆盖访问会被重定向，新开标签页才会触发 SSO 自动登录
+            print(f"\n[DashboardSync Worker] 🔗 第二步（抖音SSO）：新开标签页跳转到 {dashboard_url}...", flush=True)
             
-            print(f"\n[DashboardSync Worker] 🔗 第二步（抖音SSO）：跳转到 {dashboard_url}...", flush=True)
             try:
-                page.goto(dashboard_url, wait_until="domcontentloaded", timeout=60000)
-                print(f"[DashboardSync Worker] ✅ 第二步页面加载完成: {page.url}", flush=True)
+                # 新开标签页
+                new_page = context.new_page()
+                new_page.on("console", lambda msg: print(f"[Browser Console] {msg.type}: {msg.text}", flush=True))
+                
+                # 导航到仪表盘页面 - 等待 networkidle 确保页面完全加载
+                print(f"[DashboardSync Worker] ⏳ 新标签页导航中（等待网络空闲）...", flush=True)
+                new_page.goto(dashboard_url, wait_until="networkidle", timeout=90000)
+                print(f"[DashboardSync Worker] ✅ 新标签页页面加载完成: {new_page.url}", flush=True)
+                
+                # 等待 SSO 认证完成（检查是否被重定向到登录页）
+                print(f"[DashboardSync Worker] ⏳ 等待 SSO 认证完成（15秒）...", flush=True)
+                new_page.wait_for_timeout(15000)
+                
+                # 检查当前 URL 是否被重定向到登录页
+                current_url = new_page.url
+                print(f"[DashboardSync Worker] 📍 SSO 后 URL: {current_url}", flush=True)
+                
+                if "login" in current_url.lower() or "passport" in current_url.lower():
+                    print(f"[DashboardSync Worker] ❌ SSO 失败! 被重定向到: {current_url}", flush=True)
+                    print(f"[DashboardSync Worker] 💡 提示: 请确认 life_account_id={life_account_id} 是否正确", flush=True)
+                    _write_result(done_file, {
+                        "status": "failed",
+                        "error": "SSO 跳转失败，请重新登录抖音来客并保存 cookie",
+                        "current_url": current_url,
+                    })
+                    new_page.close()
+                    return
+                
+                # 等待页面数据完全加载（检查关键元素或网络请求完成）
+                print(f"[DashboardSync Worker] ⏳ 等待页面数据加载完成...", flush=True)
+                try:
+                    # 等待 networkidle（所有网络请求完成）
+                    new_page.wait_for_load_state("networkidle", timeout=30000)
+                    print(f"[DashboardSync Worker] ✅ 页面网络请求完成", flush=True)
+                except Exception as e:
+                    print(f"[DashboardSync Worker] ⚠️ 等待 networkidle 超时: {e}", flush=True)
+                    # 降级：等待额外 10 秒
+                    new_page.wait_for_timeout(10000)
+                
+                # 额外等待，确保页面 JavaScript 完全执行
+                print(f"[DashboardSync Worker] ⏳ 额外等待 5 秒确保页面完全就绪...", flush=True)
+                new_page.wait_for_timeout(5000)
+                
+                # 现在可以安全关闭旧页面
+                if not page.is_closed():
+                    print(f"[DashboardSync Worker] 🔒 关闭旧页面", flush=True)
+                    page.close()
+                
+                page = new_page  # 切换到新页面
+                print(f"[DashboardSync Worker] ✅ 页面切换完成，当前 URL: {page.url}", flush=True)
+                
             except Exception as e:
-                print(f"[DashboardSync Worker] ⚠️ 第二步跳转警告: {e}, 继续执行", flush=True)
-
-            # 等待 SSO 完成（关键！）
-            print(f"[DashboardSync Worker] ⏳ 等待 SSO 登录完成（15秒）...", flush=True)
-            page.wait_for_timeout(15000)  # 等待 15 秒让 SSO 完成
-
+                print(f"[DashboardSync Worker] ❌ 新标签页跳转失败: {e}", flush=True)
+                import traceback
+                traceback.print_exc()
+                # 降级：使用原页面跳转
+                try:
+                    print(f"[DashboardSync Worker] 🔄 降级方案：使用原页面跳转", flush=True)
+                    page.goto(dashboard_url, wait_until="networkidle", timeout=90000)
+                    page.wait_for_timeout(15000)
+                    print(f"[DashboardSync Worker] ✅ 原页面跳转完成: {page.url}", flush=True)
+                except Exception as e2:
+                    print(f"[DashboardSync Worker] ❌ 原页面跳转也失败: {e2}", flush=True)
+                    _write_result(done_file, {
+                        "status": "failed",
+                        "error": f"页面跳转失败: {str(e2)[:200]}",
+                    })
+                    return
+            
             # 🔧 增强：检查页面是否包含登录表单（如果被重定向到登录页）
             try:
-                is_login_page = page.evaluate("""() => {
+                is_login_page = new_page.evaluate("""() => {
                     // 检查是否有登录表单
                     const loginForm = document.querySelector('input[type="password"], .login-form, .login-container, [class*="login"]');
                     const hasLoginText = document.body.innerText.includes('登录') || document.body.innerText.includes('Login');
@@ -387,7 +449,7 @@ def _dashboard_sync_worker(
             except Exception as e:
                 print(f"[DashboardSync Worker] ⚠️ SSO 检查失败: {e}", flush=True)
                 is_login_page = False
-
+            
             # 检查跳转后是否被重定向到登录页
             current_url = page.url
             print(f"[DashboardSync Worker] 📍 第二步后当前页面URL: {current_url}", flush=True)
@@ -406,7 +468,7 @@ def _dashboard_sync_worker(
                     "is_login_page": is_login_page,
                 })
                 return
-
+            
             print(f"[DashboardSync Worker] ✅ SSO 登录成功! 当前页面: {current_url}", flush=True)
 
         # ==================== 执行同步 ====================
